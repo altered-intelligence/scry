@@ -97,7 +97,7 @@ def seed_article(session):
 
 
 class TestStatusEndpoint:
-    def test_disabled_by_default(self, fake_model_file, monkeypatch):
+    def test_enabled_by_default(self, fake_model_file, monkeypatch):
         monkeypatch.setenv("CTI_AI_SEARCH_MODEL_PATH", str(fake_model_file))
         from scry import config as _config
 
@@ -105,7 +105,7 @@ class TestStatusEndpoint:
         try:
             with TestClient(app) as client:
                 body = client.get("/api/ai/status").json()
-                assert body["enabled"] is False
+                assert body["enabled"] is True
                 assert body["model_present"] is True  # file exists even when feature off
                 assert body["model_loaded"] is False
         finally:
@@ -134,7 +134,11 @@ class TestStatusEndpoint:
 
 
 class TestAskEndpoint:
-    def test_disabled_flag_gives_403(self):
+    def test_disabled_flag_gives_403(self, monkeypatch):
+        monkeypatch.setenv("CTI_ENABLE_AI_SEARCH", "false")
+        from scry import config as _config
+
+        _config.get_settings.cache_clear()
         with TestClient(app) as client:
             r = client.post("/api/ai/ask", json={"question": "anything"})
             assert r.status_code == 403

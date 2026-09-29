@@ -113,9 +113,12 @@ nothing leaves the machine.
 ```bash
 pip install -e ".[ai]"          # llama-cpp-python inference engine
 scry ai-setup                   # downloads the model (~1 GB, resumes if interrupted)
-export CTI_ENABLE_AI_SEARCH=true
 uvicorn scry.main:app --reload  # then open /ui/search
 ```
+
+The AI Search panel is **on by default** — until the model is downloaded it
+shows setup instructions instead of the question box. Set
+`CTI_ENABLE_AI_SEARCH=false` to hide it entirely.
 
 - Default model: **Qwen2.5-1.5B-Instruct Q4_K_M** (~1.0 GB on disk, ~2 GB RAM
   at runtime — comfortable on 8 GB machines). A larger alternative is

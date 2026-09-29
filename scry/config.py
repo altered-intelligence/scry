@@ -49,7 +49,9 @@ class Settings(BaseSettings):
     )
 
     # UI
-    enable_ai_search: bool = False  # show the AI assistant panel on /ui/search (admin master switch)
+    enable_ai_search: bool = (
+        True  # show the AI assistant panel on /ui/search (set CTI_ENABLE_AI_SEARCH=false to hide)
+    )
 
     # AI Search (self-contained local LLM via llama.cpp — no server, no cloud, no API keys)
     ai_search_model_path: str = (

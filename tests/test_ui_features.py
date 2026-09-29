@@ -167,12 +167,25 @@ class TestDashboardCollect:
 
 
 class TestAISearchGate:
-    def test_ai_panel_hidden_by_default(self):
+    def test_ai_panel_shown_by_default(self):
         with TestClient(app) as client:
             r = client.get("/ui/search")
             assert r.status_code == 200
-            assert "ai-search-section" not in r.text
-            assert "ai-panel" not in r.text
+            assert 'id="ai-panel"' in r.text
+
+    def test_ai_panel_hidden_when_disabled(self, monkeypatch):
+        monkeypatch.setenv("CTI_ENABLE_AI_SEARCH", "false")
+        from scry import config as _config
+
+        _config.get_settings.cache_clear()
+        try:
+            with TestClient(app) as client:
+                r = client.get("/ui/search")
+                assert r.status_code == 200
+                assert "ai-search-section" not in r.text
+                assert "ai-panel" not in r.text
+        finally:
+            _config.get_settings.cache_clear()
 
     def test_ai_panel_shown_when_enabled(self, monkeypatch):
         monkeypatch.setenv("CTI_ENABLE_AI_SEARCH", "true")
