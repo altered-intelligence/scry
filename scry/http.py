@@ -14,7 +14,33 @@ from pathlib import Path
 
 import httpx
 
-_UA = "Scry/1.0"
+from scry.config import get_settings
+
+
+def _default_ua() -> str:
+    """User-Agent from settings (some feeds block bot-like UAs)."""
+    return get_settings().default_user_agent
+
+
+def default_browser_headers() -> dict[str, str]:
+    """Browser-like default headers for outbound HTTP.
+
+    Some sources (e.g. CISA) sit behind WAFs that fingerprint the header
+    *set*, not just the User-Agent: a bare UA string still gets a 403.
+    Mimic a real browser's header set. Accept-Encoding is intentionally
+    omitted so httpx advertises only the codecs it can actually decode.
+    """
+    return {
+        "User-Agent": _default_ua(),
+        "Accept": (
+            "text/html,application/xhtml+xml,application/xml;q=0.9," "image/avif,image/webp,*/*;q=0.8"
+        ),
+        "Accept-Language": "en-US,en;q=0.9",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+        "Upgrade-Insecure-Requests": "1",
+    }
+
 
 # Honour common env vars used by curl / requests / httpx for custom CA bundles
 _CUSTOM_CA = (
@@ -46,7 +72,7 @@ def build_client(
     follow_redirects: bool = True,
 ) -> httpx.Client:
     """Create a synchronous httpx.Client with sensible defaults."""
-    base_headers = {"User-Agent": _UA}
+    base_headers = default_browser_headers()
     if headers:
         base_headers.update(headers)
     return httpx.Client(
@@ -65,7 +91,7 @@ def build_async_client(
     follow_redirects: bool = True,
 ) -> httpx.AsyncClient:
     """Create an asynchronous httpx.AsyncClient with sensible defaults."""
-    base_headers = {"User-Agent": _UA}
+    base_headers = default_browser_headers()
     if headers:
         base_headers.update(headers)
     return httpx.AsyncClient(

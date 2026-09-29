@@ -4,6 +4,22 @@ All notable changes to Scry are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 semantic versioning.
 
+## [Unreleased]
+
+### Fixed
+
+- **Ars Technica feed**: pointed the source at the working feed URL
+  (`https://arstechnica.com/security/feed/`); the previous feed URL 404'd.
+- **Bot-blocking sources (e.g. CISA)**: outbound HTTP now uses a browser-like
+  User-Agent by default (new `default_user_agent` setting, overridable via
+  `CTI_DEFAULT_USER_AGENT`) plus a full browser header set
+  (`default_browser_headers()` in `scry/http.py`) — CISA's WAF fingerprints
+  the header set, not just the UA, and previously returned 403.
+- **Reddit / transient 429–503**: the fetcher now retries 429/503 up to
+  3 attempts with exponential backoff (2s → 4s), honouring `Retry-After`
+  (capped at 30s), and reports a clean error after the final attempt
+  instead of failing on the first 429.
+
 ## [0.1.0] — 2026-09-28
 
 Initial public release (formerly developed privately as "CTI Enrichment

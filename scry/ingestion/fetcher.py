@@ -18,13 +18,42 @@ from dataclasses import dataclass, field
 from urllib.parse import urlparse
 
 import httpx
+from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_attempt
 
 from scry.config import get_settings
+from scry.http import default_browser_headers
 from scry.ingestion.policy import PolicyDecision
 from scry.ingestion.ssrf import evaluate_url
 from scry.logging import get_logger
 
 logger = get_logger("fetcher")
+
+# Statuses worth retrying (rate limiting / transient unavailability).
+# Other 4xx are never retried.
+_RETRYABLE_STATUSES = {429, 503}
+_MAX_ATTEMPTS = 3
+_RETRY_AFTER_CAP = 30.0
+
+
+class _RetryableStatus(Exception):
+    """Internal: response status that should be retried (429 / 503)."""
+
+    def __init__(self, response: httpx.Response) -> None:
+        super().__init__(f"HTTP {response.status_code}")
+        self.response = response
+
+
+def _retry_wait(retry_state) -> float:
+    """Exponential backoff 2s → 4s → 8s; honor Retry-After (capped at 30s)."""
+    exc = retry_state.outcome.exception()
+    if isinstance(exc, _RetryableStatus):
+        retry_after = exc.response.headers.get("retry-after")
+        if retry_after:
+            try:
+                return min(float(retry_after), _RETRY_AFTER_CAP)
+            except ValueError:
+                pass  # HTTP-date form — fall back to exponential backoff
+    return min(2.0**retry_state.attempt_number, _RETRY_AFTER_CAP)
 
 
 @dataclass
@@ -63,8 +92,6 @@ class _RateLimiter:
 
 
 class SafeFetcher:
-    USER_AGENT = "Scry/0.1 (+defensive-research)"
-
     def __init__(self, *, client: httpx.AsyncClient | None = None) -> None:
         self._settings = get_settings()
         self._client = client
@@ -76,10 +103,7 @@ class SafeFetcher:
             self._client = httpx.AsyncClient(
                 follow_redirects=True,
                 timeout=httpx.Timeout(self._settings.fetch_timeout_seconds),
-                headers={
-                    "User-Agent": self.USER_AGENT,
-                    "Accept": "text/html, application/rss+xml, application/atom+xml, application/json, text/xml",
-                },
+                headers=default_browser_headers(),
                 http2=False,
             )
             self._owns_client = True
@@ -89,6 +113,27 @@ class SafeFetcher:
         if self._owns_client and self._client is not None:
             await self._client.aclose()
             self._client = None
+
+    async def _get_with_retry(self, url: str) -> httpx.Response:
+        """GET with exponential-backoff retry on 429/503 (max 3 attempts)."""
+        assert self._client is not None
+        async for attempt in AsyncRetrying(
+            stop=stop_after_attempt(_MAX_ATTEMPTS),
+            wait=_retry_wait,
+            retry=retry_if_exception_type(_RetryableStatus),
+            reraise=True,
+        ):
+            with attempt:
+                resp = await self._client.get(url)
+                if resp.status_code in _RETRYABLE_STATUSES:
+                    logger.warning(
+                        "fetch_retryable_status",
+                        url=url,
+                        status=resp.status_code,
+                        attempt=attempt.retry_state.attempt_number,
+                    )
+                    raise _RetryableStatus(resp)
+        return resp
 
     async def fetch(
         self, url: str, *, policy: PolicyDecision, rate_limit_per_minute: int = 10
@@ -104,10 +149,17 @@ class SafeFetcher:
         host = urlparse(url).hostname or ""
         await self._rate.acquire(host, rate_limit_per_minute)
 
-        assert self._client is not None
         start = time.monotonic()
         try:
-            resp = await self._client.get(url)
+            resp = await self._get_with_retry(url)
+        except _RetryableStatus as exc:
+            return FetchResult(
+                url=url,
+                status_code=exc.response.status_code,
+                headers=dict(exc.response.headers),
+                error=f"HTTP {exc.response.status_code} after {_MAX_ATTEMPTS} attempts",
+                elapsed_ms=int((time.monotonic() - start) * 1000),
+            )
         except httpx.HTTPError as exc:
             return FetchResult(
                 url=url, status_code=None, error=str(exc), elapsed_ms=int((time.monotonic() - start) * 1000)

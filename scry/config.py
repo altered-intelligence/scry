@@ -42,6 +42,12 @@ class Settings(BaseSettings):
     # LLM
     llm_provider: str = "stub"  # "stub" | "anthropic"
 
+    # HTTP identity — some feeds (CISA, Microsoft) block bot-like User-Agents.
+    default_user_agent: str = (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
+    )
+
     # UI
     enable_ai_search: bool = False  # show the (experimental) AI chat panel on /ui/search
 

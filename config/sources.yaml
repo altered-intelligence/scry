@@ -165,7 +165,7 @@ sources:
   - name: Ars Technica Security
     type: news
     url: https://arstechnica.com/security/
-    feed: https://feeds.arstechnica.com/arstechnica/security
+    feed: https://arstechnica.com/security/feed/
     enabled: true
     priority: low
     baseline_confidence: 75
