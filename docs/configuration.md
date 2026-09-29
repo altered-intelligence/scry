@@ -40,7 +40,11 @@ Every risky capability defaults to **off**.
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `CTI_LLM_PROVIDER` | `stub` | `stub` (offline, no network) or `anthropic`. The stub does no work; deterministic extractors carry the load. |
-| `CTI_ENABLE_AI_SEARCH` | `false` | Show the experimental AI chat panel on `/ui/search`. Requires LLM provider assets; off by default. |
+| `CTI_ENABLE_AI_SEARCH` | `false` | Master switch for the AI assistant panel on `/ui/search` and the `/api/ai/*` endpoints. |
+| `CTI_AI_SEARCH_MODEL_PATH` | `data/models/qwen2.5-1.5b-instruct-q4_k_m.gguf` | GGUF model file for AI Search (embedded via llama-cpp-python; install the `ai` extra). `scry ai-setup` downloads the default (~1 GB). |
+| `CTI_AI_SEARCH_MAX_TOKENS` | `512` | Answer length cap — keeps latency sane on small machines. |
+| `CTI_AI_SEARCH_MAX_SOURCES` | `8` | Top search hits fed to the model as grounded context. |
+| `CTI_AI_SEARCH_TIMEOUT_S` | `120` | Hard timebox for one answer (the first answer includes ~10s model load). |
 
 ### Retention
 

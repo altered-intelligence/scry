@@ -38,65 +38,169 @@
 
 {# =========================== AI SEARCH =========================== #}
 {% if enable_ai_search %}
-<link rel="stylesheet" href="/static/ai_chat.css">
+<div class="panel ai-panel" id="ai-panel">
+  <style>
+    .ai-panel { margin-top: 24px; }
+    .ai-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+    .ai-head h2 { margin: 0; }
+    .ai-head .spacer { flex: 1; }
+    .ai-status { font-size: 12px; }
+    /* toggle switch */
+    .ai-toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); cursor: pointer; user-select: none; }
+    .ai-toggle input { display: none; }
+    .ai-toggle .track {
+      width: 34px; height: 18px; border-radius: 9px;
+      background: var(--panel-2); border: 1px solid var(--border);
+      position: relative; transition: background 0.15s;
+    }
+    .ai-toggle .track::after {
+      content: ""; position: absolute; top: 2px; left: 2px;
+      width: 12px; height: 12px; border-radius: 50%;
+      background: var(--muted); transition: left 0.15s, background 0.15s;
+    }
+    .ai-toggle input:checked + .track { background: var(--badge-good-bg); border-color: var(--good); }
+    .ai-toggle input:checked + .track::after { left: 18px; background: var(--good); }
+    .ai-ask-row { display: flex; gap: 10px; align-items: flex-end; }
+    .ai-ask-row textarea { flex: 1; min-width: 0; resize: vertical; }
+    .ai-answer {
+      margin-top: 14px; padding: 14px 16px;
+      background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px;
+      white-space: pre-wrap; font-size: 14px; line-height: 1.6; display: none;
+    }
+    .ai-answer .ai-loading { color: var(--muted); font-style: italic; }
+    .ai-sources { margin-top: 10px; display: none; }
+    .ai-sources .chip { margin: 2px 4px 2px 0; }
+    .ai-error { color: var(--bad); font-size: 13px; margin-top: 10px; display: none; white-space: pre-wrap; }
+    .ai-disabled-note { color: var(--muted); font-size: 13px; margin: 0; }
+  </style>
 
-<div class="ai-search-section">
-  <div class="ai-search-header">
-    <h2 style="margin:0">🤖 AI Search <span class="badge mid" style="font-size:10px;vertical-align:middle">BETA</span></h2>
-    <div class="ai-search-controls">
-      <label class="muted" style="font-size:11px">Model:</label>
-      <select id="ai-model-picker" class="ai-model-picker">
-        <option value="">Loading models…</option>
-      </select>
-      <a href="/ui/settings/llms" class="btn secondary" style="font-size:12px;padding:5px 12px">⚙ Configure</a>
-    </div>
+  <div class="ai-head">
+    <h2>🔮 AI Search <span class="badge mid" style="font-size:10px;vertical-align:middle">LOCAL LLM</span></h2>
+    <span id="ai-status" class="badge dim ai-status">checking…</span>
+    <span class="spacer"></span>
+    <label class="ai-toggle" title="Master switch for this browser — when off, no requests are made">
+      <input type="checkbox" id="ai-enabled-toggle" checked>
+      <span class="track"></span>
+      AI assistant
+    </label>
   </div>
 
-  <div class="ai-search-body">
-    {# Left rail: session list #}
-    <aside class="ai-sessions">
-      <div class="ai-sessions-head">
-        <strong>Sessions</strong>
-        <button class="btn" id="ai-new-session" style="font-size:11px;padding:4px 10px">+ New</button>
-      </div>
-      <ul id="ai-session-list" class="ai-session-list">
-        <li class="muted">Loading…</li>
-      </ul>
-    </aside>
-
-    {# Right: chat area #}
-    <div class="ai-chat">
-      <div id="ai-chat-status" class="ai-chat-status"></div>
-      <div id="ai-messages" class="ai-messages">
-        <div class="ai-empty">
-          <h3 style="margin-top:0">Ask anything about your CTI data</h3>
-          <p class="muted">The assistant searches your articles, observables, CVEs, threat feeds, and ransomware victims, then cites the records it used. Try:</p>
-          <ul class="muted" style="font-size:13px;line-height:1.8">
-            <li>"Which ransomware groups hit US healthcare this month?"</li>
-            <li>"Summarize observables tagged 'lockbit' with risk &gt; 70"</li>
-            <li>"What CVEs are in the active KEV catalog?"</li>
-            <li>"Build a block list of the top 50 high-risk domains"</li>
-          </ul>
-        </div>
-      </div>
-      <form id="ai-form" class="ai-input-row">
-        <textarea id="ai-input" placeholder="Ask a question…   (Enter to send · Shift+Enter for newline)" rows="2"></textarea>
-        <button class="btn" id="ai-send-btn" type="submit">Send →</button>
-      </form>
+  <div id="ai-body">
+    <div class="ai-ask-row">
+      <textarea id="ai-question" rows="2" placeholder="Ask about your collected intel… e.g. “Which ransomware groups hit healthcare this month?”"></textarea>
+      <button class="btn" id="ai-ask-btn" type="button">Ask</button>
     </div>
+    <div id="ai-error" class="ai-error"></div>
+    <div id="ai-answer" class="ai-answer"></div>
+    <div id="ai-sources" class="ai-sources"></div>
   </div>
+  <p id="ai-off-note" class="ai-disabled-note" hidden>
+    AI assistant disabled — flip the switch to ask questions over your collected data.
+    The model runs embedded in Scry; nothing leaves this machine.
+  </p>
 </div>
 
-{# Sources drawer (hidden by default) #}
-<div id="ai-sources-drawer" class="ai-drawer" hidden>
-  <div class="ai-drawer-head">
-    <strong>Sources</strong>
-    <button id="ai-drawer-close" class="btn secondary" style="font-size:12px;padding:3px 10px">Close</button>
-  </div>
-  <div id="ai-sources-list" class="ai-drawer-body"></div>
-</div>
+<script>
+(function () {
+  var LS_KEY = 'scry-ai-enabled';
+  var toggle = document.getElementById('ai-enabled-toggle');
+  var body = document.getElementById('ai-body');
+  var offNote = document.getElementById('ai-off-note');
+  var statusEl = document.getElementById('ai-status');
+  var qEl = document.getElementById('ai-question');
+  var askBtn = document.getElementById('ai-ask-btn');
+  var answerEl = document.getElementById('ai-answer');
+  var sourcesEl = document.getElementById('ai-sources');
+  var errorEl = document.getElementById('ai-error');
 
-<script src="/static/ai_chat.js"></script>
+  function isEnabled() { return localStorage.getItem(LS_KEY) !== 'off'; }
+
+  function applyToggle() {
+    var on = isEnabled();
+    toggle.checked = on;
+    body.style.display = on ? '' : 'none';
+    offNote.hidden = on;
+    if (on) loadStatus();
+    else setStatus('dim', 'off');
+  }
+
+  function setStatus(kind, text) {
+    statusEl.className = 'badge ' + kind + ' ai-status';
+    statusEl.textContent = text;
+  }
+
+  function loadStatus() {
+    setStatus('dim', 'checking…');
+    fetch('/api/ai/status').then(function (r) { return r.json(); }).then(function (s) {
+      if (!s.model_present) setStatus('warn', 'model not downloaded — run: scry ai-setup');
+      else if (s.model_loaded) setStatus('good', 'ready · ' + s.model_path.split('/').pop());
+      else setStatus('good', 'ready (' + s.model_size_mb + ' MB) · first question loads the model (~10s)');
+    }).catch(function () { setStatus('bad', 'status check failed'); });
+  }
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  function showError(msg) {
+    errorEl.textContent = msg;
+    errorEl.style.display = msg ? 'block' : 'none';
+  }
+
+  function ask() {
+    var q = qEl.value.trim();
+    if (!q) return;
+    showError('');
+    sourcesEl.style.display = 'none';
+    answerEl.style.display = 'block';
+    answerEl.innerHTML = '<span class="ai-loading">Consulting the crystal ball…</span>';
+    askBtn.disabled = true;
+    fetch('/api/ai/ask', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({question: q})
+    }).then(function (r) {
+      return r.json().then(function (data) { return {ok: r.ok, data: data}; });
+    }).then(function (res) {
+      if (!res.ok) {
+        answerEl.style.display = 'none';
+        var d = res.data && res.data.detail;
+        showError(typeof d === 'string' ? d : 'Request failed.');
+        return;
+      }
+      answerEl.textContent = res.data.answer;
+      if (res.data.sources && res.data.sources.length) {
+        var html = '<span class="muted" style="font-size:11px">Sources:</span> ';
+        res.data.sources.forEach(function (s) {
+          var label = '[' + s.n + '] ' + s.title;
+          html += s.link
+            ? '<a class="chip" href="' + esc(s.link) + '">' + esc(label) + '</a>'
+            : '<span class="chip">' + esc(label) + '</span>';
+        });
+        html += ' <span class="muted" style="font-size:11px">' + res.data.model + ' · ' + res.data.elapsed_ms + ' ms</span>';
+        sourcesEl.innerHTML = html;
+        sourcesEl.style.display = 'block';
+      }
+    }).catch(function () {
+      answerEl.style.display = 'none';
+      showError('Network error — is Scry still running?');
+    }).finally(function () { askBtn.disabled = false; });
+  }
+
+  toggle.addEventListener('change', function () {
+    localStorage.setItem(LS_KEY, toggle.checked ? 'on' : 'off');
+    applyToggle();
+  });
+  askBtn.addEventListener('click', ask);
+  qEl.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(); }
+  });
+
+  applyToggle();  // fires no requests when the toggle is off
+})();
+</script>
 {% endif %}
 
 {% endblock %}

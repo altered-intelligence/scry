@@ -103,6 +103,27 @@ Then visit:
 - Review queue: <http://localhost:8000/ui/reviews>
 - API docs: <http://localhost:8000/docs>
 
+### AI Search (built-in local LLM)
+
+Ask natural-language questions over your collected intel — grounded answers
+with `[n]` citations linking back to the records used. The model runs
+**embedded in Scry** (llama.cpp, GGUF): no server, no cloud, no API keys,
+nothing leaves the machine.
+
+```bash
+pip install -e ".[ai]"          # llama-cpp-python inference engine
+scry ai-setup                   # downloads the model (~1 GB, resumes if interrupted)
+export CTI_ENABLE_AI_SEARCH=true
+uvicorn scry.main:app --reload  # then open /ui/search
+```
+
+- Default model: **Qwen2.5-1.5B-Instruct Q4_K_M** (~1.0 GB on disk, ~2 GB RAM
+  at runtime — comfortable on 8 GB machines). A larger alternative is
+  Llama-3.2-3B Q4 (~2 GB); download its GGUF and set `CTI_AI_SEARCH_MODEL_PATH`.
+- The **first question loads the model (~10s)**; later answers are faster.
+- The Search page has an **on-page toggle** (persisted per browser) that
+  disables the assistant entirely — zero requests, zero RAM.
+
 ### CLI cheat sheet
 
 ```bash

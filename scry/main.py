@@ -19,6 +19,7 @@ from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.orm import Session
 
 from scry.api import api_router
+from scry.api.ai import ai_router
 from scry.api.deps import get_session
 from scry.config import get_settings
 from scry.db import get_engine, session_scope
@@ -75,6 +76,7 @@ app = FastAPI(
 )
 
 app.include_router(api_router)
+app.include_router(ai_router)
 
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")

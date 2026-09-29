@@ -52,6 +52,11 @@ dev = [
   "httpx>=0.27",
   "freezegun>=1.4",
 ]
+# Embedded local LLM for AI Search (GGUF inference; ~1 GB model downloaded
+# separately via `scry ai-setup`). Base install stays light without this.
+ai = [
+  "llama-cpp-python>=0.3.35",
+]
 
 [project.scripts]
 scry = "scry.cli:main"

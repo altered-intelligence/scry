@@ -171,8 +171,8 @@ class TestAISearchGate:
         with TestClient(app) as client:
             r = client.get("/ui/search")
             assert r.status_code == 200
-            assert "ai_chat.js" not in r.text
             assert "ai-search-section" not in r.text
+            assert "ai-panel" not in r.text
 
     def test_ai_panel_shown_when_enabled(self, monkeypatch):
         monkeypatch.setenv("CTI_ENABLE_AI_SEARCH", "true")
@@ -183,7 +183,15 @@ class TestAISearchGate:
             with TestClient(app) as client:
                 r = client.get("/ui/search")
                 assert r.status_code == 200
-                assert "ai_chat.js" in r.text
+                # self-contained inline panel: toggle, status pill, no dead static refs
+                assert 'id="ai-panel"' in r.text
+                assert 'id="ai-enabled-toggle"' in r.text
+                assert "scry-ai-enabled" in r.text
+                assert "/api/ai/status" in r.text
+                assert "/api/ai/ask" in r.text
+                assert "ai_chat.js" not in r.text
+                assert "ai_chat.css" not in r.text
+                assert "/ui/settings/llms" not in r.text
         finally:
             _config.get_settings.cache_clear()
 

@@ -102,8 +102,16 @@ high-risk observables, ransomware reporting). Outbound delivery is off unless
 ### Search (`/ui/search`)
 
 Full-text search across articles, observables, entities, and claims with
-deep links into each detail page. An experimental AI chat panel exists behind
-`CTI_ENABLE_AI_SEARCH=true` (off by default).
+deep links into each detail page.
+
+When `CTI_ENABLE_AI_SEARCH=true`, an **AI Search** panel appears below the
+results: ask natural-language questions and get grounded answers from a local
+model embedded in Scry (no cloud calls). Answers cite the records used as
+`[1]`, `[2]`, … and each citation links to the record's detail page. A status
+pill shows whether the model file is present; a per-browser toggle switch
+disables the assistant entirely (no requests, no RAM used). Setup:
+`pip install -e ".[ai]"` + `scry ai-setup`. The first question loads the
+model into memory (~10s).
 
 ## Timestamps
 

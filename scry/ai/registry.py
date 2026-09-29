@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from scry.ai.providers.anthropic import AnthropicProvider
 from scry.ai.providers.base import LLMProvider
 from scry.ai.providers.google import GoogleProvider
+from scry.ai.providers.local import LocalLlamaProvider
 from scry.ai.providers.ollama import OllamaProvider
 from scry.ai.providers.openai import OpenAIProvider
 from scry.ai.providers.xai import XAIProvider
@@ -19,6 +20,7 @@ PROVIDER_CLASSES = {
     "xai": XAIProvider,
     "google": GoogleProvider,
     "ollama": OllamaProvider,
+    "local": LocalLlamaProvider,
 }
 
 
@@ -30,6 +32,10 @@ def get_provider(session: Session, provider: str) -> LLMProvider | None:
     """Instantiate one provider with credentials from the DB. None if not configured."""
     s = _load_setting(session, provider)
     if not s:
+        # Embedded model auto-detect: no key needed, file must exist
+        if provider == "local":
+            p = LocalLlamaProvider()
+            return p if p.is_available() else None
         # Ollama auto-detect: no key needed
         if provider == "ollama":
             p = OllamaProvider()

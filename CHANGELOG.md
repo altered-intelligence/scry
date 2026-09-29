@@ -6,6 +6,20 @@ semantic versioning.
 
 ## [Unreleased]
 
+### Added
+
+- **AI Search** (`/ui/search` + `/api/ai/*`): ask natural-language questions
+  over collected intel and get grounded answers with `[n]` citations linking
+  to the records used. Backed by a **self-contained local LLM** — GGUF via
+  `llama-cpp-python` embedded in the Scry process (no server, no cloud, no
+  API keys). New `LocalLlamaProvider` (lazy ~12s load on first question),
+  `scry ai-setup` model download command (resume support), per-browser
+  on-page enable/disable toggle, and settings `CTI_AI_SEARCH_MODEL_PATH` /
+  `CTI_AI_SEARCH_MAX_TOKENS` / `CTI_AI_SEARCH_MAX_SOURCES` /
+  `CTI_AI_SEARCH_TIMEOUT_S`. Off by default (`CTI_ENABLE_AI_SEARCH=true`);
+  optional install extra `pip install -e ".[ai]"`. Default model
+  Qwen2.5-1.5B-Instruct Q4_K_M (~1 GB disk, ~2 GB RAM) — fits 8 GB machines.
+
 ### Fixed
 
 - **Ars Technica feed**: pointed the source at the working feed URL

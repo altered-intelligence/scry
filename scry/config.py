@@ -49,7 +49,15 @@ class Settings(BaseSettings):
     )
 
     # UI
-    enable_ai_search: bool = False  # show the (experimental) AI chat panel on /ui/search
+    enable_ai_search: bool = False  # show the AI assistant panel on /ui/search (admin master switch)
+
+    # AI Search (self-contained local LLM via llama.cpp — no server, no cloud, no API keys)
+    ai_search_model_path: str = (
+        "data/models/qwen2.5-1.5b-instruct-q4_k_m.gguf"  # ~1.0 GB; `scry ai-setup` downloads it
+    )
+    ai_search_max_tokens: int = 512  # answer length cap (keeps latency sane on 8 GB machines)
+    ai_search_max_sources: int = 8  # top search hits fed to the model as context
+    ai_search_timeout_s: int = 120  # hard timebox for one answer (first answer includes ~12s model load)
 
     # Retention
     retention_raw_html_days: int = 14

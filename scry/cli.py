@@ -163,6 +163,76 @@ def cli_sem(query: str, limit: int = 20) -> None:
         console.print(table)
 
 
+# Default AI-Search model: Qwen2.5-1.5B-Instruct Q4_K_M (~1.0 GB, ~2 GB RAM at
+# runtime — safe on 8 GB machines). Larger alternative: Llama-3.2-3B-Instruct
+# Q4_K_M (~2 GB) — download its GGUF and point CTI_AI_SEARCH_MODEL_PATH at it.
+AI_SETUP_MODEL_URL = (
+    "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/" "qwen2.5-1.5b-instruct-q4_k_m.gguf"
+)
+AI_SETUP_MODEL_BYTES = 1_117_320_736  # expected size of the default GGUF
+
+
+@app.command("ai-setup")
+def ai_setup() -> None:
+    """Download the local AI-Search model (GGUF, ~1 GB) with resume support."""
+    from pathlib import Path
+
+    import httpx
+    from rich.progress import BarColumn, DownloadColumn, Progress, TransferSpeedColumn
+
+    from scry.config import get_settings
+
+    dest = Path(get_settings().ai_search_model_path).expanduser()
+    if dest.is_file() and dest.stat().st_size == AI_SETUP_MODEL_BYTES:
+        console.print(f"[green]Model already present at {dest} ({AI_SETUP_MODEL_BYTES:,} bytes)[/green]")
+        return
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    downloaded = dest.stat().st_size if dest.is_file() else 0
+    headers = {"Range": f"bytes={downloaded}-"} if downloaded else {}
+    if downloaded:
+        console.print(f"[yellow]Resuming from {downloaded:,} bytes[/yellow]")
+
+    console.print(f"Downloading {AI_SETUP_MODEL_URL}\n  → {dest}")
+    try:
+        with (
+            httpx.stream(
+                "GET",
+                AI_SETUP_MODEL_URL,
+                headers=headers,
+                follow_redirects=True,
+                timeout=httpx.Timeout(60.0, read=300.0),
+            ) as r,
+            Progress(
+                "[progress.description]{task.description}",
+                BarColumn(),
+                DownloadColumn(),
+                TransferSpeedColumn(),
+                console=console,
+            ) as progress,
+        ):
+            r.raise_for_status()
+            task = progress.add_task("model", total=None)
+            mode = "ab" if downloaded else "wb"
+            with dest.open(mode) as f:
+                for chunk in r.iter_bytes(chunk_size=1024 * 1024):
+                    f.write(chunk)
+                    progress.advance(task, len(chunk))
+    except httpx.HTTPError as e:
+        console.print(f"[red]Download failed: {e}[/red]")
+        raise typer.Exit(1) from None
+
+    size = dest.stat().st_size
+    if size != AI_SETUP_MODEL_BYTES:
+        console.print(
+            f"[yellow]Warning: size {size:,} ≠ expected {AI_SETUP_MODEL_BYTES:,} — "
+            "re-run `scry ai-setup` to resume.[/yellow]"
+        )
+        raise typer.Exit(1)
+    console.print(f"[green]Model ready at {dest} ({size:,} bytes)[/green]")
+    console.print("Enable AI Search with [bold]CTI_ENABLE_AI_SEARCH=true[/bold] and restart Scry.")
+
+
 report_app = typer.Typer(help="Reports")
 app.add_typer(report_app, name="report")
 
