@@ -4,6 +4,6 @@
   "version": "0.1.0",
   "description": "Local preview launcher for Scry — the defensive CTI FastAPI app (Python backend; npm is only used as the dev-server entry point).",
   "scripts": {
-    "dev": "CTI_DATABASE_URL=sqlite+pysqlite:///./cti.sqlite .venv/bin/uvicorn scry.main:app --reload"
+    "dev": "CTI_DATABASE_URL=sqlite+pysqlite:///./cti.sqlite CTI_ENABLE_AI_SEARCH=true .venv/bin/uvicorn scry.main:app --reload"
   }
 }
