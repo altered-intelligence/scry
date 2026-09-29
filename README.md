@@ -4,6 +4,10 @@
 
 # <img src="scry/ui/static/logo.svg" alt="" width="30" valign="middle"> Scry
 
+[![CI](https://github.com/altered-intelligence/scry/actions/workflows/ci.yml/badge.svg)](https://github.com/altered-intelligence/scry/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](pyproject.toml)
+
 *Seeing threats before they arrive.*
 
 A defensive cyber threat intelligence platform that ingests public sources, extracts IOCs / entities / claims / relationships, enriches and scores them, surfaces high-risk items for analyst review, and produces daily / weekly reports — preserving source provenance, confidence, and context the whole way through.
