@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/social-preview.png" alt="Scry — Seeing threats before they arrive" width="640">
+</p>
+
 # <img src="scry/ui/static/logo.svg" alt="" width="30" valign="middle"> Scry
 
 *Seeing threats before they arrive.*
