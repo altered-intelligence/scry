@@ -72,10 +72,20 @@
     .ai-sources .chip { margin: 2px 4px 2px 0; }
     .ai-error { color: var(--bad); font-size: 13px; margin-top: 10px; display: none; white-space: pre-wrap; }
     .ai-disabled-note { color: var(--muted); font-size: 13px; margin: 0; }
+    /* provider picker */
+    .ai-provider-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+    .ai-provider-bar label { font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
+    .ai-provider-bar select { font-size: 13px; padding: 4px 8px; }
+    .ai-provider-config { margin: 0 0 14px; padding: 12px 14px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; }
+    .ai-config-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 10px; }
+    .ai-config-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+    .ai-config-grid input { font-size: 13px; padding: 6px 8px; }
+    .ai-config-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .ai-config-note { font-size: 11px; color: var(--muted); margin: 6px 0 0; }
   </style>
 
   <div class="ai-head">
-    <h2>🔮 AI Search <span class="badge mid" style="font-size:10px;vertical-align:middle">LOCAL LLM</span></h2>
+    <h2>🔮 AI Search <span class="badge mid" style="font-size:10px;vertical-align:middle">BRING YOUR OWN MODEL</span></h2>
     <span id="ai-status" class="badge dim ai-status">checking…</span>
     <span class="spacer"></span>
     <label class="ai-toggle" title="Master switch for this browser — when off, no requests are made">
@@ -83,6 +93,36 @@
       <span class="track"></span>
       AI assistant
     </label>
+  </div>
+
+  <div class="ai-provider-bar">
+    <label>Provider
+      <select id="ai-provider-select"></select>
+    </label>
+    <span id="ai-provider-note" class="muted" style="font-size:12px"></span>
+    <span class="spacer"></span>
+    <button class="btn" id="ai-provider-config-btn" type="button" style="font-size:12px">Configure…</button>
+  </div>
+
+  <div id="ai-provider-config" class="ai-provider-config" hidden>
+    <div class="ai-config-grid">
+      <label id="ai-config-key-row">API key
+        <input type="password" id="ai-config-key" autocomplete="new-password" placeholder="">
+      </label>
+      <label id="ai-config-url-row">Base URL
+        <input id="ai-config-base-url" placeholder="optional — e.g. http://localhost:11434">
+      </label>
+      <label>Model
+        <input id="ai-config-model" list="ai-config-model-list" placeholder="default">
+        <datalist id="ai-config-model-list"></datalist>
+      </label>
+    </div>
+    <div class="ai-config-actions">
+      <button class="btn" id="ai-config-save" type="button">Save &amp; enable</button>
+      <button class="btn" id="ai-config-disable" type="button">Disable</button>
+      <span id="ai-config-msg" class="muted" style="font-size:12px"></span>
+    </div>
+    <p class="ai-config-note">Keys are encrypted at rest. Saving runs a connection test; the status pill shows the active provider. Leave the key blank to keep the stored one.</p>
   </div>
 
   <div id="ai-body">
@@ -132,11 +172,129 @@
   function loadStatus() {
     setStatus('dim', 'checking…');
     fetch('/api/ai/status').then(function (r) { return r.json(); }).then(function (s) {
-      if (!s.model_present) setStatus('warn', 'model not downloaded — run: scry ai-setup');
-      else if (s.model_loaded) setStatus('good', 'ready · ' + s.model_path.split('/').pop());
-      else setStatus('good', 'ready (' + s.model_size_mb + ' MB) · first question loads the model (~10s)');
+      if (s.active_provider === 'local') {
+        if (!s.model_present) setStatus('warn', 'model not downloaded — run: scry ai-setup');
+        else if (s.model_loaded) setStatus('good', 'ready · ' + s.model_path.split('/').pop());
+        else setStatus('good', 'ready (' + s.model_size_mb + ' MB) · first question loads the model (~10s)');
+      } else if (s.active_provider === 'ollama') {
+        setStatus('good', 'ready · Ollama' + (s.active_model ? ' · ' + s.active_model : ''));
+      } else if (s.active_provider) {
+        setStatus('good', 'ready · ' + s.active_display + (s.active_model ? ' · ' + s.active_model : ''));
+      } else if (s.model_present) {
+        setStatus('good', 'ready (' + s.model_size_mb + ' MB) · first question loads the model (~10s)');
+      } else {
+        setStatus('warn', 'no provider — configure one below, start Ollama, or run: scry ai-setup');
+      }
     }).catch(function () { setStatus('bad', 'status check failed'); });
   }
+
+  /* ---------- provider picker ---------- */
+
+  var providerSelect = document.getElementById('ai-provider-select');
+  var providerNote = document.getElementById('ai-provider-note');
+  var configBox = document.getElementById('ai-provider-config');
+  var configBtn = document.getElementById('ai-provider-config-btn');
+  var configKey = document.getElementById('ai-config-key');
+  var configKeyRow = document.getElementById('ai-config-key-row');
+  var configUrl = document.getElementById('ai-config-base-url');
+  var configUrlRow = document.getElementById('ai-config-url-row');
+  var configModel = document.getElementById('ai-config-model');
+  var configModelList = document.getElementById('ai-config-model-list');
+  var configSave = document.getElementById('ai-config-save');
+  var configDisable = document.getElementById('ai-config-disable');
+  var configMsg = document.getElementById('ai-config-msg');
+  var providersCache = [];
+
+  function currentProvider() {
+    var id = providerSelect.value;
+    for (var i = 0; i < providersCache.length; i++) if (providersCache[i].id === id) return providersCache[i];
+    return null;
+  }
+
+  function renderProviderNote() {
+    var p = currentProvider();
+    if (!p) { providerNote.textContent = ''; return; }
+    var bits = [];
+    if (p.enabled) bits.push('active');
+    else if (p.configured) bits.push('configured');
+    if (p.id === 'local') {
+      bits.push(p.available ? 'model downloaded' : 'model not downloaded — run: scry ai-setup');
+    } else if (p.id === 'ollama') {
+      bits.push(p.available ? 'server found · ' + p.models.length + ' model(s)' : 'no server found');
+    } else if (p.configured) {
+      bits.push(p.last_check_ok === true ? 'connection OK' : (p.last_check_ok === false ? 'check failed' : 'not tested'));
+    }
+    providerNote.textContent = bits.join(' · ');
+  }
+
+  function renderProviderForm() {
+    var p = currentProvider();
+    if (!p) return;
+    configKeyRow.style.display = p.needs_api_key ? '' : 'none';
+    configUrlRow.style.display = p.needs_base_url ? '' : 'none';
+    configKey.value = '';
+    configKey.placeholder = p.api_key_masked !== '—' ? 'stored: ' + p.api_key_masked : 'required';
+    configUrl.value = p.base_url || '';
+    configModel.value = p.default_model || '';
+    configModelList.innerHTML = (p.models || []).map(function (m) {
+      return '<option value="' + esc(m.id) + '">' + esc(m.label) + '</option>';
+    }).join('');
+    configDisable.style.display = p.enabled ? '' : 'none';
+    configMsg.textContent = p.last_check_error ? ('last check: ' + p.last_check_error) : '';
+  }
+
+  function loadProviders() {
+    fetch('/api/ai/provider').then(function (r) { return r.json(); }).then(function (data) {
+      providersCache = data.providers || [];
+      var html = '';
+      providersCache.forEach(function (p) {
+        html += '<option value="' + esc(p.id) + '">' + esc(p.display_name) + '</option>';
+      });
+      providerSelect.innerHTML = html;
+      var active = data.active || 'local';
+      for (var i = 0; i < providerSelect.options.length; i++) {
+        if (providerSelect.options[i].value === active) providerSelect.selectedIndex = i;
+      }
+      renderProviderNote();
+      renderProviderForm();
+    }).catch(function () { providerNote.textContent = 'provider list unavailable'; });
+  }
+
+  function saveProvider(enable) {
+    var p = currentProvider();
+    if (!p) return;
+    var payload = {provider: p.id, enabled: enable};
+    if (configKey.value) payload.api_key = configKey.value;
+    if (p.needs_base_url) payload.base_url = configUrl.value.trim();
+    payload.default_model = configModel.value.trim();
+    configSave.disabled = true;
+    configMsg.textContent = 'saving…';
+    fetch('/api/ai/provider', {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    }).then(function (r) {
+      return r.json().then(function (data) { return {ok: r.ok, data: data}; });
+    }).then(function (res) {
+      if (!res.ok) {
+        var d = res.data && res.data.detail;
+        configMsg.textContent = typeof d === 'string' ? d : 'Save failed.';
+        return;
+      }
+      configMsg.textContent = res.data.check_ok
+        ? 'saved — connection OK'
+        : ('saved — check failed: ' + (res.data.check_error || 'unknown'));
+      configKey.value = '';
+      loadProviders();
+      loadStatus();
+    }).catch(function () { configMsg.textContent = 'Network error — is Scry still running?'; })
+      .finally(function () { configSave.disabled = false; });
+  }
+
+  providerSelect.addEventListener('change', function () { renderProviderNote(); renderProviderForm(); });
+  configBtn.addEventListener('click', function () { configBox.hidden = !configBox.hidden; });
+  configSave.addEventListener('click', function () { saveProvider(true); });
+  configDisable.addEventListener('click', function () { saveProvider(false); });
 
   function esc(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
@@ -199,6 +357,7 @@
   });
 
   applyToggle();  // fires no requests when the toggle is off
+  loadProviders();
 })();
 </script>
 {% endif %}

@@ -66,7 +66,7 @@ def ai_enabled(monkeypatch, fake_model_file):
 @pytest.fixture
 def fake_provider(ai_enabled, monkeypatch):
     provider = FakeLocalProvider(ai_enabled)
-    monkeypatch.setattr(ai_mod, "_provider", lambda: provider)
+    monkeypatch.setattr(ai_mod, "_resolve_provider", lambda session: provider)
     return provider
 
 
@@ -154,6 +154,7 @@ class TestAskEndpoint:
         from scry import config as _config
 
         _config.get_settings.cache_clear()
+        monkeypatch.setattr(ai_mod, "_resolve_provider", lambda session: None)
         with TestClient(app) as client:
             r = client.post("/api/ai/ask", json={"question": "what ransomware?"})
             assert r.status_code == 503
@@ -166,7 +167,7 @@ class TestAskEndpoint:
             assert r.status_code == 200
             body = r.json()
             assert body["answer"] == "LockBit hit three US hospitals [1]."
-            assert body["model"] == MODEL_NAME
+            assert body["model"] == f"local/{MODEL_NAME}"
             assert isinstance(body["elapsed_ms"], int)
             # the seeded article was retrieved as source [1] with a UI link
             assert body["sources"][0]["n"] == 1
@@ -188,7 +189,7 @@ class TestAskEndpoint:
         with TestClient(app) as client:
             r = client.post("/api/ai/ask", json={"question": "anything"})
             assert r.status_code == 502
-            assert "Local model error" in r.json()["detail"]
+            assert "Model error" in r.json()["detail"]
 
 
 class TestKeywordRetrieval:

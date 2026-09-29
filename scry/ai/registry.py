@@ -106,3 +106,24 @@ def get_default_model(session: Session) -> tuple[str, str] | None:
         m = providers[0].list_models()[0]
         return (providers[0].name, m.model_id)
     return None
+
+
+def resolve_ai_provider(session: Session) -> tuple[LLMProvider | None, str]:
+    """Pick the provider that answers AI Search questions.
+
+    Priority: the DB-enabled provider row (bring-your-own-model), then the
+    bundled local GGUF if its file exists, then an auto-detected Ollama.
+    Returns (provider_or_none, provider_id).
+    """
+    row = session.query(LLMSetting).filter_by(enabled=True).first()
+    if row:
+        p = get_provider(session, row.provider)
+        if p is not None:
+            return p, row.provider
+    local = LocalLlamaProvider()
+    if local.is_available():
+        return local, "local"
+    ollama = OllamaProvider()
+    if ollama.is_available():
+        return ollama, "ollama"
+    return None, ""
