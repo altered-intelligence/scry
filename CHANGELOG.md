@@ -4,6 +4,29 @@ All notable changes to Scry are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 semantic versioning.
 
+## [0.3.0] — 2026-09-29
+
+### Added
+
+- **Bring your own model** — AI Search now answers through a configurable
+  LLM provider instead of only the bundled GGUF. A provider picker on
+  `/ui/search` offers **Local GGUF (bundled)**, **Ollama**, **OpenAI**,
+  **Anthropic**, **Google Gemini**, and **xAI**, with per-provider config
+  (API key, base URL, default model). Keys are encrypted at rest (Fernet,
+  key in `.cti_secret`) and only ever shown masked. Saving runs a connection
+  test; exactly one provider is active at a time. Resolution order: the
+  enabled provider → bundled GGUF → auto-detected Ollama. New
+  `GET/PUT /api/ai/provider` endpoints and `resolve_ai_provider()` in the
+  registry; the status pill names the active provider and model.
+
+### Fixed
+
+- **AI Search panel hidden by default**: `enable_ai_search` defaulted to
+  `false`, so only the npm preview launcher showed the panel. It now
+  defaults to **on** — a fresh install shows the panel with setup
+  instructions until `scry ai-setup` downloads the model. Set
+  `CTI_ENABLE_AI_SEARCH=false` to hide it.
+
 ## [0.2.0] — 2026-09-29
 
 ### Added

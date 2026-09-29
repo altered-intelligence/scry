@@ -120,6 +120,12 @@ The AI Search panel is **on by default** — until the model is downloaded it
 shows setup instructions instead of the question box. Set
 `CTI_ENABLE_AI_SEARCH=false` to hide it entirely.
 
+**Bring your own model**: a provider picker on the Search page switches the
+answer engine between the bundled local GGUF, an [Ollama](https://ollama.com)
+server, and frontier APIs (OpenAI / Anthropic / Google / xAI). Keys are
+encrypted at rest and only shown masked; exactly one provider is active at a
+time, falling back to the bundled model when none is configured.
+
 - Default model: **Qwen2.5-1.5B-Instruct Q4_K_M** (~1.0 GB on disk, ~2 GB RAM
   at runtime — comfortable on 8 GB machines). A larger alternative is
   Llama-3.2-3B Q4 (~2 GB); download its GGUF and set `CTI_AI_SEARCH_MODEL_PATH`.
