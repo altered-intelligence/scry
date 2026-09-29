@@ -1,0 +1,448 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{% block title %}Scry{% endblock %}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/svg+xml" href="/static/logo.svg">
+  <meta name="color-scheme" content="dark light">
+  <script>
+    (function () {
+      var t = localStorage.getItem('cti-theme');
+      if (!t) t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+  <style>
+    :root {
+      --bg: #0e1116;
+      --panel: #161b22;
+      --panel-2: #1c222b;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --good: #2ea043;
+      --bad: #f85149;
+      --warn: #d29922;
+      --mid: #58a6ff;
+      --dim: #6e7681;
+      --purple: #c084fc;
+      --tag-bg: rgba(88, 166, 255, 0.18);
+      --tag-bg-hover: rgba(88, 166, 255, 0.32);
+      --badge-bad-bg: rgba(248, 81, 73, 0.18);
+      --badge-warn-bg: rgba(210, 153, 34, 0.22);
+      --badge-mid-bg: rgba(88, 166, 255, 0.18);
+      --badge-good-bg: rgba(46, 160, 67, 0.18);
+      --badge-dim-bg: rgba(110, 118, 129, 0.18);
+      --badge-gray-bg: rgba(110, 118, 129, 0.10);
+      --badge-purple-bg: rgba(192, 132, 252, 0.18);
+      --shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+      --telegram: #58a6ff;
+      --tor: #a78bfa;
+    }
+    [data-theme="light"] {
+      --bg: #f6f8fa;
+      --panel: #ffffff;
+      --panel-2: #f0f2f5;
+      --border: #d0d7de;
+      --text: #1f2328;
+      --muted: #59636e;
+      --accent: #0969da;
+      --good: #1a7f37;
+      --bad: #d1242f;
+      --warn: #9a6700;
+      --mid: #0969da;
+      --dim: #6e7781;
+      --purple: #8250df;
+      --tag-bg: rgba(9, 105, 218, 0.10);
+      --tag-bg-hover: rgba(9, 105, 218, 0.20);
+      --badge-bad-bg: rgba(209, 36, 47, 0.12);
+      --badge-warn-bg: rgba(154, 103, 0, 0.14);
+      --badge-mid-bg: rgba(9, 105, 218, 0.10);
+      --badge-good-bg: rgba(26, 127, 55, 0.12);
+      --badge-dim-bg: rgba(110, 118, 129, 0.14);
+      --badge-gray-bg: rgba(110, 118, 129, 0.10);
+      --badge-purple-bg: rgba(130, 80, 223, 0.12);
+      --shadow: 0 8px 24px rgba(140, 149, 159, 0.35);
+      --telegram: #0969da;
+      --tor: #8250df;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    header.nav {
+      background: var(--panel);
+      padding: 12px 24px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      flex-wrap: wrap;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+    header.nav a { color: var(--text); text-decoration: none; font-size: 14px; padding: 4px 8px; border-radius: 4px; }
+    header.nav a:hover { background: var(--panel-2); color: var(--accent); }
+    header.nav a.brand { font-weight: 700; padding-left: 0; display: inline-flex; align-items: center; gap: 8px; font-size: 17px; letter-spacing: 0.02em; }
+    header.nav a.brand:hover { background: none; }
+    .brand-logo { width: 24px; height: 24px; display: block; }
+    header.nav .spacer { flex: 1; }
+    header.nav .meta { color: var(--muted); font-size: 12px; }
+    main { padding: 24px; max-width: 1280px; margin: 0 auto; }
+
+    h1, h2, h3 { color: var(--text); }
+    h1 { font-size: 24px; margin: 0 0 16px; }
+    h2 { font-size: 18px; margin: 24px 0 10px; }
+    h3 { font-size: 15px; margin: 16px 0 8px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code { background: var(--panel-2); padding: 1px 6px; border-radius: 4px; font-size: 13px; word-break: break-all; }
+    pre code { display: block; padding: 12px; overflow: auto; }
+
+    .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+    .grid-2 { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
+    @media (max-width: 900px) { .grid { grid-template-columns: repeat(2, 1fr); } .grid-2 { grid-template-columns: 1fr; } }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .card.click { cursor: pointer; transition: border-color 0.1s; }
+    .card.click:hover { border-color: var(--accent); }
+    .card .num { font-size: 28px; font-weight: 700; color: var(--accent); }
+    .card .lbl { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-top: 4px; }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 18px;
+      margin-bottom: 16px;
+    }
+
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: top; }
+    th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; }
+    tr:hover td { background: var(--panel-2); }
+
+    /* Tags */
+    .tag {
+      display: inline-block;
+      background: var(--tag-bg);
+      color: var(--accent);
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      margin: 2px 3px 2px 0;
+      text-decoration: none;
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+    .tag:hover { background: var(--tag-bg-hover); text-decoration: none; }
+    .chip {
+      display: inline-block;
+      background: var(--panel-2);
+      color: var(--text);
+      padding: 1px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      margin: 1px 2px;
+      border: 1px solid var(--border);
+    }
+
+    /* Badges */
+    .badge { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+    .badge.bad { background: var(--badge-bad-bg); color: var(--bad); }
+    .badge.warn { background: var(--badge-warn-bg); color: var(--warn); }
+    .badge.mid { background: var(--badge-mid-bg); color: var(--mid); }
+    .badge.good { background: var(--badge-good-bg); color: var(--good); }
+    .badge.dim { background: var(--badge-dim-bg); color: var(--dim); }
+    .badge.gray { background: var(--badge-gray-bg); color: var(--muted); }
+    .badge.blue { background: var(--badge-mid-bg); color: var(--accent); }
+    .badge.purple { background: var(--badge-purple-bg); color: var(--purple); }
+
+    /* Filters */
+    .filters {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-bottom: 16px;
+      display: flex;
+      gap: 12px;
+      align-items: end;
+      flex-wrap: wrap;
+    }
+    .filters label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; display: block; }
+    .filters input, .filters select, input[type=text], select, textarea {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 10px;
+      border-radius: 5px;
+      font-size: 13px;
+      font-family: inherit;
+      min-width: 140px;
+    }
+    .btn {
+      background: var(--good);
+      color: white;
+      border: 0;
+      padding: 7px 14px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      text-decoration: none;
+      display: inline-block;
+    }
+    .btn:hover { filter: brightness(1.15); text-decoration: none; }
+    .btn.secondary { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
+    .btn.danger { background: var(--bad); color: white; }
+
+    /* Layouts */
+    .hero {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px 24px;
+      margin-bottom: 18px;
+    }
+    .hero h1 { margin: 0 0 6px; }
+    .hero .meta { color: var(--muted); font-size: 13px; }
+    .hero .tags { margin-top: 10px; }
+
+    .sidebar {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 16px;
+      position: sticky;
+      top: 70px;
+    }
+    .sidebar h3:first-child { margin-top: 0; }
+
+    dl.kv { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0; font-size: 13px; }
+    dl.kv dt { color: var(--muted); }
+    dl.kv dd { margin: 0; word-break: break-word; }
+
+    /* Enrichment cards */
+    .enrich-card {
+      background: var(--panel-2);
+      border-radius: 6px;
+      padding: 12px 14px;
+      margin-bottom: 10px;
+    }
+    .enrich-head { font-size: 13px; margin-bottom: 6px; }
+    details.pulses { margin-top: 8px; }
+    details.pulses summary { cursor: pointer; }
+    details.pulses ul { margin: 8px 0 0; padding-left: 18px; font-size: 12px; line-height: 1.7; }
+    details.reason-expand summary { cursor: pointer; list-style: none; }
+    details.reason-expand summary::after { content: " ▸"; color: var(--muted); }
+    details.reason-expand[open] summary { white-space: normal; }
+    details.reason-expand[open] summary::after { content: " ▾"; }
+
+    .muted { color: var(--muted); font-size: 12px; }
+    .pagination { margin-top: 14px; display: flex; gap: 12px; align-items: center; }
+
+    .tag-cloud { display: flex; flex-wrap: wrap; gap: 6px; line-height: 2.2; }
+    .tag-cloud .tag { font-size: 13px; padding: 4px 12px; }
+    .tag-cloud .tag.size-xl { font-size: 20px; font-weight: 700; }
+    .tag-cloud .tag.size-l { font-size: 16px; font-weight: 600; }
+    .tag-cloud .tag.size-m { font-size: 14px; }
+    .tag-cloud .tag.size-s { font-size: 12px; }
+
+    .row { display: flex; gap: 12px; align-items: center; }
+    .truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 520px; }
+
+    .empty { color: var(--muted); padding: 24px; text-align: center; }
+
+    textarea { width: 100%; min-height: 80px; }
+    form.disposition { display: grid; gap: 8px; }
+
+    /* Dropdown nav */
+    .nav-dropdown { position: relative; }
+    .nav-dropdown > .nav-btn {
+      color: var(--text); text-decoration: none; font-size: 14px;
+      padding: 4px 8px; border-radius: 4px; cursor: pointer;
+      display: flex; align-items: center; gap: 4px;
+      background: none; border: none; font-family: inherit;
+    }
+    .nav-dropdown > .nav-btn:hover { background: var(--panel-2); color: var(--accent); }
+    .nav-dropdown > .nav-btn::after { content: "▾"; font-size: 10px; opacity: 0.6; }
+    .nav-dropdown .dropdown-menu {
+      display: none;
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      min-width: 160px;
+      z-index: 200;
+      box-shadow: var(--shadow);
+      padding: 4px 0;
+    }
+    .nav-dropdown:hover .dropdown-menu,
+    .nav-dropdown:focus-within .dropdown-menu { display: block; }
+    .nav-dropdown .dropdown-menu a {
+      display: block;
+      padding: 7px 14px;
+      font-size: 13px;
+      color: var(--text);
+      white-space: nowrap;
+    }
+    .nav-dropdown .dropdown-menu a:hover {
+      background: var(--panel-2); color: var(--accent); text-decoration: none;
+    }
+    .nav-dropdown .dropdown-menu .sub-header {
+      padding: 4px 14px 2px;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+    .nav-dropdown .dropdown-menu hr {
+      border: none; border-top: 1px solid var(--border); margin: 4px 0;
+    }
+
+    /* Category badge colors for threat feed */
+    .cat-ddos { background: var(--badge-bad-bg); color: var(--bad); }
+    .cat-breach { background: var(--badge-warn-bg); color: var(--warn); }
+    .cat-malware { background: var(--badge-purple-bg); color: var(--purple); }
+    .cat-access { background: var(--badge-mid-bg); color: var(--accent); }
+    .cat-other { background: var(--panel-2); color: var(--muted); }
+
+    .risk-bar { display: inline-block; width: 60px; height: 6px; border-radius: 3px; background: var(--panel-2); vertical-align: middle; }
+    .risk-bar-fill { height: 100%; border-radius: 3px; }
+
+    /* Network chips + danger accents (theme-aware) */
+    .chip-telegram { border-color: var(--telegram) !important; color: var(--telegram) !important; }
+    .chip-tor { border-color: var(--tor) !important; color: var(--tor) !important; }
+    .card.danger { border-color: var(--badge-bad-bg); }
+    .card.danger .num, .text-bad { color: var(--bad); }
+    .chip.danger-link { border-color: var(--badge-bad-bg); color: var(--bad); text-decoration: none; }
+
+    /* Flash banners */
+    .flash {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      margin-bottom: 16px;
+      font-size: 13px;
+      background: var(--panel);
+    }
+    .flash.success { border-color: var(--good); background: var(--badge-good-bg); color: var(--text); }
+    .flash.error { border-color: var(--bad); background: var(--badge-bad-bg); color: var(--text); }
+    .flash .flash-close {
+      background: none; border: none; color: var(--muted); cursor: pointer;
+      font-size: 16px; line-height: 1; padding: 2px 6px; border-radius: 4px;
+    }
+    .flash .flash-close:hover { color: var(--text); background: var(--panel-2); }
+
+    /* Theme toggle */
+    .theme-toggle {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 3px 9px;
+      cursor: pointer;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+    .theme-toggle:hover { background: var(--panel-2); color: var(--accent); }
+
+    /* Smooth theme transitions (disabled for reduced motion) */
+    body, header.nav, .card, .panel, .sidebar, .hero, .filters, .dropdown-menu {
+      transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      body, header.nav, .card, .panel, .sidebar, .hero, .filters, .dropdown-menu,
+      .tag, .card.click { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="nav">
+    <a href="/" class="brand">
+      <svg class="brand-logo" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <defs>
+          <radialGradient id="scry-ball" cx="38%" cy="30%" r="78%">
+            <stop offset="0%" style="stop-color:var(--accent);stop-opacity:.45"/>
+            <stop offset="100%" style="stop-color:var(--accent);stop-opacity:1"/>
+          </radialGradient>
+        </defs>
+        <path d="M7.6 19.3h8.8l1.7 2.7H5.9z" fill="var(--muted)"/>
+        <circle cx="12" cy="10.5" r="8" fill="url(#scry-ball)"/>
+        <circle cx="12" cy="10.5" r="8" fill="none" stroke="var(--accent)" stroke-opacity=".35"/>
+        <path d="M7.3 8.2a5.6 5.6 0 0 1 3.5-3.3" fill="none" stroke="#ffffff" stroke-opacity=".8" stroke-width="1.3" stroke-linecap="round"/>
+        <path d="M12 7.6l.8 1.6 1.6.8-1.6.8-.8 1.6-.8-1.6-1.6-.8 1.6-.8z" fill="#ffffff" fill-opacity=".95"/>
+      </svg>
+      <span>Scry</span>
+    </a>
+    <span class="meta" style="font-style:italic">Seeing threats before they arrive</span>
+    <div class="nav-dropdown">
+      <button class="nav-btn">Intel</button>
+      <div class="dropdown-menu">
+        <a href="/ui/articles">Articles</a>
+        <a href="/ui/observables">Observables</a>
+        <a href="/ui/cves">CVEs</a>
+        <a href="/ui/entities">Entities</a>
+        <a href="/ui/tags">Tags</a>
+        <a href="/ui/sources">Sources</a>
+      </div>
+    </div>
+    <a href="/ui/reviews">Reviews</a>
+    <a href="/ui/alerts">Alerts</a>
+    <div class="nav-dropdown">
+      <button class="nav-btn">Intel Feeds</button>
+      <div class="dropdown-menu">
+        <span class="sub-header">Threat Intelligence</span>
+        <a href="/ui/intel-feeds/threat-feeds">Threat Feeds</a>
+        <a href="/ui/intel-feeds/ransomware-feeds">Ransomware Feeds</a>
+      </div>
+    </div>
+    <a href="/ui/search">Search</a>
+    <a href="/docs" target="_blank" rel="noopener">API</a>
+    <span class="spacer"></span>
+    <span class="meta">Defensive use only · {{ request.url.hostname }}</span>
+    <button id="theme-toggle" class="theme-toggle" aria-label="Toggle light/dark theme" title="Toggle theme">☾</button>
+  </header>
+  <main>
+    {% if request.query_params.get('flash') %}
+    <div class="flash {{ request.query_params.get('flash_kind') if request.query_params.get('flash_kind') in ('success', 'error') else 'success' }}" role="status">
+      <span>{{ request.query_params.get('flash') }}</span>
+      <button type="button" class="flash-close" aria-label="Dismiss" onclick="this.closest('.flash').remove()">×</button>
+    </div>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </main>
+  <script>
+    (function () {
+      var btn = document.getElementById('theme-toggle');
+      function icon() { btn.textContent = document.documentElement.dataset.theme === 'light' ? '☀' : '☾'; }
+      btn.addEventListener('click', function () {
+        var next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+        document.documentElement.dataset.theme = next;
+        localStorage.setItem('cti-theme', next);
+        icon();
+      });
+      icon();
+    })();
+  </script>
+</body>
+</html>

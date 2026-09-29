@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}{{ cve.cve_id }} · CVE{% endblock %}
+{% block content %}
+
+<div class="hero">
+  <h1>{{ cve.cve_id }}</h1>
+  <div class="meta">
+    {{ cve.vendor or '?' }} · {{ cve.product or '?' }}
+    {% if cve.severity %} · severity <span class="badge {% if cve.severity == 'critical' %}bad{% elif cve.severity == 'high' %}warn{% elif cve.severity == 'medium' %}mid{% else %}dim{% endif %}">{{ cve.severity }}</span>{% endif %}
+    {% if cve.cvss_v3 %} · CVSS v3 {{ cve.cvss_v3 }}{% endif %}
+    {% if cve.epss %} · EPSS {{ cve.epss }}{% endif %}
+  </div>
+  <div class="tags" style="margin-top: 8px;">
+    {% if cve.kev %}{{ m.kev_badge() }}{% endif %}
+    {% if cve.exploited_in_the_wild %}{{ m.exploited_badge() }}{% endif %}
+    {% if cve.is_microsoft %}{{ m.ms_badge() }}{% endif %}
+    {% if cve.ransomware_associated %}{{ m.ransomware_badge() }}{% endif %}
+    {% if cve.public_poc_available %}{{ m.poc_badge() }}{% endif %}
+    {% if cve.metasploit_module %}<span class="badge warn">Metasploit</span>{% endif %}
+    {% if cve.nuclei_template %}<span class="badge mid">Nuclei</span>{% endif %}
+    {% if cve.patch_available %}<span class="badge good">patch</span>{% endif %}
+  </div>
+</div>
+
+<div class="grid-2">
+  <div>
+    {% if cve.description %}
+      <div class="panel">
+        <h3>Description</h3>
+        <p>{{ cve.description }}</p>
+      </div>
+    {% endif %}
+
+    {% if cve.recommended_mitigation %}
+      <div class="panel">
+        <h3>Recommended mitigation</h3>
+        <p>{{ cve.recommended_mitigation }}</p>
+      </div>
+    {% endif %}
+
+    {% if articles %}
+      <div class="panel">
+        <h3>Articles mentioning {{ cve.cve_id }} ({{ articles|length }})</h3>
+        <table>
+          <thead><tr><th>Title</th><th>Tags</th></tr></thead>
+          <tbody>
+            {% for a in articles %}
+            <tr><td>{{ m.article_link(a) }}</td><td>{{ m.tag_list(a.tags) }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+
+    {% if cve.references %}
+      <div class="panel">
+        <h3>References</h3>
+        <ul>
+          {% for ref in cve.references %}<li><a href="{{ ref }}" target="_blank" rel="noopener noreferrer">{{ ref }}</a></li>{% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+  </div>
+
+  <aside>
+    <div class="sidebar">
+      <h3>Metadata</h3>
+      <dl class="kv">
+        <dt>Vendor</dt><dd>{{ cve.vendor or '—' }}</dd>
+        <dt>Product</dt><dd>{{ cve.product or '—' }}</dd>
+        <dt>Affected versions</dt><dd>{% for v in (cve.affected_versions or []) %}<span class="chip">{{ v }}</span>{% endfor %}{% if not cve.affected_versions %}—{% endif %}</dd>
+        <dt>CWE IDs</dt><dd>{% for v in (cve.cwe_ids or []) %}<span class="chip">{{ v }}</span>{% endfor %}{% if not cve.cwe_ids %}—{% endif %}</dd>
+        <dt>Attack vector</dt><dd>{{ cve.attack_vector or '—' }}</dd>
+        <dt>Privileges required</dt><dd>{{ cve.privileges_required or '—' }}</dd>
+        <dt>User interaction</dt><dd>{{ cve.user_interaction or '—' }}</dd>
+        <dt>Published</dt><dd>{{ cve.published_at or '—' }}</dd>
+        <dt>KEV added</dt><dd>{{ cve.kev_added_at or '—' }}</dd>
+      </dl>
+    </div>
+  </aside>
+</div>
+
+{% endblock %}

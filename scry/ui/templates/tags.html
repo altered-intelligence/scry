@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Tags · Scry{% endblock %}
+{% block content %}
+
+<h1>Tags</h1>
+<p class="muted">{{ tag_buckets|length }} distinct tag(s) across observables, articles, and entities.</p>
+
+<form class="filters" method="get" action="/ui/tags">
+  <div>
+    <label>Search</label>
+    <input type="text" name="q" value="{{ filters.q or '' }}" placeholder="filter tag names…">
+  </div>
+  <button class="btn" type="submit">Filter</button>
+  <a class="btn secondary" href="/ui/tags">Reset</a>
+</form>
+
+<div class="panel">
+  <div class="tag-cloud">
+    {% for tag, count, size in tag_buckets %}
+      <a href="/ui/tags/{{ tag|urlencode }}" class="tag size-{{ size }}" title="{{ count }} item(s)">{{ tag }} <span class="muted">({{ count }})</span></a>
+    {% else %}
+      <span class="empty">No tags found.</span>
+    {% endfor %}
+  </div>
+</div>
+
+{% endblock %}

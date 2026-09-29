@@ -1,0 +1,7 @@
+Researchers observed a new campaign using AI-generated phishing emails targeting
+defense industrial base contractors. The lures were authored with an LLM and bypassed
+several legacy detection signatures. The campaign delivered a malicious .docm via
+hxxps://invoice-portal[.]example[.]com/po-2026-0517.docm.
+
+Defenders should treat prompt injection as a relevant adversarial AI threat and consider
+agentic AI abuse in scenario planning.

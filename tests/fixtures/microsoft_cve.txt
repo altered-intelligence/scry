@@ -1,0 +1,13 @@
+Microsoft Patch Tuesday update for May 2026 addresses 60 vulnerabilities, including
+CVE-2026-12001, a critical Windows remote code execution vulnerability that is actively
+exploited in the wild. The flaw resides in the Windows Print Spooler service and allows
+unauthenticated remote code execution with SYSTEM privileges.
+
+Affected products: Windows Server 2019, Windows Server 2022, Windows 10, Windows 11.
+A proof of concept has been published on GitHub. The CVE has been added to the CISA KEV
+catalog.
+
+Recommended actions: apply the May 2026 cumulative update. Hunt for spoolsv.exe spawning
+unusual child processes (T1059.001).
+
+Reach out to msrc@microsoft.com for additional guidance.

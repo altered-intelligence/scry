@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Review #{{ review.id }}{% endblock %}
+{% block content %}
+
+<div class="hero">
+  <h1>Review #{{ review.id }}</h1>
+  <div class="meta">
+    <span class="chip">{{ review.item_type }} #{{ review.item_id }}</span>
+    {% if review.status == 'open' %}<span class="badge warn">open</span>{% else %}<span class="badge dim">{{ review.status }}</span>{% endif %}
+    · recommended action {{ m.action_badge(review.recommended_action) }}
+    · confidence {{ review.confidence }}
+  </div>
+  {% if linked_url %}<div class="meta">Item: <a href="{{ linked_url }}">{{ linked_url }}</a></div>{% endif %}
+</div>
+
+<div class="grid-2">
+  <div>
+    <div class="panel">
+      <h3>Reason</h3>
+      <p>{{ review.reason }}</p>
+    </div>
+
+    {% if review.evidence_text %}
+      <div class="panel">
+        <h3>Evidence</h3>
+        <pre style="white-space: pre-wrap; font-size: 13px;">{{ review.evidence_text }}</pre>
+      </div>
+    {% endif %}
+
+    {% if review.comments %}
+      <div class="panel">
+        <h3>Analyst comments</h3>
+        <p>{{ review.comments }}</p>
+      </div>
+    {% endif %}
+
+    {% if review.correction %}
+      <div class="panel">
+        <h3>Correction</h3>
+        <pre><code>{{ correction_json }}</code></pre>
+      </div>
+    {% endif %}
+
+    <div class="panel">
+      <h3>Update disposition</h3>
+      <form method="post" action="/ui/reviews/{{ review.id }}" class="disposition">
+        <label>Status
+          <select name="status">
+            {% for s in ['open','in_progress','closed'] %}<option value="{{ s }}" {% if review.status == s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+          </select>
+        </label>
+        <label>Disposition
+          <select name="disposition">
+            <option value="">—</option>
+            {% for d in ['true_positive','false_positive','benign','duplicate','needs_more_research','escalated','mitigated','expired'] %}
+              <option value="{{ d }}" {% if review.disposition == d %}selected{% endif %}>{{ d }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>Analyst
+          <input type="text" name="analyst" value="{{ review.analyst or '' }}">
+        </label>
+        <label>Comments
+          <textarea name="comments">{{ review.comments or '' }}</textarea>
+        </label>
+        <div>
+          <button class="btn" type="submit">Save</button>
+          <a class="btn secondary" href="/ui/reviews">Back</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <aside>
+    <div class="sidebar">
+      <h3>Metadata</h3>
+      <dl class="kv">
+        <dt>Review ID</dt><dd>#{{ review.id }}</dd>
+        <dt>Type</dt><dd>{{ review.item_type }}</dd>
+        <dt>Item</dt><dd>#{{ review.item_id }}</dd>
+        <dt>Article</dt><dd>{% if review.article_id %}<a href="/ui/articles/{{ review.article_id }}">#{{ review.article_id }}</a>{% else %}—{% endif %}</dd>
+        <dt>Created</dt><dd>{{ review.created_at | timeago }}</dd>
+        <dt>Reviewed at</dt><dd>{{ review.reviewed_at | timeago if review.reviewed_at else '—' }}</dd>
+      </dl>
+    </div>
+  </aside>
+</div>
+
+{% endblock %}

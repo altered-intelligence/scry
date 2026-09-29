@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}{{ observable.type }}:{{ observable.normalized_value }} · Observable{% endblock %}
+{% block content %}
+
+<div class="hero">
+  <h1><span class="chip">{{ observable.type }}</span> <code>{{ observable.normalized_value }}</code></h1>
+  <div class="meta">
+    {{ m.risk_badge(observable.risk_score) }} risk ·
+    {{ m.action_badge(observable.actionability) }} ·
+    status <span class="chip">{{ observable.status }}</span>
+    {% if observable.defanged_value %} · defanged <code>{{ observable.defanged_value }}</code>{% endif %}
+  </div>
+  <div class="tags">{{ m.tag_list(observable.tags) }}</div>
+</div>
+
+<div class="grid-2">
+  <div>
+    <div class="panel">
+      <h3>Confidence + lifecycle</h3>
+      <dl class="kv">
+        <dt>Extraction conf.</dt><dd>{{ observable.extraction_confidence }}</dd>
+        <dt>Maliciousness conf.</dt><dd>{{ observable.maliciousness_confidence }}</dd>
+        <dt>False-positive risk</dt><dd>{{ observable.false_positive_risk }}</dd>
+        <dt>First seen</dt><dd>{{ observable.first_seen or '—' }}</dd>
+        <dt>Last seen</dt><dd>{{ observable.last_seen or '—' }}</dd>
+        <dt>First reported</dt><dd>{{ observable.first_reported or '—' }}</dd>
+        <dt>Last reported</dt><dd>{{ observable.last_reported or '—' }}</dd>
+        <dt>TTL</dt><dd>{{ observable.ttl_days }} day(s){% if observable.ttl_days == 0 %} (never expires){% endif %}</dd>
+        <dt>Expires</dt><dd>{{ observable.expiration_date or '—' }}</dd>
+        <dt>Scoring model</dt><dd>{{ observable.scoring_model_version }}</dd>
+      </dl>
+    </div>
+
+    {% if observable.enrichment %}
+      <div class="panel">
+        <h3>Enrichment</h3>
+        {{ m.enrichment_summary(observable.enrichment) }}
+        {% set other = {} %}
+        {% for k, v in observable.enrichment.items() if k not in ('virustotal','otx','virustotal_checked_at','otx_checked_at','prevalence','enrichment_score_notes') %}
+          {# accumulate into other via macro trick: we'll just list them #}
+        {% endfor %}
+        <details>
+          <summary class="muted">Show raw enrichment JSON</summary>
+          <pre><code>{{ enrichment_json }}</code></pre>
+        </details>
+      </div>
+    {% endif %}
+
+    <div class="panel">
+      <h3>Mentions ({{ mentions|length }})</h3>
+      <table>
+        <thead><tr><th>Article</th><th>Evidence</th><th>Confidence</th></tr></thead>
+        <tbody>
+          {% for art, mention in mentions %}
+          <tr>
+            <td>{{ m.article_link(art) }}</td>
+            <td class="truncate" title="{{ mention.evidence_text }}">{{ mention.evidence_text[:240] }}</td>
+            <td>{{ mention.extraction_confidence }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="3" class="empty">No article mentions recorded.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if relationships %}
+      <div class="panel">
+        <h3>Relationships ({{ relationships|length }})</h3>
+        <table>
+          <thead><tr><th>Direction</th><th>Type</th><th>Target</th><th>Confidence</th><th>Evidence</th></tr></thead>
+          <tbody>
+            {% for direction, rel, other in relationships %}
+            <tr>
+              <td>{% if direction == 'out' %}→ outgoing{% else %}← incoming{% endif %}</td>
+              <td><span class="chip">{{ rel.relationship_type }}</span></td>
+              <td>
+                {% if other and other.kind == 'entity' %}
+                  <a href="/ui/entities/{{ other.id }}"><span class="chip">{{ other.type }}</span> {{ other.label }}</a>
+                {% elif other and other.kind == 'observable' %}
+                  <a href="/ui/observables/{{ other.id }}"><span class="chip">{{ other.type }}</span> <code>{{ other.label }}</code></a>
+                {% else %}
+                  <span class="chip">{{ rel.target_type if direction == 'out' else rel.source_type }}</span> #{{ rel.target_id if direction == 'out' else rel.source_id }}
+                {% endif %}
+              </td>
+              <td>{{ rel.confidence }}</td>
+              <td class="truncate" title="{{ rel.evidence_text }}">{{ (rel.evidence_text or '')[:200] }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  </div>
+
+  <aside>
+    <div class="sidebar">
+      <h3>Identifiers</h3>
+      <dl class="kv">
+        <dt>ID</dt><dd>#{{ observable.id }}</dd>
+        <dt>Type</dt><dd><span class="chip">{{ observable.type }}</span></dd>
+        <dt>Original value</dt><dd><code>{{ observable.value }}</code></dd>
+        <dt>Normalised</dt><dd><code>{{ observable.normalized_value }}</code></dd>
+        <dt>Defanged</dt><dd>{% if observable.defanged_value %}<code>{{ observable.defanged_value }}</code>{% else %}—{% endif %}</dd>
+        <dt>Validation</dt><dd>{{ observable.validation_status }}</dd>
+      </dl>
+      {% if vt_provider_status or otx_provider_status %}
+        <h3>Enrichment providers</h3>
+        <dl class="kv">
+          {% if vt_provider_status %}<dt>VirusTotal</dt><dd>{{ vt_provider_status }}</dd>{% endif %}
+          {% if otx_provider_status %}<dt>OTX</dt><dd>{{ otx_provider_status }}</dd>{% endif %}
+        </dl>
+      {% endif %}
+    </div>
+  </aside>
+</div>
+
+{% endblock %}

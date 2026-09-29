@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}{{ item.post_title[:60] }} · Ransomware Feeds{% endblock %}
+{% block content %}
+
+<div class="hero">
+  <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+    <a href="/ui/intel-feeds/ransomware-feeds" style="color:var(--muted);font-size:13px">← Ransomware Feeds</a>
+    {% if item.group_name %}
+      <span class="badge bad">{{ item.group_name }}</span>
+    {% endif %}
+    {% if item.victim_country %}
+      <span class="chip">{{ item.victim_country }}</span>
+    {% endif %}
+    {% if item.activity %}
+      <span class="chip">{{ item.activity }}</span>
+    {% endif %}
+    {% if item.risk_score is not none %}
+      {% if item.risk_score >= 75 %}
+        <span class="badge bad">Risk {{ item.risk_score | int }}</span>
+      {% elif item.risk_score >= 50 %}
+        <span class="badge warn">Risk {{ item.risk_score | int }}</span>
+      {% else %}
+        <span class="badge dim">Risk {{ item.risk_score | int }}</span>
+      {% endif %}
+    {% endif %}
+    {% if item.claim_url %}
+      <span class="chip chip-tor">🧅 Tor / Leak Site</span>
+    {% endif %}
+  </div>
+  <h1>{{ item.post_title }}</h1>
+  <div class="meta">
+    {% if item.discovered %}Discovered: {{ item.discovered.strftime('%A, %B %d, %Y') }}{% endif %}
+    {% if item.published %} · Published: {{ item.published.strftime('%B %d, %Y') }}{% endif %}
+    {% if item.group_name %} · Actor: <strong>{{ item.group_name }}</strong>{% endif %}
+  </div>
+  {% if item.tags %}
+  <div class="tags" style="margin-top:10px">
+    {% for tag in item.tags %}
+    <a href="/ui/intel-feeds/ransomware-feeds?q={{ tag | urlencode }}" class="tag">{{ tag }}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+
+<div class="grid-2">
+  {# --- Main content --- #}
+  <div>
+    {% if item.description %}
+    <div class="panel">
+      <h3>Description</h3>
+      <p style="font-size:14px;line-height:1.7;white-space:pre-wrap">{{ item.description }}</p>
+    </div>
+    {% endif %}
+
+    {% if related %}
+    <div class="panel">
+      <h3>More from {{ item.group_name }} ({{ related | length }} recent)</h3>
+      <table>
+        <thead><tr><th>Discovered</th><th>Country</th><th>Sector</th><th>Victim</th></tr></thead>
+        <tbody>
+          {% for r in related %}
+          <tr>
+            <td class="muted" style="white-space:nowrap;font-size:12px">{{ r.discovered.strftime('%Y-%m-%d') if r.discovered else '—' }}</td>
+            <td class="muted" style="font-size:12px">{{ r.victim_country or '—' }}</td>
+            <td class="muted" style="font-size:12px">{{ (r.activity or '—')[:20] }}</td>
+            <td><a href="/ui/intel-feeds/ransomware-feeds/{{ r.id }}">{{ r.post_title[:70] }}{% if r.post_title|length > 70 %}…{% endif %}</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    {% if country_peers %}
+    <div class="panel">
+      <h3>Other {{ item.victim_country }} victims ({{ country_peers | length }} recent)</h3>
+      <table>
+        <thead><tr><th>Discovered</th><th>Group</th><th>Sector</th><th>Victim</th></tr></thead>
+        <tbody>
+          {% for r in country_peers %}
+          <tr>
+            <td class="muted" style="white-space:nowrap;font-size:12px">{{ r.discovered | timeago }}</td>
+            <td>
+              <a href="/ui/intel-feeds/ransomware-feeds?group={{ r.group_name | urlencode }}" class="chip danger-link" style="font-size:10px">
+                {{ r.group_name or '—' }}
+              </a>
+            </td>
+            <td class="muted" style="font-size:12px">{{ (r.activity or '—')[:20] }}</td>
+            <td><a href="/ui/intel-feeds/ransomware-feeds/{{ r.id }}">{{ r.post_title[:65] }}{% if r.post_title|length > 65 %}…{% endif %}</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+
+  {# --- Sidebar --- #}
+  <div class="sidebar">
+    <h3>Details</h3>
+    <dl class="kv">
+      <dt>Group</dt>
+      <dd>
+        {% if item.group_name %}
+        <a href="/ui/intel-feeds/ransomware-feeds?group={{ item.group_name | urlencode }}">{{ item.group_name }}</a>
+        {% else %}—{% endif %}
+      </dd>
+
+      <dt>Discovered</dt>
+      <dd>{{ item.discovered.strftime('%Y-%m-%d') if item.discovered else '—' }}</dd>
+
+      <dt>Published</dt>
+      <dd>{{ item.published.strftime('%Y-%m-%d') if item.published else '—' }}</dd>
+
+      <dt>Ingested</dt>
+      <dd>{{ item.ingested_at.strftime('%Y-%m-%d') if item.ingested_at else '—' }}</dd>
+    </dl>
+
+    <div style="margin-top:12px">
+      <h3>Victim</h3>
+      <dl class="kv">
+        <dt>Country</dt>
+        <dd>
+          {% if item.victim_country %}
+          <a href="/ui/intel-feeds/ransomware-feeds?country={{ item.victim_country | urlencode }}">{{ item.victim_country }}</a>
+          {% else %}—{% endif %}
+        </dd>
+        <dt>Sector</dt>
+        <dd>
+          {% if item.activity %}
+          <a href="/ui/intel-feeds/ransomware-feeds?industry={{ item.activity | urlencode }}">{{ item.activity }}</a>
+          {% else %}—{% endif %}
+        </dd>
+        <dt>Website</dt>
+        <dd>{% if item.victim_website %}<code style="font-size:11px">{{ item.victim_website }}</code>{% else %}—{% endif %}</dd>
+      </dl>
+    </div>
+
+    {% if item.post_url %}
+    <div style="margin-top:12px">
+      <h3>Post URL</h3>
+      <div style="font-size:11px;word-break:break-all">
+        <code>{{ item.post_url[:100] }}{% if item.post_url|length > 100 %}…{% endif %}</code>
+        <br><span class="muted">(Do not open untrusted links directly)</span>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if item.claim_url %}
+    <div style="margin-top:12px">
+      <h3>Claim / Leak URL</h3>
+      <div style="font-size:11px;word-break:break-all">
+        <span class="chip chip-tor" style="margin-bottom:4px;display:inline-block">🧅 Tor</span><br>
+        <code>{{ item.claim_url[:100] }}{% if item.claim_url|length > 100 %}…{% endif %}</code>
+        <br><span class="muted" style="font-size:10px">⚠ Dark web URL — do not visit</span>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if item.group_name %}
+    <div style="margin-top:14px">
+      <a href="/ui/intel-feeds/ransomware-feeds?group={{ item.group_name | urlencode }}" class="btn secondary" style="font-size:12px;padding:5px 10px;width:100%;text-align:center;display:block">
+        All {{ item.group_name }} victims →
+      </a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}

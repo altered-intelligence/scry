@@ -1,0 +1,50 @@
+pirs:
+  - id: PIR-001
+    question: What new vulnerabilities are being actively exploited against Microsoft products?
+    watchlists: [microsoft_vulnerabilities, exploited_in_the_wild]
+    priority: high
+
+  - id: PIR-002
+    question: What ransomware groups are targeting healthcare, finance, government, or defense?
+    watchlists: [ransomware, defense_industrial_base]
+    priority: high
+
+  - id: PIR-003
+    question: What novel TTPs are being observed in active campaigns?
+    watchlists: []
+    priority: medium
+
+  - id: PIR-004
+    question: What AI-enabled attacks are being reported?
+    watchlists: [ai_security]
+    priority: medium
+
+  - id: PIR-005
+    question: What new exploit PoCs were released in the last 72 hours?
+    watchlists: [exploit_pocs]
+    priority: high
+
+  - id: PIR-006
+    question: What threats are relevant to the US defense industry?
+    watchlists: [defense_industrial_base]
+    priority: high
+
+  - id: PIR-007
+    question: What wiper malware has been observed in geopolitical conflicts?
+    watchlists: [wipers]
+    priority: medium
+
+  - id: PIR-008
+    question: What malware families are using new C2 infrastructure?
+    watchlists: []
+    priority: medium
+
+  - id: PIR-009
+    question: What new initial access techniques are emerging?
+    watchlists: []
+    priority: medium
+
+  - id: PIR-010
+    question: What vulnerabilities are being adopted by ransomware groups?
+    watchlists: [exploited_in_the_wild, ransomware]
+    priority: high

@@ -1,0 +1,347 @@
+# Source registry. Every source has an enable flag, baseline confidence,
+# source type, tags, and collection policy. Disable risky sources by default.
+# Aggregators do not count as independent confirmation.
+
+sources:
+  # ---------- Vendor research (primary) ----------
+  - name: CrowdStrike Blog
+    type: vendor_blog
+    url: https://www.crowdstrike.com/en-us/blog/
+    feed: https://www.crowdstrike.com/blog/feed/
+    enabled: true
+    priority: high
+    baseline_confidence: 92
+    collection_policy: safe_public_web
+    independent: true
+    rate_limit_per_minute: 10
+    tags: [vendor, threat-research, primary-source]
+
+  - name: Fortinet Threat Research
+    type: vendor_blog
+    url: https://www.fortinet.com/blog/threat-research
+    feed: https://feeds.fortinet.com/fortinet/blog/threat-research
+    enabled: true
+    priority: high
+    baseline_confidence: 92
+    collection_policy: safe_public_web
+    independent: true
+    rate_limit_per_minute: 10
+    tags: [vendor, threat-research, primary-source]
+
+  - name: Palo Alto Unit 42
+    type: vendor_blog
+    url: https://www.paloaltonetworks.com/blog/author/unit-42/
+    feed: https://unit42.paloaltonetworks.com/feed/
+    enabled: true
+    priority: high
+    baseline_confidence: 93
+    collection_policy: safe_public_web
+    independent: true
+    rate_limit_per_minute: 10
+    tags: [vendor, threat-research, primary-source]
+
+  - name: Check Point Blog
+    type: vendor_blog
+    url: https://blog.checkpoint.com/
+    feed: https://blog.checkpoint.com/feed/
+    enabled: true
+    priority: medium
+    baseline_confidence: 88
+    collection_policy: safe_public_web
+    independent: true
+    rate_limit_per_minute: 10
+    tags: [vendor, threat-research]
+
+  - name: Google Cloud Threat Intelligence (Mandiant)
+    type: vendor_blog
+    url: https://cloud.google.com/blog/topics/threat-intelligence
+    feed: https://cloud.google.com/blog/topics/threat-intelligence/rss/
+    enabled: true
+    priority: high
+    baseline_confidence: 93
+    collection_policy: safe_public_web
+    independent: true
+    rate_limit_per_minute: 10
+    tags: [vendor, threat-research, primary-source, mandiant]
+
+  - name: Microsoft Security Blog
+    type: vendor_blog
+    url: https://www.microsoft.com/en-us/security/blog/
+    feed: https://www.microsoft.com/en-us/security/blog/feed/
+    enabled: true
+    priority: high
+    baseline_confidence: 90
+    collection_policy: safe_public_web
+    independent: true
+    rate_limit_per_minute: 10
+    tags: [vendor, microsoft, threat-research, primary-source]
+    notes: "WAF blocks curl-like UAs; fetcher must send a feed-reader/browser User-Agent."
+
+  - name: ESET WeLiveSecurity
+    type: vendor_blog
+    url: https://www.welivesecurity.com/en/
+    feed: https://www.welivesecurity.com/en/rss/feed/
+    enabled: true
+    priority: high
+    baseline_confidence: 90
+    collection_policy: safe_public_web
+    independent: true
+    rate_limit_per_minute: 10
+    tags: [vendor, threat-research, primary-source]
+
+  - name: Sophos X-Ops
+    type: vendor_blog
+    url: https://news.sophos.com/en-us/
+    enabled: false
+    priority: medium
+    baseline_confidence: 88
+    collection_policy: safe_public_web
+    independent: true
+    rate_limit_per_minute: 10
+    tags: [vendor, threat-research]
+    notes: "Disabled: RSS endpoint broke after Sophos site migration (news.sophos.com feeds now redirect to 404). Re-enable once a working feed URL is confirmed."
+
+  # ---------- News & media ----------
+  - name: SecurityWeek
+    type: news
+    url: https://www.securityweek.com/
+    feed: https://feeds.feedburner.com/securityweek
+    enabled: true
+    priority: medium
+    baseline_confidence: 80
+    collection_policy: safe_public_web
+    independent: false
+    rate_limit_per_minute: 15
+    tags: [news, security]
+
+  - name: The Hacker News
+    type: news
+    url: https://thehackernews.com/
+    feed: https://feeds.feedburner.com/TheHackersNews
+    enabled: true
+    priority: medium
+    baseline_confidence: 70
+    collection_policy: safe_public_web
+    independent: false
+    rate_limit_per_minute: 15
+    tags: [news, aggregator]
+
+  - name: BleepingComputer
+    type: news
+    url: https://www.bleepingcomputer.com/
+    feed: https://www.bleepingcomputer.com/feed/
+    enabled: true
+    priority: medium
+    baseline_confidence: 82
+    collection_policy: safe_public_web
+    independent: false
+    rate_limit_per_minute: 15
+    tags: [news, security]
+
+  - name: Dark Reading
+    type: news
+    url: https://www.darkreading.com/
+    feed: https://www.darkreading.com/rss.xml
+    enabled: true
+    priority: medium
+    baseline_confidence: 78
+    collection_policy: safe_public_web
+    independent: false
+    rate_limit_per_minute: 15
+    tags: [news, security]
+
+  - name: The Record
+    type: news
+    url: https://therecord.media/
+    feed: https://therecord.media/feed
+    enabled: true
+    priority: medium
+    baseline_confidence: 80
+    collection_policy: safe_public_web
+    independent: false
+    rate_limit_per_minute: 15
+    tags: [news, security]
+
+  - name: Ars Technica Security
+    type: news
+    url: https://arstechnica.com/security/
+    feed: https://feeds.arstechnica.com/arstechnica/security
+    enabled: true
+    priority: low
+    baseline_confidence: 75
+    collection_policy: safe_public_web
+    independent: false
+    rate_limit_per_minute: 15
+    tags: [news]
+
+  # ---------- Government / vulnerability feeds ----------
+  - name: CISA KEV
+    type: vuln_feed
+    url: https://www.cisa.gov/known-exploited-vulnerabilities-catalog
+    feed: https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json
+    enabled: true
+    priority: high
+    baseline_confidence: 98
+    collection_policy: safe_public_web
+    independent: true
+    rate_limit_per_minute: 4
+    tags: [government, kev, vulnerability, primary-source]
+
+  - name: CISA Advisories
+    type: vuln_feed
+    url: https://www.cisa.gov/news-events/cybersecurity-advisories
+    feed: https://www.cisa.gov/cybersecurity-advisories/all.xml
+    enabled: true
+    priority: high
+    baseline_confidence: 97
+    collection_policy: safe_public_web
+    independent: true
+    rate_limit_per_minute: 4
+    tags: [government, advisory]
+
+  - name: CISA AIS (TAXII)
+    type: vuln_feed
+    url: https://www.cisa.gov/topics/cyber-threats-and-advisories/information-sharing/automated-indicator-sharing-ais
+    enabled: false
+    priority: high
+    baseline_confidence: 98
+    collection_policy: safe_public_web
+    independent: true
+    rate_limit_per_minute: 2
+    tags: [government, ais, taxii, primary-source]
+    notes: "Automated Indicator Sharing over TAXII 2.x (discovery https://ais2.cisa.gov/taxii2/). Requires AIS membership + certificate auth and a TAXII connector — not yet implemented (CTI_TAXII_URL settings are placeholders)."
+
+  - name: NVD CVE Feed
+    type: vuln_feed
+    url: https://nvd.nist.gov/
+    feed: https://services.nvd.nist.gov/rest/json/cves/2.0
+    enabled: false
+    priority: high
+    baseline_confidence: 95
+    collection_policy: safe_public_web
+    independent: true
+    rate_limit_per_minute: 2
+    tags: [government, vulnerability, primary-source]
+    notes: "Disabled by default; requires API key for higher rate limits."
+
+  - name: CVEmon
+    type: vuln_feed
+    url: https://cvemon.intruder.io/
+    enabled: false
+    priority: medium
+    baseline_confidence: 75
+    collection_policy: safe_public_web
+    independent: false
+    rate_limit_per_minute: 10
+    tags: [aggregator, vulnerability]
+
+  # ---------- SANS / community research ----------
+  - name: SANS ISC
+    type: research
+    url: https://isc.sans.edu/
+    feed: https://isc.sans.edu/rssfeed.xml
+    enabled: true
+    priority: high
+    baseline_confidence: 90
+    collection_policy: safe_public_web
+    independent: true
+    rate_limit_per_minute: 10
+    tags: [research, primary-source]
+
+  # ---------- Reddit (community signal) ----------
+  - name: Reddit /r/netsec
+    type: reddit
+    url: https://www.reddit.com/r/netsec/
+    feed: https://www.reddit.com/r/netsec/.rss
+    enabled: true
+    priority: low
+    baseline_confidence: 60
+    collection_policy: public_social_metadata
+    independent: false
+    rate_limit_per_minute: 10
+    tags: [social, community]
+
+  - name: Reddit /r/cybersecurity
+    type: reddit
+    url: https://www.reddit.com/r/cybersecurity/
+    feed: https://www.reddit.com/r/cybersecurity/.rss
+    enabled: true
+    priority: low
+    baseline_confidence: 55
+    collection_policy: public_social_metadata
+    independent: false
+    rate_limit_per_minute: 10
+    tags: [social, community]
+
+  # ---------- Aggregators (do not count as independent) ----------
+  - name: NewsNow Cybersecurity
+    type: aggregator
+    url: https://www.newsnow.com/us/Tech/Cyber+Security
+    enabled: false
+    priority: low
+    baseline_confidence: 40
+    collection_policy: safe_public_web
+    independent: false
+    rate_limit_per_minute: 10
+    tags: [aggregator]
+    notes: "Aggregator. Disabled by default; enabling does not boost confirmation count."
+
+  - name: TLDR Tech
+    type: newsletter
+    url: https://tldr.tech/
+    enabled: false
+    priority: low
+    baseline_confidence: 55
+    collection_policy: safe_public_web
+    independent: false
+    rate_limit_per_minute: 10
+    tags: [newsletter, aggregator]
+
+  - name: Cybersec Stats
+    type: aggregator
+    url: https://www.cybersecstats.com/
+    enabled: false
+    priority: low
+    baseline_confidence: 45
+    collection_policy: safe_public_web
+    independent: false
+    rate_limit_per_minute: 10
+    tags: [aggregator, stats]
+
+  - name: start.me InfoSec
+    type: aggregator
+    url: https://start.me/p/q6ALJb/infosec
+    enabled: false
+    priority: low
+    baseline_confidence: 40
+    collection_policy: safe_public_web
+    independent: false
+    rate_limit_per_minute: 5
+    tags: [link-directory]
+
+  # ---------- GitHub references (metadata only) ----------
+  - name: GitHub awesome-osint
+    type: github_repo
+    url: https://github.com/jivoi/awesome-osint
+    enabled: false
+    priority: low
+    baseline_confidence: 60
+    collection_policy: metadata_only
+    independent: false
+    rate_limit_per_minute: 5
+    tags: [github, directory, osint]
+    notes: "Source directory only. Do not auto-clone or scrape sub-projects."
+
+  # ---------- Passive dark web (DISABLED) ----------
+  - name: Passive Dark Web Sources
+    type: onion
+    url: ""
+    enabled: false
+    priority: low
+    baseline_confidence: 35
+    collection_policy: passive_metadata_only
+    safety_mode: passive_only
+    independent: false
+    rate_limit_per_minute: 1
+    tags: [darkweb, passive-osint, analyst-review-required]
+    notes: "Disabled by default. Passive metadata only when explicitly enabled. No authentication, no purchases, no credential collection."

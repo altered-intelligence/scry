@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}{{ article.title or article.url }} · Article{% endblock %}
+{% block content %}
+
+<div class="hero">
+  <h1>{{ article.title or '(no title)' }}</h1>
+  <div class="meta">
+    <a href="{{ article.url }}" target="_blank" rel="noopener noreferrer">{{ article.url }}</a>
+    {% if article.author %} · by {{ article.author }}{% endif %}
+    {% if article.published_at %} · published {{ article.published_at | timeago }}{% endif %}
+    {% if article.ingested_at %} · ingested {{ article.ingested_at | timeago }}{% endif %}
+  </div>
+  <div class="tags">{{ m.tag_list(article.tags) }}</div>
+</div>
+
+<div class="grid-2">
+  <div>
+    {% if article.summary %}
+      <div class="panel">
+        <h3>Summary</h3>
+        <p>{{ article.summary }}</p>
+      </div>
+    {% endif %}
+
+    {% if article.extracted_text %}
+      <div class="panel">
+        <h3>Extracted text</h3>
+        <div style="white-space: pre-wrap; font-size: 13px;">{{ article.extracted_text[:8000] }}{% if article.extracted_text|length > 8000 %}<br><span class="muted">… truncated ({{ article.extracted_text|length }} chars total)</span>{% endif %}</div>
+      </div>
+    {% endif %}
+
+    <div class="panel">
+      <h3>Observables mentioned ({{ observable_mentions|length }})</h3>
+      <table>
+        <thead><tr><th>Type</th><th>Value</th><th>Risk</th><th>Action</th><th>Tags</th></tr></thead>
+        <tbody>
+          {% for ob, mention in observable_mentions %}
+          <tr>
+            <td><span class="chip">{{ ob.type }}</span></td>
+            <td>{{ m.observable_link(ob) }}</td>
+            <td>{{ m.risk_badge(ob.risk_score) }}</td>
+            <td>{{ m.action_badge(ob.actionability) }}</td>
+            <td>{{ m.tag_list(ob.tags) }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="empty">No observables linked.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <h3>Entities mentioned ({{ entity_mentions|length }})</h3>
+      <table>
+        <thead><tr><th>Type</th><th>Name</th><th>Confidence</th></tr></thead>
+        <tbody>
+          {% for e, mention in entity_mentions %}
+          <tr>
+            <td><span class="chip">{{ e.type }}</span></td>
+            <td>{{ m.entity_link(e) }}</td>
+            <td>{{ mention.extraction_confidence }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="3" class="empty">No entities linked.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if claims %}
+      <div class="panel">
+        <h3>Claims ({{ claims|length }})</h3>
+        <table>
+          <thead><tr><th>Type</th><th>Text</th><th>Confidence</th><th>Review</th></tr></thead>
+          <tbody>
+            {% for c in claims %}
+            <tr>
+              <td><span class="chip">{{ c.claim_type }}</span></td>
+              <td class="truncate" title="{{ c.claim_text }}">{{ c.claim_text }}</td>
+              <td>{{ c.confidence }}</td>
+              <td>{% if c.needs_review %}<span class="badge warn">{{ c.review_status }}</span>{% else %}<span class="badge dim">{{ c.review_status }}</span>{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  </div>
+
+  <aside>
+    <div class="sidebar">
+      <h3>Metadata</h3>
+      <dl class="kv">
+        <dt>Article ID</dt><dd>#{{ article.id }}</dd>
+        <dt>Source</dt><dd>{% if source %}<a href="/sources/{{ source.id }}">{{ source.name }}</a>{% else %}—{% endif %}</dd>
+        <dt>Source confidence</dt><dd>{{ article.source_confidence }}</dd>
+        <dt>Language</dt><dd>{{ article.language or '—' }}</dd>
+        <dt>Content hash</dt><dd><code style="font-size: 11px;">{{ (article.content_hash or '—')[:24] }}…</code></dd>
+        <dt>Parser version</dt><dd>{{ article.parser_version }}</dd>
+        <dt>Extractor version</dt><dd>{{ article.extractor_version }}</dd>
+      </dl>
+      {% if article.pir_ids %}
+        <h3>Priority Intelligence Requirements</h3>
+        <div>{% for p in article.pir_ids %}<span class="chip">{{ p }}</span>{% endfor %}</div>
+      {% endif %}
+    </div>
+  </aside>
+</div>
+
+{% endblock %}

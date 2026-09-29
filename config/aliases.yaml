@@ -1,0 +1,86 @@
+# Threat actor & malware family alias map (canonical -> aliases).
+# Conservative coverage. Add entries as analysts confirm overlaps.
+
+threat_actors:
+  APT28:
+    aliases: [Fancy Bear, Sofacy, Sednit, STRONTIUM, Forest Blizzard, GRU Unit 26165]
+    suspected_origin: russia
+    motivation: [espionage]
+  APT29:
+    aliases: [Cozy Bear, NOBELIUM, Midnight Blizzard, The Dukes, Cozy Duke]
+    suspected_origin: russia
+    motivation: [espionage]
+  APT41:
+    aliases: [Winnti, BARIUM, Wicked Panda, Brass Typhoon]
+    suspected_origin: china
+    motivation: [espionage, cybercrime]
+  Lazarus:
+    aliases: [Hidden Cobra, APT38, Diamond Sleet, Andariel, Kimsuky-adjacent]
+    suspected_origin: north_korea
+    motivation: [financial, espionage]
+  Volt_Typhoon:
+    aliases: [Vanguard Panda, BRONZE SILHOUETTE, VOLTZITE]
+    suspected_origin: china
+    motivation: [pre-positioning, espionage]
+  Sandworm:
+    aliases: [Voodoo Bear, BlackEnergy Group, IRIDIUM, Seashell Blizzard]
+    suspected_origin: russia
+    motivation: [destruction, espionage]
+  Scattered_Spider:
+    aliases: [UNC3944, Octo Tempest, Muddled Libra, Roasted 0ktapus, Scatter Swine]
+    suspected_origin: unknown
+    motivation: [financial]
+  FIN7:
+    aliases: [Carbanak, Sangria Tempest]
+    suspected_origin: unknown
+    motivation: [financial]
+
+malware_families:
+  Cobalt_Strike:
+    aliases: [CobaltStrike, Beacon]
+    type: post_exploitation
+  Emotet:
+    aliases: [Geodo, Heodo]
+    type: loader
+  Qakbot:
+    aliases: [Qbot, Pinkslipbot]
+    type: loader
+  IcedID:
+    aliases: [BokBot]
+    type: loader
+  Lumma:
+    aliases: [LummaC2, LummaC2 Stealer]
+    type: infostealer
+  RedLine:
+    aliases: [RedLine Stealer]
+    type: infostealer
+  Raspberry_Robin:
+    aliases: [QNAP worm]
+    type: worm
+  LockBit:
+    aliases: [LockBit 3.0, LockBit Black, LockBit Green]
+    type: ransomware
+  BlackCat:
+    aliases: [ALPHV, Noberus]
+    type: ransomware
+  Akira:
+    aliases: []
+    type: ransomware
+  Play:
+    aliases: [PlayCrypt]
+    type: ransomware
+  Cl0p:
+    aliases: [Clop, TA505-affiliated]
+    type: ransomware
+  HermeticWiper:
+    aliases: [FoxBlade]
+    type: wiper
+  WhisperGate:
+    aliases: []
+    type: wiper
+  CaddyWiper:
+    aliases: []
+    type: wiper
+  Industroyer2:
+    aliases: []
+    type: ics_wiper

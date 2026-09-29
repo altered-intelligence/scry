@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Threat Feeds · Intel Feeds{% endblock %}
+{% block content %}
+
+<div class="hero">
+  <h1>Threat Feeds</h1>
+  <div class="meta">
+    <strong>{{ total | default(0) | int | format_number }}</strong> items · {{ categories | length }} categories ·
+    Networks: {% for net in networks %}<span class="chip">{{ net }}</span>{% endfor %}
+  </div>
+</div>
+
+{# --- Stats row --- #}
+<div class="grid" style="grid-template-columns: repeat(5,1fr);">
+  {% for cat, cnt in cat_counts[:5] %}
+  <div class="card">
+    <div class="num">{{ cnt | int | format_number }}</div>
+    <div class="lbl">{{ cat }}</div>
+  </div>
+  {% endfor %}
+</div>
+
+{# --- Filters --- #}
+<form class="filters" method="get" action="/ui/intel-feeds/threat-feeds">
+  <div>
+    <label>Search</label>
+    <input type="text" name="q" value="{{ filters.q or '' }}" placeholder="title, actor, site, content…" style="min-width:240px;">
+  </div>
+  <div>
+    <label>Category</label>
+    <select name="category">
+      <option value="">All</option>
+      {% for cat, _ in cat_counts %}
+      <option value="{{ cat }}" {% if filters.category == cat %}selected{% endif %}>{{ cat }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label>Network</label>
+    <select name="network">
+      <option value="">All</option>
+      {% for net in networks %}
+      <option value="{{ net }}" {% if filters.network == net %}selected{% endif %}>{{ net }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label>Country</label>
+    <select name="country">
+      <option value="">All</option>
+      {% for c in countries %}
+      <option value="{{ c }}" {% if filters.country == c %}selected{% endif %}>{{ c }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label>Sort</label>
+    <select name="sort">
+      <option value="date_desc" {% if filters.sort == 'date_desc' or not filters.sort %}selected{% endif %}>Newest first</option>
+      <option value="risk_desc" {% if filters.sort == 'risk_desc' %}selected{% endif %}>Highest risk</option>
+      <option value="date_asc" {% if filters.sort == 'date_asc' %}selected{% endif %}>Oldest first</option>
+    </select>
+  </div>
+  <button class="btn" type="submit">Filter</button>
+  <a class="btn secondary" href="/ui/intel-feeds/threat-feeds">Reset</a>
+</form>
+
+{# --- Table --- #}
+<div class="panel">
+  <table>
+    <thead>
+      <tr>
+        <th style="width:110px">Date</th>
+        <th style="width:120px">Category</th>
+        <th style="width:90px">Network</th>
+        <th>Title / Content</th>
+        <th style="width:120px">Threat Actor</th>
+        <th style="width:110px">Victim</th>
+        <th style="width:60px">Risk</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in items %}
+      <tr>
+        <td class="muted" style="white-space:nowrap">
+          {{ item.date | timeago }}
+        </td>
+        <td>{{ _cat_badge(item.category) }}</td>
+        <td>{{ _net_chip(item.network) }}</td>
+        <td>
+          <a href="/ui/intel-feeds/threat-feeds/{{ item.id }}">
+            <strong>{{ item.title[:90] }}{% if item.title | length > 90 %}…{% endif %}</strong>
+          </a>
+          {% if item.content %}
+          <div class="muted" style="margin-top:2px">{{ item.content[:140] }}{% if item.content|length > 140 %}…{% endif %}</div>
+          {% endif %}
+          <div style="margin-top:4px">
+            {% for tag in (item.tags or [])[:5] %}
+            <a href="/ui/intel-feeds/threat-feeds?q={{ tag | urlencode }}" class="tag" style="font-size:10px">{{ tag }}</a>
+            {% endfor %}
+          </div>
+        </td>
+        <td>
+          {% if item.threat_actors %}
+          <a href="/ui/intel-feeds/threat-feeds?q={{ item.threat_actors | urlencode }}" class="muted" style="font-size:12px">
+            {{ item.threat_actors[:40] }}{% if item.threat_actors|length > 40 %}…{% endif %}
+          </a>
+          {% else %}—{% endif %}
+        </td>
+        <td class="muted" style="font-size:12px">
+          {% if item.victim_country %}{{ item.victim_country }}{% endif %}
+          {% if item.victim_site %}<br><code style="font-size:10px">{{ item.victim_site[:30] }}</code>{% endif %}
+        </td>
+        <td>{{ _risk_pill(item.risk_score) }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="empty">No items match the current filters.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {{ m.pagination(total, filters.offset, filters.limit, '/ui/intel-feeds/threat-feeds', filters.qs) }}
+</div>
+
+{% endblock %}
+
+{% macro _cat_badge(cat) %}
+  {% if cat in ('DDoS Attack', 'DDoS', 'ddos') %}
+    <span class="badge bad">{{ cat }}</span>
+  {% elif cat in ('Data Breach', 'Data Leak') %}
+    <span class="badge warn">{{ cat }}</span>
+  {% elif cat in ('Malware', 'Phishing') %}
+    <span class="badge purple">{{ cat }}</span>
+  {% elif cat in ('Initial Access', 'Vulnerability') %}
+    <span class="badge mid">{{ cat }}</span>
+  {% elif cat in ('Combo List', 'Logs', 'Carding') %}
+    <span class="badge gray">{{ cat }}</span>
+  {% elif cat == 'Defacement' %}
+    <span class="badge dim">{{ cat }}</span>
+  {% else %}
+    <span class="chip">{{ cat or '—' }}</span>
+  {% endif %}
+{% endmacro %}
+
+{% macro _net_chip(net) %}
+  {% if net == 'telegram' or net == 'telegram_channel' %}
+    <span class="chip chip-telegram">📡 Telegram</span>
+  {% elif net == 'tor' %}
+    <span class="chip chip-tor">🧅 Tor</span>
+  {% elif net == 'openweb' %}
+    <span class="chip">🌐 OpenWeb</span>
+  {% elif net == 'clearnet' %}
+    <span class="chip">🔗 Clearnet</span>
+  {% else %}
+    <span class="chip">{{ net or '—' }}</span>
+  {% endif %}
+{% endmacro %}
+
+{% macro _risk_pill(score) %}
+  {% if score is not none %}
+    {% if score >= 75 %}
+      <span class="badge bad">{{ score | int }}</span>
+    {% elif score >= 50 %}
+      <span class="badge warn">{{ score | int }}</span>
+    {% else %}
+      <span class="badge dim">{{ score | int }}</span>
+    {% endif %}
+  {% else %}—{% endif %}
+{% endmacro %}

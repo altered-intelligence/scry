@@ -1,0 +1,111 @@
+watchlists:
+  - name: microsoft_vulnerabilities
+    description: Microsoft product vulnerabilities and Patch Tuesday activity
+    keywords:
+      - microsoft
+      - windows
+      - exchange
+      - sharepoint
+      - outlook
+      - office 365
+      - entra id
+      - azure
+      - defender
+      - active directory
+      - kerberos
+      - ntlm
+      - patch tuesday
+      - msrc
+    tags: [microsoft, vulnerability]
+
+  - name: ransomware
+    description: Ransomware groups, victims, leak sites, double extortion
+    keywords:
+      - ransomware
+      - ransomware-as-a-service
+      - raas
+      - data leak site
+      - double extortion
+      - encrypted
+      - decryption
+    tags: [ransomware]
+
+  - name: wipers
+    description: Destructive wiper malware in geopolitical or sabotage contexts
+    keywords:
+      - wiper
+      - destructive malware
+      - mbr overwrite
+      - disk wipe
+      - sabotage
+    tags: [wiper, destructive]
+
+  - name: defense_industrial_base
+    description: US defense industrial base and contractor targeting
+    keywords:
+      - defense industrial base
+      - dib
+      - defense contractor
+      - aerospace
+      - dod
+      - cmmc
+      - itar
+      - military supplier
+    tags: [dib, defense]
+
+  - name: ai_security
+    description: AI / LLM abuse, agentic AI threats, adversarial ML
+    keywords:
+      - prompt injection
+      - llm jailbreak
+      - llm abuse
+      - agentic ai
+      - adversarial ml
+      - model poisoning
+      - deepfake
+      - ai-generated phishing
+    tags: [ai, adversarial-ai]
+
+  - name: appdomain_hijacking
+    description: AppDomainManager hijacking and .NET LOLBin abuse
+    keywords:
+      - appdomainmanager
+      - appdomain hijacking
+      - .net hijacking
+      - clr loading
+    tags: [appdomain, lolbin]
+
+  - name: exploited_in_the_wild
+    description: CVEs with confirmed in-the-wild exploitation
+    keywords:
+      - exploited in the wild
+      - actively exploited
+      - in-the-wild exploitation
+      - zero-day
+      - 0day
+      - cisa kev
+    tags: [exploited-itw, kev]
+
+  - name: exploit_pocs
+    description: Public PoC code, weaponized exploits, Metasploit/Nuclei modules
+    keywords:
+      - proof of concept
+      - public exploit
+      - poc released
+      - metasploit module
+      - nuclei template
+      - exploit chain
+    tags: [poc, exploit]
+
+  - name: critical_infrastructure
+    description: OT, ICS, energy, water, manufacturing targeting
+    keywords:
+      - ics
+      - scada
+      - ot
+      - operational technology
+      - critical infrastructure
+      - energy sector
+      - water utility
+      - manufacturing
+    tags: [ot, ics, critical-infrastructure]

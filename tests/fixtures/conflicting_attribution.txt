@@ -1,0 +1,5 @@
+Vendor A: "The campaign targeting Acme Aerospace is attributed to APT28 based on
+infrastructure overlap with prior Sofacy operations."
+
+Vendor B: "The same Acme Aerospace activity is attributed to APT29 based on tooling
+overlap with prior Cozy Bear campaigns."

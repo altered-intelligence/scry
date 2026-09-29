@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}{{ item.title[:60] }} · Threat Feed{% endblock %}
+{% block content %}
+
+<div class="hero">
+  <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+    <a href="/ui/intel-feeds/threat-feeds" style="color:var(--muted);font-size:13px">← Threat Feeds</a>
+    {% if item.category %}
+    {% set cat = item.category %}
+    {% if cat in ('DDoS Attack', 'DDoS', 'ddos') %}
+      <span class="badge bad">{{ cat }}</span>
+    {% elif cat in ('Data Breach', 'Data Leak') %}
+      <span class="badge warn">{{ cat }}</span>
+    {% elif cat in ('Malware', 'Phishing') %}
+      <span class="badge purple">{{ cat }}</span>
+    {% elif cat in ('Initial Access', 'Vulnerability') %}
+      <span class="badge mid">{{ cat }}</span>
+    {% elif cat in ('Combo List', 'Logs', 'Carding') %}
+      <span class="badge gray">{{ cat }}</span>
+    {% elif cat == 'Defacement' %}
+      <span class="badge dim">{{ cat }}</span>
+    {% else %}
+      <span class="chip">{{ cat }}</span>
+    {% endif %}
+    {% endif %}
+    {% if item.network == 'telegram' or item.network == 'telegram_channel' %}
+      <span class="chip chip-telegram">📡 Telegram</span>
+    {% elif item.network == 'tor' %}
+      <span class="chip chip-tor">🧅 Tor / Dark Web</span>
+    {% elif item.network == 'openweb' %}
+      <span class="chip">🌐 Open Web / Forum</span>
+    {% elif item.network %}
+      <span class="chip">{{ item.network }}</span>
+    {% endif %}
+    {% if item.risk_score is not none %}
+      {% if item.risk_score >= 75 %}
+        <span class="badge bad">Risk {{ item.risk_score | int }}</span>
+      {% elif item.risk_score >= 50 %}
+        <span class="badge warn">Risk {{ item.risk_score | int }}</span>
+      {% else %}
+        <span class="badge dim">Risk {{ item.risk_score | int }}</span>
+      {% endif %}
+    {% endif %}
+  </div>
+  <h1>{{ item.title }}</h1>
+  <div class="meta">
+    {% if item.date %}{{ item.date.strftime('%A, %B %d, %Y at %H:%M UTC') }}{% endif %}
+    {% if item.threat_actors %} · Actor: <strong>{{ item.threat_actors }}</strong>{% endif %}
+    {% if item.priority %} · Priority: <strong>{{ item.priority }}</strong>{% endif %}
+  </div>
+  {% if item.tags %}
+  <div class="tags" style="margin-top:10px">
+    {% for tag in item.tags %}
+    <a href="/ui/intel-feeds/threat-feeds?q={{ tag | urlencode }}" class="tag">{{ tag }}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+
+<div class="grid-2">
+  {# --- Main content --- #}
+  <div>
+    {% if item.content %}
+    <div class="panel">
+      <h3>Summary</h3>
+      <p style="font-size:14px;line-height:1.7;white-space:pre-wrap">{{ item.content }}</p>
+    </div>
+    {% endif %}
+
+    {% if item.screenshots %}
+    <div class="panel">
+      <h3>Screenshots ({{ item.screenshots | length }})</h3>
+      <div style="display:flex;flex-wrap:wrap;gap:10px">
+        {% for ss in item.screenshots %}
+        {% if ss %}
+        <a href="{{ ss }}" target="_blank" rel="noopener">
+          <img src="{{ ss }}" alt="screenshot" style="max-height:180px;max-width:280px;border-radius:4px;border:1px solid var(--border);"
+               onerror="this.parentElement.innerHTML='<span class=muted>[screenshot unavailable]</span>'">
+        </a>
+        {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if related %}
+    <div class="panel">
+      <h3>Related items from same actor ({{ related | length }})</h3>
+      <table>
+        <thead><tr><th>Date</th><th>Category</th><th>Title</th></tr></thead>
+        <tbody>
+          {% for r in related %}
+          <tr>
+            <td class="muted" style="white-space:nowrap">{{ r.date.strftime('%Y-%m-%d') if r.date else '—' }}</td>
+            <td><span class="chip">{{ r.category or '—' }}</span></td>
+            <td><a href="/ui/intel-feeds/threat-feeds/{{ r.id }}">{{ r.title[:80] }}</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+
+  {# --- Sidebar --- #}
+  <div class="sidebar">
+    <h3>Details</h3>
+    <dl class="kv">
+      <dt>UUID</dt>
+      <dd><code style="font-size:10px">{{ item.uuid or '—' }}</code></dd>
+
+      <dt>Category</dt>
+      <dd>{{ item.category or '—' }}</dd>
+
+      <dt>Network</dt>
+      <dd>{{ item.network or '—' }}</dd>
+
+      <dt>Priority</dt>
+      <dd>{{ item.priority or '—' }}</dd>
+
+      <dt>Ingested</dt>
+      <dd>{{ item.ingested_at.strftime('%Y-%m-%d') if item.ingested_at else '—' }}</dd>
+    </dl>
+
+    {% if item.published_url %}
+    <div style="margin-top:12px">
+      <h3>Source</h3>
+      <div style="font-size:12px;word-break:break-all">
+        <code>{{ item.published_url[:80] }}{% if item.published_url | length > 80 %}…{% endif %}</code>
+        <br>
+        <span class="muted" style="font-size:11px">(Do not open untrusted links directly)</span>
+      </div>
+    </div>
+    {% endif %}
+
+    <div style="margin-top:12px">
+      <h3>Victim</h3>
+      <dl class="kv">
+        <dt>Country</dt>
+        <dd>{{ item.victim_country or '—' }}</dd>
+        <dt>Industry</dt>
+        <dd>{{ item.victim_industry or '—' }}</dd>
+        <dt>Organization</dt>
+        <dd>{{ item.victim_organization or '—' }}</dd>
+        <dt>Site</dt>
+        <dd>{% if item.victim_site %}<code>{{ item.victim_site }}</code>{% else %}—{% endif %}</dd>
+      </dl>
+    </div>
+
+    {% if item.threat_actors %}
+    <div style="margin-top:12px">
+      <h3>Threat Actor(s)</h3>
+      <p style="font-size:13px;margin:0">{{ item.threat_actors }}</p>
+      <div style="margin-top:6px">
+        <a href="/ui/intel-feeds/threat-feeds?q={{ item.threat_actors | urlencode }}" class="btn secondary" style="font-size:12px;padding:4px 10px">
+          All activity by this actor →
+        </a>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if item.forum_section %}
+    <div style="margin-top:12px">
+      <h3>Forum Section</h3>
+      <span class="chip">{{ item.forum_section }}</span>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}

@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}CVEs · Scry{% endblock %}
+{% block content %}
+
+<h1>CVEs</h1>
+
+<form class="filters" method="get" action="/ui/cves">
+  <div>
+    <label>Search</label>
+    <input type="text" name="q" value="{{ filters.q or '' }}" placeholder="CVE id / vendor / product">
+  </div>
+  <div>
+    <label>Vendor</label>
+    <input type="text" name="vendor" value="{{ filters.vendor or '' }}">
+  </div>
+  <div>
+    <label>Severity</label>
+    <select name="severity">
+      <option value="">any</option>
+      {% for s in ['critical','high','medium','low'] %}<option value="{{ s }}" {% if filters.severity == s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+    </select>
+  </div>
+  <label class="row" style="gap: 6px;"><input type="checkbox" name="only_kev" value="true" {% if filters.only_kev %}checked{% endif %}> KEV only</label>
+  <label class="row" style="gap: 6px;"><input type="checkbox" name="only_microsoft" value="true" {% if filters.only_microsoft %}checked{% endif %}> Microsoft only</label>
+  <button class="btn" type="submit">Filter</button>
+  <a class="btn secondary" href="/ui/cves">Reset</a>
+</form>
+
+<div class="panel">
+  <table>
+    <thead><tr>
+      <th>CVE</th><th>Vendor / Product</th><th>Severity</th><th>Flags</th><th>Description</th>
+    </tr></thead>
+    <tbody>
+      {% for c in cves %}
+      <tr>
+        <td>{{ m.cve_link(c.cve_id) }}</td>
+        <td>{{ c.vendor or '—' }}{% if c.product %} · {{ c.product }}{% endif %}</td>
+        <td>{% if c.severity %}<span class="badge {% if c.severity == 'critical' %}bad{% elif c.severity == 'high' %}warn{% elif c.severity == 'medium' %}mid{% else %}dim{% endif %}">{{ c.severity }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td>
+          {% if c.kev %}{{ m.kev_badge() }} {% endif %}
+          {% if c.exploited_in_the_wild and not c.kev %}{{ m.exploited_badge() }} {% endif %}
+          {% if c.is_microsoft %}{{ m.ms_badge() }} {% endif %}
+          {% if c.ransomware_associated %}{{ m.ransomware_badge() }} {% endif %}
+          {% if c.public_poc_available %}{{ m.poc_badge() }}{% endif %}
+        </td>
+        <td class="truncate" title="{{ c.description }}">{{ (c.description or '')[:200] }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="empty">No CVEs match the filters.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {{ m.pagination(total, filters.offset, filters.limit, '/ui/cves', filters.qs) }}
+</div>
+
+{% endblock %}

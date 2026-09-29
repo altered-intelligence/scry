@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Alerts · Scry{% endblock %}
+{% block content %}
+
+<h1>Alerts</h1>
+
+<div class="panel">
+  <table>
+    <thead><tr><th>#</th><th>Trigger</th><th>Title</th><th>Severity</th><th>Confidence</th><th>Delivered</th><th>Created</th></tr></thead>
+    <tbody>
+      {% for a in alerts %}
+      <tr>
+        <td>#{{ a.id }}</td>
+        <td><span class="chip">{{ a.trigger }}</span></td>
+        <td class="truncate" title="{{ a.title }}">{{ a.title }}</td>
+        <td>{% if a.severity == 'high' %}<span class="badge bad">high</span>{% elif a.severity == 'medium' %}<span class="badge warn">medium</span>{% else %}<span class="chip">{{ a.severity }}</span>{% endif %}</td>
+        <td>{{ a.confidence }}</td>
+        <td>{% if a.delivered %}<span class="badge good">yes</span>{% else %}<span class="badge dim">no</span>{% endif %}</td>
+        <td>{{ a.created_at | timeago }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="empty">No alerts yet — POST /alerts/run to evaluate triggers.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {{ m.pagination(total, filters.offset, filters.limit, '/ui/alerts', filters.qs) }}
+</div>
+
+{% endblock %}

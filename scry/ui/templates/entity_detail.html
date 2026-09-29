@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}{{ entity.canonical_name }} · {{ entity.type }}{% endblock %}
+{% block content %}
+
+<div class="hero">
+  <h1><span class="chip">{{ entity.type }}</span> {{ entity.canonical_name }}</h1>
+  <div class="meta">
+    confidence {{ entity.confidence }}
+    {% if entity.aliases %} · aliases: {% for a in entity.aliases %}<span class="chip">{{ a }}</span>{% endfor %}{% endif %}
+  </div>
+  <div class="tags">{{ m.tag_list(entity.tags) }}</div>
+</div>
+
+<div class="grid-2">
+  <div>
+    {% if entity.description %}
+      <div class="panel">
+        <h3>Description</h3>
+        <p>{{ entity.description }}</p>
+      </div>
+    {% endif %}
+
+    {% if related_observables %}
+      <div class="panel">
+        <h3>Associated observables ({{ related_observables|length }})</h3>
+        <table>
+          <thead><tr><th>Type</th><th>Value</th><th>Risk</th><th>Action</th><th>Relationship</th></tr></thead>
+          <tbody>
+            {% for ob, rtype in related_observables %}
+            <tr>
+              <td><span class="chip">{{ ob.type }}</span></td>
+              <td>{{ m.observable_link(ob) }}</td>
+              <td>{{ m.risk_badge(ob.risk_score) }}</td>
+              <td>{{ m.action_badge(ob.actionability) }}</td>
+              <td><span class="chip">{{ rtype }}</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+
+    {% if related_entities %}
+      <div class="panel">
+        <h3>Related entities ({{ related_entities|length }})</h3>
+        <table>
+          <thead><tr><th>Type</th><th>Name</th><th>Relationship</th><th>Direction</th></tr></thead>
+          <tbody>
+            {% for other, rtype, direction in related_entities %}
+            <tr>
+              <td><span class="chip">{{ other.type }}</span></td>
+              <td>{{ m.entity_link(other) }}</td>
+              <td><span class="chip">{{ rtype }}</span></td>
+              <td>{% if direction == 'out' %}→{% else %}←{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+
+    {% if articles %}
+      <div class="panel">
+        <h3>Articles mentioning {{ entity.canonical_name }} ({{ articles|length }})</h3>
+        <table>
+          <thead><tr><th>Title</th><th>Tags</th></tr></thead>
+          <tbody>
+            {% for a in articles %}<tr><td>{{ m.article_link(a) }}</td><td>{{ m.tag_list(a.tags) }}</td></tr>{% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  </div>
+
+  <aside>
+    <div class="sidebar">
+      <h3>Identifiers</h3>
+      <dl class="kv">
+        <dt>ID</dt><dd>#{{ entity.id }}</dd>
+        <dt>Type</dt><dd><span class="chip">{{ entity.type }}</span></dd>
+        <dt>Created</dt><dd>{{ entity.created_at }}</dd>
+        <dt>Updated</dt><dd>{{ entity.updated_at }}</dd>
+      </dl>
+      {% if entity.attributes %}
+        <h3>Attributes</h3>
+        <dl class="kv">
+          {% for k, v in entity.attributes.items() %}
+            <dt>{{ k }}</dt><dd>{{ v }}</dd>
+          {% endfor %}
+        </dl>
+      {% endif %}
+    </div>
+  </aside>
+</div>
+
+{% endblock %}

@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Ransomware Feeds · Intel Feeds{% endblock %}
+{% block content %}
+
+<div class="hero">
+  <h1>Ransomware Feeds</h1>
+  <div class="meta">
+    <strong>{{ total | default(0) | int | format_number }}</strong> victim posts ·
+    <strong>{{ groups | length }}</strong> ransomware groups ·
+    <strong>{{ countries | length }}</strong> countries ·
+    <strong>{{ industries | length }}</strong> sectors
+  </div>
+</div>
+
+{# --- Stats row --- #}
+<div class="grid" style="grid-template-columns: repeat(5,1fr);">
+  {% for grp, cnt in group_counts[:5] %}
+  <div class="card">
+    <div class="num">{{ cnt | int | format_number }}</div>
+    <div class="lbl">{{ grp }}</div>
+  </div>
+  {% endfor %}
+</div>
+
+{# --- Filters --- #}
+<form class="filters" method="get" action="/ui/intel-feeds/ransomware-feeds">
+  <div>
+    <label>Search</label>
+    <input type="text" name="q" value="{{ filters.q or '' }}" placeholder="title, site, description…" style="min-width:220px;">
+  </div>
+  <div>
+    <label>Group</label>
+    <select name="group">
+      <option value="">All Groups</option>
+      {% for grp, cnt in group_counts %}
+      <option value="{{ grp }}" {% if filters.group == grp %}selected{% endif %}>{{ grp }} ({{ cnt | format_number }})</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label>Country</label>
+    <select name="country">
+      <option value="">All Countries</option>
+      {% for c in countries %}
+      <option value="{{ c }}" {% if filters.country == c %}selected{% endif %}>{{ c }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label>Sector</label>
+    <select name="industry">
+      <option value="">All Sectors</option>
+      {% for ind in industries %}
+      <option value="{{ ind }}" {% if filters.industry == ind %}selected{% endif %}>{{ ind }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label>Sort</label>
+    <select name="sort">
+      <option value="discovered_desc" {% if filters.sort == 'discovered_desc' or not filters.sort %}selected{% endif %}>Newest first</option>
+      <option value="risk_desc" {% if filters.sort == 'risk_desc' %}selected{% endif %}>Highest risk</option>
+      <option value="discovered_asc" {% if filters.sort == 'discovered_asc' %}selected{% endif %}>Oldest first</option>
+      <option value="published_desc" {% if filters.sort == 'published_desc' %}selected{% endif %}>Recently published</option>
+    </select>
+  </div>
+  <button class="btn" type="submit">Filter</button>
+  <a class="btn secondary" href="/ui/intel-feeds/ransomware-feeds">Reset</a>
+</form>
+
+{# --- Table --- #}
+<div class="panel">
+  <table>
+    <thead>
+      <tr>
+        <th style="width:105px">Discovered</th>
+        <th style="width:130px">Group</th>
+        <th>Victim / Title</th>
+        <th style="width:60px">Country</th>
+        <th style="width:130px">Sector</th>
+        <th style="width:55px">Risk</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in items %}
+      <tr>
+        <td class="muted" style="white-space:nowrap;font-size:12px">
+          {{ item.discovered | timeago }}
+        </td>
+        <td>
+          {% if item.group_name %}
+          <a href="/ui/intel-feeds/ransomware-feeds?group={{ item.group_name | urlencode }}" class="chip danger-link" style="font-size:11px">
+            {{ item.group_name }}
+          </a>
+          {% else %}—{% endif %}
+        </td>
+        <td>
+          <a href="/ui/intel-feeds/ransomware-feeds/{{ item.id }}">
+            <strong>{{ item.post_title[:90] }}{% if item.post_title | length > 90 %}…{% endif %}</strong>
+          </a>
+          {% if item.victim_website %}
+          <div class="muted" style="margin-top:2px;font-size:11px"><code>{{ item.victim_website[:60] }}{% if item.victim_website | length > 60 %}…{% endif %}</code></div>
+          {% endif %}
+          {% if item.description %}
+          <div class="muted" style="margin-top:2px">{{ item.description[:120] }}{% if item.description|length > 120 %}…{% endif %}</div>
+          {% endif %}
+          <div style="margin-top:4px">
+            {% for tag in (item.tags or [])[:5] %}
+            <a href="/ui/intel-feeds/ransomware-feeds?q={{ tag | urlencode }}" class="tag" style="font-size:10px">{{ tag }}</a>
+            {% endfor %}
+          </div>
+        </td>
+        <td class="muted" style="font-size:12px;white-space:nowrap">
+          {% if item.victim_country %}
+          <a href="/ui/intel-feeds/ransomware-feeds?country={{ item.victim_country | urlencode }}" style="color:var(--muted);text-decoration:none">
+            {{ item.victim_country }}
+          </a>
+          {% else %}—{% endif %}
+        </td>
+        <td class="muted" style="font-size:12px">
+          {% if item.activity %}
+          <a href="/ui/intel-feeds/ransomware-feeds?industry={{ item.activity | urlencode }}" style="color:var(--muted);text-decoration:none">
+            {{ item.activity[:25] }}{% if item.activity | length > 25 %}…{% endif %}
+          </a>
+          {% else %}—{% endif %}
+        </td>
+        <td>{{ _risk_pill(item.risk_score) }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="empty">No items match the current filters.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {{ m.pagination(total, filters.offset, filters.limit, '/ui/intel-feeds/ransomware-feeds', filters.qs) }}
+</div>
+
+{% endblock %}
+
+{% macro _risk_pill(score) %}
+  {% if score is not none %}
+    {% if score >= 75 %}
+      <span class="badge bad">{{ score | int }}</span>
+    {% elif score >= 50 %}
+      <span class="badge warn">{{ score | int }}</span>
+    {% else %}
+      <span class="badge dim">{{ score | int }}</span>
+    {% endif %}
+  {% else %}—{% endif %}
+{% endmacro %}

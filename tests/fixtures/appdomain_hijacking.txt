@@ -1,0 +1,11 @@
+A new defense evasion technique has been observed in the wild: AppDomainManager hijacking.
+The technique abuses the .NET application domain manager to load attacker-controlled
+assemblies into trusted .NET processes.
+
+The activity is tracked as Mustard Tempest and has been used to deploy Cobalt Strike
+beacons. The loader writes a config file in C:\ProgramData\msapp.config and references
+a payload at hxxps://cdn-update[.]example[.]net/payload.dll. The malicious payload's
+SHA256 is 9e1d0f8b6c2a4d3e5f7a8b9c0d1e2f3041526374859607182939404152637485.
+
+ATT&CK mapping: T1574.014 (AppDomainManager). Hunting guidance: detect .NET processes
+loading unsigned modules from %ProgramData% paths.

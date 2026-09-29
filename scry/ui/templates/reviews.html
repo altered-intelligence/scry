@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Analyst review queue · Scry{% endblock %}
+{% block content %}
+
+<h1>Analyst review queue</h1>
+
+<form class="filters" method="get" action="/ui/reviews">
+  <div>
+    <label>Status</label>
+    <select name="status">
+      {% for s in ['open','closed','any'] %}<option value="{{ s }}" {% if filters.status == s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+    </select>
+  </div>
+  <div>
+    <label>Item type</label>
+    <select name="item_type">
+      <option value="">any</option>
+      {% for t in ['claim','observable','relationship','entity'] %}<option value="{{ t }}" {% if filters.item_type == t %}selected{% endif %}>{{ t }}</option>{% endfor %}
+    </select>
+  </div>
+  <button class="btn" type="submit">Filter</button>
+  <a class="btn secondary" href="/ui/reviews">Reset</a>
+</form>
+
+<div class="panel">
+  <form method="post" action="/ui/reviews/bulk" id="bulk-form">
+    <table>
+      <thead><tr>
+        <th style="width:28px"><input type="checkbox" id="select-all" aria-label="Select all reviews"></th>
+        <th>#</th><th>Item</th><th>Reason</th><th>Conf.</th><th>Recommended</th><th>Status</th><th>Disposition</th><th>Created</th>
+      </tr></thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td>{% if r.status == 'open' %}<input type="checkbox" name="review_ids" value="{{ r.id }}" class="row-check" aria-label="Select review {{ r.id }}">{% endif %}</td>
+          <td><a href="/ui/reviews/{{ r.id }}">#{{ r.id }}</a></td>
+          <td><span class="chip">{{ r.item_type }}</span> #{{ r.item_id }}</td>
+          <td>
+            <details class="reason-expand">
+              <summary class="truncate" title="{{ r.reason }}">{{ r.reason }}</summary>
+              <div style="font-size:13px;padding-top:4px">{{ r.reason }}</div>
+            </details>
+          </td>
+          <td>{{ r.confidence }}</td>
+          <td>{{ m.action_badge(r.recommended_action) }}</td>
+          <td>{% if r.status == 'open' %}<span class="badge warn">open</span>{% else %}<span class="badge dim">{{ r.status }}</span>{% endif %}</td>
+          <td>{{ r.disposition or '—' }}</td>
+          <td class="muted" style="white-space:nowrap;font-size:12px">{{ r.created_at | timeago }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9" class="empty">Queue empty.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if rows %}
+    <div class="row" style="margin-top:12px">
+      <select name="action" aria-label="Bulk action">
+        <option value="approve">Approve (true positive)</option>
+        <option value="reject">Reject (false positive)</option>
+      </select>
+      <button class="btn" type="submit">Apply to selected</button>
+      <span class="muted" id="selected-count">0 selected</span>
+    </div>
+    {% endif %}
+  </form>
+  {{ m.pagination(total, filters.offset, filters.limit, '/ui/reviews', filters.qs) }}
+</div>
+
+<script>
+  (function () {
+    var all = document.getElementById('select-all');
+    var boxes = Array.from(document.querySelectorAll('.row-check'));
+    var counter = document.getElementById('selected-count');
+    function update() {
+      var n = boxes.filter(function (b) { return b.checked; }).length;
+      if (counter) counter.textContent = n + ' selected';
+    }
+    if (all) all.addEventListener('change', function () {
+      boxes.forEach(function (b) { b.checked = all.checked; });
+      update();
+    });
+    boxes.forEach(function (b) { b.addEventListener('change', update); });
+  })();
+</script>
+
+{% endblock %}

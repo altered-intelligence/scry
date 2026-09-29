@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Entities · Scry{% endblock %}
+{% block content %}
+
+<h1>Entities</h1>
+
+<form class="filters" method="get" action="/ui/entities">
+  <div>
+    <label>Search name</label>
+    <input type="text" name="q" value="{{ filters.q or '' }}" placeholder="canonical name…">
+  </div>
+  <div>
+    <label>Type</label>
+    <select name="type">
+      <option value="">any</option>
+      {% for t in available_types %}<option value="{{ t }}" {% if filters.type == t %}selected{% endif %}>{{ t }}</option>{% endfor %}
+    </select>
+  </div>
+  <div>
+    <label>Tag</label>
+    <input type="text" name="tag" value="{{ filters.tag or '' }}" placeholder="e.g. cybercrime">
+  </div>
+  <div>
+    <label>Limit</label>
+    <select name="limit">
+      {% for n in [50, 100, 200, 500] %}<option value="{{ n }}" {% if filters.limit == n %}selected{% endif %}>{{ n }}</option>{% endfor %}
+    </select>
+  </div>
+  <button class="btn" type="submit">Filter</button>
+  <a class="btn secondary" href="/ui/entities">Reset</a>
+</form>
+
+<div class="panel">
+  <table>
+    <thead><tr><th>Type</th><th>Name</th><th>Aliases</th><th>Confidence</th><th>Tags</th></tr></thead>
+    <tbody>
+      {% for e in entities %}
+      <tr>
+        <td><span class="chip">{{ e.type }}</span></td>
+        <td>{{ m.entity_link(e) }}</td>
+        <td>{% for a in (e.aliases or [])[:6] %}<span class="chip">{{ a }}</span>{% endfor %}{% if e.aliases and e.aliases|length > 6 %}<span class="muted">+{{ e.aliases|length - 6 }}</span>{% endif %}</td>
+        <td>{{ e.confidence }}</td>
+        <td>{{ m.tag_list(e.tags[:5]) }}{% if e.tags and e.tags|length > 5 %}<span class="muted">+{{ e.tags|length - 5 }}</span>{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="empty">No entities match the filters.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {{ m.pagination(total, filters.offset, filters.limit, '/ui/entities', filters.qs) }}
+</div>
+
+{% endblock %}

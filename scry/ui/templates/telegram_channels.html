@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Telegram Channels · Intel Feeds{% endblock %}
+{% block content %}
+
+<style>
+  .tg-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 14px;
+    margin-top: 20px;
+  }
+  .tg-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .tg-card:hover {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  .tg-card .tg-name {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tg-card .tg-username {
+    font-size: 12px;
+    color: var(--muted);
+    font-family: monospace;
+  }
+  .tg-card .tg-link {
+    margin-top: 4px;
+  }
+  .tg-card .tg-link a {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    color: var(--accent);
+    text-decoration: none;
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    padding: 3px 9px;
+  }
+  .tg-card .tg-link a:hover {
+    background: var(--accent);
+    color: #fff;
+  }
+  .tg-filters {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+  }
+  .tg-filters input {
+    flex: 1;
+    min-width: 220px;
+    max-width: 400px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 13px;
+    color: var(--text);
+  }
+  .tg-count {
+    font-size: 12px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .tg-empty {
+    color: var(--muted);
+    font-size: 14px;
+    padding: 40px 0;
+    text-align: center;
+  }
+</style>
+
+<div class="hero">
+  <h1>Telegram Channels</h1>
+  <div class="meta">
+    <strong>{{ channels | length }}</strong> channels tracked ·
+    CTI-relevant Telegram channels including threat actors, hacktivist groups, and dark web sources
+  </div>
+</div>
+
+<div class="card" style="padding:16px 20px;">
+  <form class="tg-filters" method="get" action="/ui/intel-feeds/telegram-channels">
+    <input type="text" name="q" value="{{ q or '' }}" placeholder="Search by name or @username…" autofocus>
+    <span class="tg-count">Showing <strong>{{ channels | length }}</strong> of <strong>{{ total }}</strong></span>
+    <button class="btn-sm" type="submit">Filter</button>
+    {% if q %}
+    <a href="/ui/intel-feeds/telegram-channels" class="btn-sm" style="opacity:0.7">Clear</a>
+    {% endif %}
+  </form>
+</div>
+
+{% if channels %}
+<div class="tg-grid">
+  {% for ch in channels %}
+  <div class="tg-card">
+    <div class="tg-name" title="{{ ch.name or ch.username }}">{{ ch.name or ch.username }}</div>
+    <div class="tg-username">@{{ ch.username }}</div>
+    {% if ch.description %}
+    <div style="font-size:12px;color:var(--muted);line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">{{ ch.description }}</div>
+    {% endif %}
+    <div class="tg-link">
+      <a href="https://t.me/{{ ch.username }}" target="_blank" rel="noopener noreferrer">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L8.32 13.617l-2.96-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.828.942z"/></svg>
+        Open in Telegram
+      </a>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="tg-empty">No channels found{% if q %} matching "<strong>{{ q }}</strong>"{% endif %}.</div>
+{% endif %}
+
+{% endblock %}

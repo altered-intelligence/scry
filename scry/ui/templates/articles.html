@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Articles · Scry{% endblock %}
+{% block content %}
+
+<h1>Articles</h1>
+
+<form class="filters" method="get" action="/ui/articles">
+  <div>
+    <label>Search title</label>
+    <input type="text" name="q" value="{{ filters.q or '' }}" placeholder="title or body…">
+  </div>
+  <div>
+    <label>Tag</label>
+    <input type="text" name="tag" value="{{ filters.tag or '' }}" placeholder="e.g. ransomware">
+  </div>
+  <div>
+    <label>Limit</label>
+    <select name="limit">
+      {% for n in [25, 50, 100, 200] %}<option value="{{ n }}" {% if filters.limit == n %}selected{% endif %}>{{ n }}</option>{% endfor %}
+    </select>
+  </div>
+  <button class="btn" type="submit">Filter</button>
+  <a class="btn secondary" href="/ui/articles">Reset</a>
+</form>
+
+<div class="panel">
+  <table>
+    <thead><tr><th>Title</th><th>Published</th><th>Tags</th></tr></thead>
+    <tbody>
+      {% for a in articles %}
+      <tr>
+        <td>
+          {{ m.article_link(a) }}<br>
+          <span class="muted">{{ a.url }}</span>
+        </td>
+        <td>{{ a.published_at | timeago }}</td>
+        <td>{{ m.tag_list(a.tags) }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" class="empty">No articles match the filters.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {{ m.pagination(total, filters.offset, filters.limit, '/ui/articles', filters.qs) }}
+</div>
+
+{% endblock %}

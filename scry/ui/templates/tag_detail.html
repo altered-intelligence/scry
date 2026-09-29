@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}#{{ tag }} · Tag{% endblock %}
+{% block content %}
+
+<div class="hero">
+  <h1>#{{ tag }}</h1>
+  <div class="meta">
+    {{ observables|length }} observable(s) · {{ articles|length }} article(s) · {{ entities|length }} entity/entities
+  </div>
+</div>
+
+<div class="panel">
+  <h3>Observables tagged #{{ tag }} ({{ observables|length }})</h3>
+  {% if observables %}
+  <table>
+    <thead><tr><th>Type</th><th>Value</th><th>Risk</th><th>Action</th><th>VT</th><th>OTX</th></tr></thead>
+    <tbody>
+      {% for ob in observables %}
+      {% set vt = (ob.enrichment or {}).get('virustotal') or {} %}
+      {% set otx = (ob.enrichment or {}).get('otx') or {} %}
+      <tr>
+        <td><span class="chip">{{ ob.type }}</span></td>
+        <td>{{ m.observable_link(ob) }}</td>
+        <td>{{ m.risk_badge(ob.risk_score) }}</td>
+        <td>{{ m.action_badge(ob.actionability) }}</td>
+        <td>{% if vt.get('malicious') is not none %}{% if vt.malicious > 0 %}<span class="badge bad">{{ vt.malicious }}</span>{% else %}<span class="badge dim">0</span>{% endif %}{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td>{% if otx.get('pulse_count') is not none %}{% if otx.pulse_count > 0 %}<span class="badge mid">{{ otx.pulse_count }}</span>{% else %}<span class="badge dim">0</span>{% endif %}{% else %}<span class="muted">—</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">No observables.</p>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <h3>Articles tagged #{{ tag }} ({{ articles|length }})</h3>
+  {% if articles %}
+  <table>
+    <thead><tr><th>Title</th><th>Tags</th></tr></thead>
+    <tbody>
+      {% for a in articles %}<tr><td>{{ m.article_link(a) }}</td><td>{{ m.tag_list(a.tags) }}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">No articles.</p>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <h3>Entities tagged #{{ tag }} ({{ entities|length }})</h3>
+  {% if entities %}
+  <table>
+    <thead><tr><th>Type</th><th>Name</th><th>Tags</th></tr></thead>
+    <tbody>
+      {% for e in entities %}
+      <tr>
+        <td><span class="chip">{{ e.type }}</span></td>
+        <td>{{ m.entity_link(e) }}</td>
+        <td>{{ m.tag_list(e.tags) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">No entities.</p>
+  {% endif %}
+</div>
+
+{% endblock %}

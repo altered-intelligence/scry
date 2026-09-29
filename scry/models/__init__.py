@@ -1,0 +1,68 @@
+"""Model package — re-export everything so alembic can discover metadata."""
+
+from __future__ import annotations
+
+from scry.models.article import Article
+from scry.models.base import Base
+from scry.models.chat import ChatMessage, ChatSession
+from scry.models.claim import Claim
+from scry.models.connector_setting import ConnectorSetting
+from scry.models.cti_objects import (
+    AttackMapping,
+    Campaign,
+    Detection,
+    MalwareFamily,
+    ThreatActor,
+)
+from scry.models.cve import CVE
+from scry.models.entity import Entity, EntityMention
+from scry.models.llm_setting import LLMSetting
+from scry.models.observable import Observable, ObservableMention
+from scry.models.ransomware_feed import RansomwareFeedItem
+from scry.models.relationship import Relationship
+from scry.models.source import Source, SourceFetch, SourceReliabilityProfile
+from scry.models.telegram_channel import TelegramChannel
+from scry.models.threat_feed import ThreatFeedItem
+from scry.models.threat_intel_source import ThreatIntelSource
+from scry.models.workflow import (
+    Alert,
+    AnalystReview,
+    AuditLog,
+    Cluster,
+    Conflict,
+    Job,
+)
+
+__all__ = [
+    "CVE",
+    "Alert",
+    "AnalystReview",
+    "Article",
+    "AttackMapping",
+    "AuditLog",
+    "Base",
+    "Campaign",
+    "ChatMessage",
+    "ChatSession",
+    "Claim",
+    "Cluster",
+    "Conflict",
+    "ConnectorSetting",
+    "Detection",
+    "Entity",
+    "EntityMention",
+    "Job",
+    "LLMSetting",
+    "MalwareFamily",
+    "Observable",
+    "ObservableMention",
+    "RansomwareFeedItem",
+    "Relationship",
+    "Source",
+    "SourceFetch",
+    "SourceReliabilityProfile",
+    "TelegramChannel",
+    "ThreatActor",
+    "ThreatFeedItem",
+    "ThreatIntelSource",
+]

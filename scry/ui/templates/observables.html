@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Observables · Scry{% endblock %}
+{% block content %}
+
+<h1>Observables</h1>
+
+<form class="filters" method="get" action="/ui/observables">
+  <div>
+    <label>Search value</label>
+    <input type="text" name="q" value="{{ filters.q or '' }}" placeholder="exact / partial match">
+  </div>
+  <div>
+    <label>Type</label>
+    <select name="type">
+      <option value="">any</option>
+      {% for t in available_types %}<option value="{{ t }}" {% if filters.type == t %}selected{% endif %}>{{ t }}</option>{% endfor %}
+    </select>
+  </div>
+  <div>
+    <label>Tag</label>
+    <input type="text" name="tag" value="{{ filters.tag or '' }}" placeholder="e.g. apt29">
+  </div>
+  <div>
+    <label>Min risk</label>
+    <input type="number" name="min_risk" value="{{ filters.min_risk or '' }}" placeholder="0–100" min="0" max="100">
+  </div>
+  <div>
+    <label>Status</label>
+    <select name="status">
+      <option value="">any</option>
+      {% for s in ['active','dormant','expired','sinkholed','benign','unknown','historical'] %}
+        <option value="{{ s }}" {% if filters.status == s %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label>Limit</label>
+    <select name="limit">
+      {% for n in [50, 100, 200, 500] %}<option value="{{ n }}" {% if filters.limit == n %}selected{% endif %}>{{ n }}</option>{% endfor %}
+    </select>
+  </div>
+  <button class="btn" type="submit">Filter</button>
+  <a class="btn secondary" href="/ui/observables">Reset</a>
+</form>
+
+<div class="panel">
+  <table>
+    <thead><tr><th>Type</th><th>Value</th><th>Risk</th><th>Action</th><th>Status</th><th>VT</th><th>OTX</th><th>Tags</th></tr></thead>
+    <tbody>
+      {% for ob in observables %}
+      {% set vt = (ob.enrichment or {}).get('virustotal') or {} %}
+      {% set otx = (ob.enrichment or {}).get('otx') or {} %}
+      <tr>
+        <td><span class="chip">{{ ob.type }}</span></td>
+        <td>{{ m.observable_link(ob) }}</td>
+        <td>{{ m.risk_badge(ob.risk_score) }}</td>
+        <td>{{ m.action_badge(ob.actionability) }}</td>
+        <td><span class="chip">{{ ob.status }}</span></td>
+        <td>
+          {% if vt.get('malicious') is not none %}
+            {% if vt.malicious > 0 %}<span class="badge bad">{{ vt.malicious }}</span>
+            {% elif vt.suspicious > 0 %}<span class="badge warn">{{ vt.suspicious }}</span>
+            {% else %}<span class="badge dim">0</span>{% endif %}
+          {% else %}<span class="muted">—</span>{% endif %}
+        </td>
+        <td>
+          {% if otx.get('pulse_count') is not none %}
+            {% if otx.pulse_count >= 10 %}<span class="badge bad">{{ otx.pulse_count }}</span>
+            {% elif otx.pulse_count >= 3 %}<span class="badge warn">{{ otx.pulse_count }}</span>
+            {% elif otx.pulse_count > 0 %}<span class="badge mid">{{ otx.pulse_count }}</span>
+            {% else %}<span class="badge dim">0</span>{% endif %}
+          {% else %}<span class="muted">—</span>{% endif %}
+        </td>
+        <td>{{ m.tag_list(ob.tags[:6]) }}{% if ob.tags and ob.tags|length > 6 %}<span class="muted">+{{ ob.tags|length - 6 }}</span>{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8" class="empty">No observables match the filters.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {{ m.pagination(total, filters.offset, filters.limit, '/ui/observables', filters.qs) }}
+</div>
+
+{% endblock %}

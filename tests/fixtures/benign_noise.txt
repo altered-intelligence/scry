@@ -1,0 +1,5 @@
+As covered in our latest blog post at https://www.microsoft.com/security/blog/
+and https://github.com/microsoft/security-advisories, defenders should ensure timely
+patching. For more information, visit https://www.cloudflare.com/learning/.
+
+This article does not describe any specific malicious activity.

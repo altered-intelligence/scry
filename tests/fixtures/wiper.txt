@@ -1,0 +1,6 @@
+A new wiper malware called HermeticWiper variant "FoxBlade-2" has been deployed
+against critical infrastructure in a recent geopolitical incident. The malware performs
+disk wiping by overwriting the MBR and key NTFS structures.
+
+The activity has been attributed to Sandworm. Observed C2: 203.0.113.7
+File hash (MD5): d41d8cd98f00b204e9800998ecf8427e

@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block content %}
+
+<h1>Dashboard</h1>
+
+<div class="panel row" style="justify-content:space-between">
+  <div class="row">
+    <form method="post" action="/ui/ingest/run" style="margin:0">
+      <button class="btn" type="submit">▶ Collect now</button>
+    </form>
+    <span class="muted">Fetch all enabled sources and process new articles.</span>
+  </div>
+  <span class="muted">Last collected: {% if last_collected %}{{ last_collected | timeago }}{% else %}never{% endif %}</span>
+</div>
+
+<div class="grid" style="grid-template-columns:repeat(6,1fr)">
+  <a href="/ui/articles" class="card click">
+    <div class="num">{{ counts.articles }}</div>
+    <div class="lbl">Articles</div>
+  </a>
+  <a href="/ui/observables" class="card click">
+    <div class="num">{{ counts.observables }}</div>
+    <div class="lbl">Observables</div>
+  </a>
+  <a href="/ui/cves" class="card click">
+    <div class="num">{{ counts.cves }}</div>
+    <div class="lbl">CVEs</div>
+  </a>
+  <a href="/ui/intel-feeds/threat-feeds" class="card click danger">
+    <div class="num">{{ counts.threat_feed_items | int | format_number }}</div>
+    <div class="lbl">Threat Feed</div>
+  </a>
+  <a href="/ui/intel-feeds/ransomware-feeds" class="card click danger">
+    <div class="num">{{ counts.ransomware_feed_items | int | format_number }}</div>
+    <div class="lbl">Ransomware Feed</div>
+  </a>
+  <a href="/ui/reviews" class="card click">
+    <div class="num">{{ counts.open_reviews }}</div>
+    <div class="lbl">Open reviews</div>
+  </a>
+</div>
+
+<div class="grid-2">
+  <div>
+    <h2>High-risk observables</h2>
+    <div class="panel">
+      <table>
+        <thead><tr><th>Type</th><th>Value</th><th>Risk</th><th>Action</th><th>Tags</th></tr></thead>
+        <tbody>
+          {% for ob in high_risk %}
+          <tr>
+            <td><span class="chip">{{ ob.type }}</span></td>
+            <td>{{ m.observable_link(ob) }}</td>
+            <td>{{ m.risk_badge(ob.risk_score) }}</td>
+            <td>{{ m.action_badge(ob.actionability) }}</td>
+            <td>{{ m.tag_list(ob.tags) }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="empty">No high-risk observables yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <h2>Recent articles</h2>
+    <div class="panel">
+      <table>
+        <thead><tr><th>Title</th><th>Collected</th><th>Tags</th></tr></thead>
+        <tbody>
+          {% for art in articles %}
+          <tr>
+            <td>{{ m.article_link(art) }}</td>
+            <td class="muted" style="white-space:nowrap;font-size:12px">{{ art.ingested_at | timeago }}</td>
+            <td>{{ m.tag_list(art.tags) }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="3" class="empty">No articles yet — run <code>scry ingest-all</code> or import a case file.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <h2>Recent High-Risk Threat Feed <a href="/ui/intel-feeds/threat-feeds" style="font-size:13px;font-weight:400;margin-left:8px">View all →</a></h2>
+    <div class="panel">
+      <table>
+        <thead><tr><th>Date</th><th>Category</th><th>Title</th><th>Actor</th><th>Network</th></tr></thead>
+        <tbody>
+          {% for tf in recent_threats %}
+          <tr>
+            <td class="muted" style="white-space:nowrap;font-size:12px">{{ tf.date | timeago }}</td>
+            <td>
+              {% if tf.category in ('DDoS Attack','DDoS','ddos') %}<span class="badge bad">{{ tf.category }}</span>
+              {% elif tf.category in ('Data Breach','Data Leak') %}<span class="badge warn">{{ tf.category }}</span>
+              {% elif tf.category in ('Malware','Phishing') %}<span class="badge purple">{{ tf.category }}</span>
+              {% elif tf.category in ('Initial Access','Vulnerability') %}<span class="badge mid">{{ tf.category }}</span>
+              {% else %}<span class="chip">{{ tf.category or '—' }}</span>{% endif %}
+            </td>
+            <td><a href="/ui/intel-feeds/threat-feeds/{{ tf.id }}">{{ tf.title[:70] }}{% if tf.title|length > 70 %}…{% endif %}</a></td>
+            <td class="muted" style="font-size:12px">{{ (tf.threat_actors or '')[:30] }}{% if tf.threat_actors and tf.threat_actors|length > 30 %}…{% endif %}</td>
+            <td>
+              {% if tf.network == 'telegram' or tf.network == 'telegram_channel' %}<span class="chip chip-telegram" style="font-size:10px">Telegram</span>
+              {% elif tf.network == 'tor' %}<span class="chip chip-tor" style="font-size:10px">Tor</span>
+              {% elif tf.network %}<span class="chip" style="font-size:10px">{{ tf.network }}</span>
+              {% else %}—{% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="empty">No high-risk threat feed items.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <aside>
+    <div class="sidebar">
+      <h3>Safety defaults</h3>
+      <dl class="kv">
+        <dt>Dark web</dt><dd>{% if settings.enable_dark_web %}<span class="badge warn">on</span>{% else %}<span class="badge good">off</span>{% endif %}</dd>
+        <dt>File downloads</dt><dd>{% if settings.enable_file_downloads %}<span class="badge warn">on</span>{% else %}<span class="badge good">off</span>{% endif %}</dd>
+        <dt>Outbound alerts</dt><dd>{% if settings.enable_outbound_alerts %}<span class="badge mid">on</span>{% else %}<span class="badge dim">off</span>{% endif %}</dd>
+        <dt>LLM provider</dt><dd>{{ settings.llm_provider }}</dd>
+        <dt>VT key</dt><dd>{% if settings.virustotal_api_key %}<span class="badge good">configured</span>{% else %}<span class="badge dim">unset</span>{% endif %}</dd>
+        <dt>OTX key</dt><dd>{% if settings.otx_api_key %}<span class="badge good">configured</span>{% else %}<span class="badge dim">unset</span>{% endif %}</dd>
+      </dl>
+
+      <h3>Quick links</h3>
+      <ul style="padding-left: 18px; font-size: 13px; line-height: 1.9;">
+        <li><a href="/ui/observables?min_risk=70">Block-recommendable IOCs</a></li>
+        <li><a href="/ui/cves?only_kev=true">Active KEV CVEs</a></li>
+        <li><a href="/ui/entities?type=threat_actor">Threat actors</a></li>
+        <li><a href="/ui/entities?type=malware_family">Malware families</a></li>
+        <li><a href="/ui/tags">Browse tags</a></li>
+        <li><a href="/ui/sources">Manage sources</a></li>
+        <li><a href="/reports/daily" target="_blank">Daily report</a></li>
+        <li><a href="/ui/intel-feeds/threat-feeds?category=Data+Breach">Data breaches</a></li>
+        <li><a href="/ui/intel-feeds/threat-feeds?category=Initial+Access">Initial access listings</a></li>
+        <li><a href="/ui/intel-feeds/threat-feeds?network=tor">Dark web items</a></li>
+      </ul>
+    </div>
+  </aside>
+</div>
+
+{% endblock %}

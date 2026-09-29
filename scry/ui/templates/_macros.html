@@ -1,0 +1,129 @@
+{# Shared Jinja macros: tag chips, risk badges, etc. #}
+
+{%- macro tag_chip(t) -%}
+<a href="/ui/tags/{{ t|urlencode }}" class="tag" title="Browse all items tagged {{ t }}">{{ t }}</a>
+{%- endmacro -%}
+
+{%- macro tag_list(tags) -%}
+{% for t in (tags or []) %}{{ tag_chip(t) }}{% endfor %}
+{%- endmacro -%}
+
+{%- macro risk_badge(score) -%}
+{%- if score is none %}<span class="badge dim">—</span>
+{%- elif score >= 85 %}<span class="badge bad">{{ '%.0f' % score }}</span>
+{%- elif score >= 60 %}<span class="badge warn">{{ '%.0f' % score }}</span>
+{%- elif score >= 30 %}<span class="badge mid">{{ '%.0f' % score }}</span>
+{%- else %}<span class="badge dim">{{ '%.0f' % score }}</span>
+{%- endif %}
+{%- endmacro -%}
+
+{%- macro action_badge(action) -%}
+{%- if action == 'urgent_review' %}<span class="badge bad">{{ action }}</span>
+{%- elif action == 'block_if_safe' %}<span class="badge warn">{{ action }}</span>
+{%- elif action == 'high_priority_hunt' %}<span class="badge mid">{{ action }}</span>
+{%- elif action == 'monitor' %}<span class="badge dim">{{ action }}</span>
+{%- elif action == 'enrich_only' %}<span class="badge dim">{{ action }}</span>
+{%- elif action == 'expired' %}<span class="badge gray">{{ action }}</span>
+{%- else %}<span class="badge dim">{{ action }}</span>
+{%- endif %}
+{%- endmacro -%}
+
+{%- macro confidence_chip(value, label='confidence') -%}
+<span class="chip" title="{{ label }}">{{ value }}</span>
+{%- endmacro -%}
+
+{%- macro kev_badge() -%}<span class="badge bad" title="CISA Known Exploited Vulnerability">KEV</span>{%- endmacro -%}
+{%- macro exploited_badge() -%}<span class="badge warn" title="Exploited in the wild">ITW</span>{%- endmacro -%}
+{%- macro ms_badge() -%}<span class="badge blue" title="Microsoft surface">MS</span>{%- endmacro -%}
+{%- macro ransomware_badge() -%}<span class="badge purple" title="Ransomware-associated">RW</span>{%- endmacro -%}
+{%- macro poc_badge() -%}<span class="badge mid" title="Public PoC available">PoC</span>{%- endmacro -%}
+
+{%- macro observable_link(ob) -%}
+<a href="/ui/observables/{{ ob.id }}"><code>{{ ob.normalized_value }}</code></a>
+{%- endmacro -%}
+
+{%- macro article_link(a) -%}
+<a href="/ui/articles/{{ a.id }}">{{ a.title or a.url }}</a>
+{%- endmacro -%}
+
+{%- macro entity_link(e) -%}
+<a href="/ui/entities/{{ e.id }}">{{ e.canonical_name }}</a>
+{%- endmacro -%}
+
+{%- macro cve_link(cve_id) -%}
+<a href="/ui/cves/{{ cve_id }}"><code>{{ cve_id }}</code></a>
+{%- endmacro -%}
+
+{%- macro pagination(total, offset, limit, base_url, qs='') -%}
+{% set page = (offset // limit) + 1 %}
+{% set pages = ((total - 1) // limit) + 1 if total else 1 %}
+<div class="pagination">
+  <span class="muted">page {{ page }} of {{ pages }} · {{ total }} total</span>
+  {% if offset > 0 %}
+    <a class="btn" href="{{ base_url }}?offset={{ [0, offset-limit]|max }}&limit={{ limit }}{{ qs }}">‹ prev</a>
+  {% endif %}
+  {% if offset + limit < total %}
+    <a class="btn" href="{{ base_url }}?offset={{ offset + limit }}&limit={{ limit }}{{ qs }}">next ›</a>
+  {% endif %}
+</div>
+{%- endmacro -%}
+
+{%- macro enrichment_summary(enrichment) -%}
+{% set vt = (enrichment or {}).get('virustotal') %}
+{% set otx = (enrichment or {}).get('otx') %}
+{% if vt %}
+  <div class="enrich-card">
+    <div class="enrich-head"><b>VirusTotal</b>
+      {% if vt.get('not_found') %}<span class="badge dim">not seen</span>{% endif %}
+    </div>
+    {% if not vt.get('not_found') %}
+    <dl class="kv">
+      <dt>malicious</dt><dd>{% if (vt.get('malicious') or 0) > 0 %}<span class="badge bad">{{ vt.malicious }}</span>{% else %}<span class="badge dim">0</span>{% endif %}</dd>
+      <dt>suspicious</dt><dd>{% if (vt.get('suspicious') or 0) > 0 %}<span class="badge warn">{{ vt.suspicious }}</span>{% else %}<span class="badge dim">0</span>{% endif %}</dd>
+      <dt>harmless</dt><dd>{{ vt.get('harmless', 0) }}</dd>
+      <dt>undetected</dt><dd>{{ vt.get('undetected', 0) }}</dd>
+      {% if vt.get('reputation') is not none %}<dt>reputation</dt><dd>{{ vt.reputation }}</dd>{% endif %}
+      {% if vt.get('as_owner') %}<dt>AS owner</dt><dd>{{ vt.as_owner }}</dd>{% endif %}
+      {% if vt.get('asn') %}<dt>ASN</dt><dd>{{ vt.asn }}</dd>{% endif %}
+      {% if vt.get('country') %}<dt>country</dt><dd>{{ vt.country }}</dd>{% endif %}
+      {% if vt.get('registrar') %}<dt>registrar</dt><dd>{{ vt.registrar }}</dd>{% endif %}
+      {% if vt.get('meaningful_name') %}<dt>name</dt><dd><code>{{ vt.meaningful_name }}</code></dd>{% endif %}
+      {% if vt.get('type_description') %}<dt>file type</dt><dd>{{ vt.type_description }}</dd>{% endif %}
+      {% if vt.get('popular_threat_classification') %}<dt>threat class</dt><dd>{{ vt.popular_threat_classification.get('suggested_threat_label') or '' }}</dd>{% endif %}
+    </dl>
+    {% endif %}
+  </div>
+{% endif %}
+{% if otx %}
+  <div class="enrich-card">
+    <div class="enrich-head"><b>AlienVault OTX</b>
+      {% if otx.get('not_found') %}<span class="badge dim">not seen</span>{% endif %}
+    </div>
+    {% if not otx.get('not_found') %}
+    <dl class="kv">
+      <dt>pulses</dt><dd>{% if (otx.get('pulse_count') or 0) >= 10 %}<span class="badge bad">{{ otx.pulse_count }}</span>{% elif (otx.get('pulse_count') or 0) >= 3 %}<span class="badge warn">{{ otx.pulse_count }}</span>{% elif (otx.get('pulse_count') or 0) > 0 %}<span class="badge mid">{{ otx.pulse_count }}</span>{% else %}<span class="badge dim">0</span>{% endif %}</dd>
+      {% if otx.get('country') %}<dt>country</dt><dd>{{ otx.country }}</dd>{% endif %}
+      {% if otx.get('asn') %}<dt>ASN</dt><dd>{{ otx.asn }}</dd>{% endif %}
+      {% if otx.get('malware_families') %}<dt>malware families</dt><dd>{% for f in otx.malware_families %}<span class="chip">{{ f }}</span>{% endfor %}</dd>{% endif %}
+      {% if otx.get('adversaries') %}<dt>adversaries</dt><dd>{% for a in otx.adversaries %}<span class="chip">{{ a }}</span>{% endfor %}</dd>{% endif %}
+      {% if otx.get('related_tags') %}<dt>tags</dt><dd>{% for t in otx.related_tags %}<span class="chip">{{ t }}</span>{% endfor %}</dd>{% endif %}
+    </dl>
+    {% if otx.get('top_pulses') %}
+      <details class="pulses">
+        <summary class="muted">{{ otx.top_pulses|length }} top pulse(s)</summary>
+        <ul>
+        {% for p in otx.top_pulses %}
+          <li>
+            <b>{{ p.name }}</b>
+            {% if p.adversary %} · adversary: <span class="chip">{{ p.adversary }}</span>{% endif %}
+            {% if p.malware_families %} · malware: {% for m in p.malware_families %}<span class="chip">{{ m }}</span>{% endfor %}{% endif %}
+            {% if p.tags %}<br><span class="muted">{% for t in p.tags %}<span class="chip">{{ t }}</span>{% endfor %}</span>{% endif %}
+          </li>
+        {% endfor %}
+        </ul>
+      </details>
+    {% endif %}
+    {% endif %}
+  </div>
+{% endif %}
+{%- endmacro -%}

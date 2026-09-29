@@ -1,0 +1,15 @@
+LockBit ransomware affiliates claimed responsibility for the breach at Acme Manufacturing
+on May 10, 2026. The group listed the victim on their leak site and demanded 2.4 BTC
+payment to wallet bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh.
+
+Indicators of compromise observed during this campaign:
+- C2 domain: bad-cdn.example[.]net
+- Beacon IP: 198.51.100.42
+- Dropper SHA256: 6e2c8b3f5a1d4f9e7c0b2a3d5e6f7891a4b5c6d7e8f90123456789abcdef0123
+- Exploited vulnerability: CVE-2024-12345 (Acme Edge Gateway RCE)
+- ATT&CK techniques observed: T1486 (Data Encrypted for Impact), T1490 (Inhibit System Recovery), T1059.001 (PowerShell)
+
+The activity has been attributed to LockBit 3.0. The ransomware was deployed after exploiting
+the Acme Edge Gateway flaw. A proof of concept was released on GitHub last week.
+
+This activity targets the US defense industrial base and aerospace contractors.

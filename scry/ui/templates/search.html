@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Search · Scry{% endblock %}
+{% block content %}
+
+<h1>Search</h1>
+<form method="get" action="/ui/search" class="filters">
+  <input type="text" name="q" value="{{ q }}" placeholder="articles, observables, entities, claims…" style="min-width: 320px;">
+  <button class="btn" type="submit">Search</button>
+</form>
+
+{% if q %}
+<p class="muted">{{ hits|length }} hit(s) for <code>{{ q }}</code></p>
+<div class="panel">
+  <table>
+    <thead><tr><th>Type</th><th>Title</th><th>Snippet</th></tr></thead>
+    <tbody>
+      {% for h in hits %}
+      <tr>
+        <td><span class="chip">{{ h.object_type }}</span></td>
+        <td>
+          {% if h.object_type == 'article' %}<a href="/ui/articles/{{ h.object_id }}">{{ h.title }}</a>
+          {% elif h.object_type == 'observable' %}<a href="/ui/observables/{{ h.object_id }}">{{ h.title }}</a>
+          {% elif h.object_type == 'entity' %}<a href="/ui/entities/{{ h.object_id }}">{{ h.title }}</a>
+          {% elif h.object_type == 'claim' %}<a href="/ui/articles/{{ h.object_id }}">{{ h.title }}</a>
+          {% else %}{{ h.title }}
+          {% endif %}
+        </td>
+        <td class="truncate" title="{{ h.snippet }}">{{ h.snippet }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" class="empty">No matches.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{# =========================== AI SEARCH =========================== #}
+{% if enable_ai_search %}
+<link rel="stylesheet" href="/static/ai_chat.css">
+
+<div class="ai-search-section">
+  <div class="ai-search-header">
+    <h2 style="margin:0">🤖 AI Search <span class="badge mid" style="font-size:10px;vertical-align:middle">BETA</span></h2>
+    <div class="ai-search-controls">
+      <label class="muted" style="font-size:11px">Model:</label>
+      <select id="ai-model-picker" class="ai-model-picker">
+        <option value="">Loading models…</option>
+      </select>
+      <a href="/ui/settings/llms" class="btn secondary" style="font-size:12px;padding:5px 12px">⚙ Configure</a>
+    </div>
+  </div>
+
+  <div class="ai-search-body">
+    {# Left rail: session list #}
+    <aside class="ai-sessions">
+      <div class="ai-sessions-head">
+        <strong>Sessions</strong>
+        <button class="btn" id="ai-new-session" style="font-size:11px;padding:4px 10px">+ New</button>
+      </div>
+      <ul id="ai-session-list" class="ai-session-list">
+        <li class="muted">Loading…</li>
+      </ul>
+    </aside>
+
+    {# Right: chat area #}
+    <div class="ai-chat">
+      <div id="ai-chat-status" class="ai-chat-status"></div>
+      <div id="ai-messages" class="ai-messages">
+        <div class="ai-empty">
+          <h3 style="margin-top:0">Ask anything about your CTI data</h3>
+          <p class="muted">The assistant searches your articles, observables, CVEs, threat feeds, and ransomware victims, then cites the records it used. Try:</p>
+          <ul class="muted" style="font-size:13px;line-height:1.8">
+            <li>"Which ransomware groups hit US healthcare this month?"</li>
+            <li>"Summarize observables tagged 'lockbit' with risk &gt; 70"</li>
+            <li>"What CVEs are in the active KEV catalog?"</li>
+            <li>"Build a block list of the top 50 high-risk domains"</li>
+          </ul>
+        </div>
+      </div>
+      <form id="ai-form" class="ai-input-row">
+        <textarea id="ai-input" placeholder="Ask a question…   (Enter to send · Shift+Enter for newline)" rows="2"></textarea>
+        <button class="btn" id="ai-send-btn" type="submit">Send →</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+{# Sources drawer (hidden by default) #}
+<div id="ai-sources-drawer" class="ai-drawer" hidden>
+  <div class="ai-drawer-head">
+    <strong>Sources</strong>
+    <button id="ai-drawer-close" class="btn secondary" style="font-size:12px;padding:3px 10px">Close</button>
+  </div>
+  <div id="ai-sources-list" class="ai-drawer-body"></div>
+</div>
+
+<script src="/static/ai_chat.js"></script>
+{% endif %}
+
+{% endblock %}
