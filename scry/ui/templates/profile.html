@@ -148,6 +148,141 @@
   {% endif %}
 </div>
 
+{# ------------------------- passkeys ------------------------- #}
+<div class="panel" id="passkeys">
+  <h2 style="margin-top: 0;">Passkeys</h2>
+  <p class="muted">Sign in with Face&nbsp;ID, Touch&nbsp;ID, Windows Hello, or a hardware
+    security key — no password needed. A passkey sign-in also satisfies MFA.</p>
+
+  {% if passkeys %}
+    <table>
+      <thead>
+        <tr><th>Name</th><th>Created</th><th>Last used</th><th>AAGUID</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        {% for p in passkeys %}
+        <tr>
+          <td><b>{{ p.name }}</b></td>
+          <td>{{ p.created_at|timeago }}</td>
+          <td>{{ p.last_used_at|timeago }}</td>
+          <td><code>{{ (p.aaguid or '—')[:13] }}{% if p.aaguid %}…{% endif %}</code></td>
+          <td>
+            <form method="post" action="/profile/passkeys/{{ p.id }}/rename"
+                  style="display: inline-flex; gap: 4px; align-items: center;">
+              <input type="hidden" name="csrf" value="{{ csrf }}">
+              <input type="text" name="name" value="{{ p.name }}" required
+                     style="width: 130px; font-size: 12px; padding: 4px 8px;">
+              <button type="submit" class="btn secondary" style="font-size: 12px; padding: 4px 10px;">Rename</button>
+            </form>
+            <form method="post" action="/profile/passkeys/{{ p.id }}/delete"
+                  style="display: inline-flex; gap: 4px; align-items: center;"
+                  onsubmit="return confirm('Delete passkey {{ p.name }}? You will no longer be able to sign in with it.');">
+              <input type="hidden" name="csrf" value="{{ csrf }}">
+              <input type="password" name="password" required placeholder="password"
+                     autocomplete="current-password"
+                     style="width: 110px; font-size: 12px; padding: 4px 8px;">
+              <button type="submit" class="btn danger" style="font-size: 12px; padding: 4px 10px;">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">No passkeys yet.</p>
+  {% endif %}
+
+  <h3>Add a passkey</h3>
+  <form id="passkey-add-form" class="filters" style="align-items: end;" onsubmit="return false;">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>Password <input type="password" name="password" required autocomplete="current-password"></label>
+    <button type="button" id="passkey-add-btn" class="btn">Add passkey</button>
+  </form>
+  <p id="passkey-msg" class="muted" style="font-size: 13px;"></p>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var form = document.getElementById("passkey-add-form");
+  var btn = document.getElementById("passkey-add-btn");
+  var msg = document.getElementById("passkey-msg");
+  if (!form || !btn) return;
+
+  function show(text, isErr) {
+    msg.textContent = text;
+    msg.style.color = isErr ? "var(--bad, #e5534b)" : "";
+  }
+  function b64urlToBuf(s) {
+    var pad = "=".repeat((4 - (s.length % 4)) % 4);
+    var bin = atob((s + pad).replace(/-/g, "+").replace(/_/g, "/"));
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes.buffer;
+  }
+  function bufToB64url(buf) {
+    var bytes = new Uint8Array(buf);
+    var bin = "";
+    for (var i = 0; i < bytes.length; i += 8192) {
+      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
+    }
+    return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+  function post(url, body) {
+    return fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(body)
+    });
+  }
+
+  btn.addEventListener("click", async function () {
+    if (!window.PublicKeyCredential) {
+      show("This browser does not support passkeys (WebAuthn).", true);
+      return;
+    }
+    btn.disabled = true;
+    show("Starting passkey setup…");
+    try {
+      var resp = await post("/profile/passkeys/register-begin", {
+        csrf: form.csrf.value, password: form.password.value
+      });
+      var data = await resp.json();
+      if (!resp.ok) { show(data.error || "Could not start passkey setup.", true); return; }
+      var opts = data.options;
+      opts.challenge = b64urlToBuf(opts.challenge);
+      opts.user.id = b64urlToBuf(opts.user.id);
+      (opts.excludeCredentials || []).forEach(function (c) { c.id = b64urlToBuf(c.id); });
+      var cred = await navigator.credentials.create({ publicKey: opts });
+      if (!cred) { show("Passkey creation was cancelled.", true); return; }
+      var name = (prompt("Name this passkey (e.g. \"MacBook Touch ID\"):", "Passkey") || "Passkey").trim() || "Passkey";
+      var credential = {
+        id: cred.id,
+        rawId: bufToB64url(cred.rawId),
+        type: cred.type,
+        response: {
+          attestationObject: bufToB64url(cred.response.attestationObject),
+          clientDataJSON: bufToB64url(cred.response.clientDataJSON)
+        },
+        clientExtensionResults: cred.getClientExtensionResults(),
+        transports: cred.response.getTransports ? cred.response.getTransports() : []
+      };
+      resp = await fetch("/profile/passkeys/register-complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ csrf: form.csrf.value, name: name, credential: credential })
+      });
+      data = await resp.json();
+      if (data.ok) { window.location.reload(); } else { show(data.error || "Passkey verification failed.", true); }
+    } catch (err) {
+      show("Passkey setup failed: " + (err && err.message ? err.message : err), true);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+})();
+</script>
+
 {# ------------------------- API keys ------------------------- #}
 <div class="panel" id="api-keys">
   <h2 style="margin-top: 0;">API keys</h2>

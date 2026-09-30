@@ -19,6 +19,7 @@
     <thead>
       <tr>
         <th>Username</th><th>Display name</th><th>Email</th><th>Role</th><th>Status</th>
+        <th>Passkeys</th>
         <th>Last login</th><th>Failed logins</th><th>Locked until</th><th>Actions</th>
       </tr>
     </thead>
@@ -32,6 +33,7 @@
         <td>{{ u.email }}</td>
         <td><span class="badge {{ 'purple' if u.role == 'admin' else 'gray' }}">{{ u.role }}</span></td>
         <td><span class="badge {{ 'good' if u.status == 'active' else 'bad' }}">{{ u.status }}</span></td>
+        <td>{{ passkey_counts.get(u.id, 0) }}</td>
         <td>{{ u.last_login_at|timeago }}</td>
         <td>{{ u.failed_login_count }}</td>
         <td>{{ u.locked_until|timeago }}</td>

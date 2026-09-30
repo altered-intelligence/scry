@@ -41,6 +41,7 @@ dependencies = [
   "bcrypt>=4",
   "pyotp>=2.9",
   "qrcode[pil]>=7",
+  "webauthn>=2.0",
 ]
 
 [project.optional-dependencies]

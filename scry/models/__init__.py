@@ -25,7 +25,14 @@ from scry.models.system import SystemSetting
 from scry.models.telegram_channel import TelegramChannel
 from scry.models.threat_feed import ThreatFeedItem
 from scry.models.threat_intel_source import ThreatIntelSource
-from scry.models.user import ApiKey, EmailVerification, RecoveryCode, SessionToken, User
+from scry.models.user import (
+    ApiKey,
+    EmailVerification,
+    PasskeyCredential,
+    RecoveryCode,
+    SessionToken,
+    User,
+)
 from scry.models.workflow import (
     Alert,
     AnalystReview,
@@ -60,6 +67,7 @@ __all__ = [
     "MalwareFamily",
     "Observable",
     "ObservableMention",
+    "PasskeyCredential",
     "RansomwareFeedItem",
     "RecoveryCode",
     "Relationship",

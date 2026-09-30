@@ -12,8 +12,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlencode
 
-from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import Body, Depends, FastAPI, Form, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
@@ -59,6 +59,7 @@ from scry.models import (
     EntityMention,
     Observable,
     ObservableMention,
+    PasskeyCredential,
     RansomwareFeedItem,
     RecoveryCode,
     Relationship,
@@ -539,6 +540,14 @@ def admin_page(request: Request, session: Session = Depends(get_session)):
         return templates.TemplateResponse(request, "403.html", {}, status_code=403)
 
     users = list(session.scalars(select(User).order_by(User.id)))
+    passkey_counts = {
+        uid: count
+        for uid, count in session.execute(
+            select(PasskeyCredential.user_id, func.count(PasskeyCredential.id)).group_by(
+                PasskeyCredential.user_id
+            )
+        )
+    }
     now = datetime.now(UTC)
     sessions_rows = list(
         session.execute(
@@ -564,6 +573,7 @@ def admin_page(request: Request, session: Session = Depends(get_session)):
             "admin": admin,
             "csrf": _admin_csrf_token(request.cookies[SESSION_COOKIE]),
             "users": users,
+            "passkey_counts": passkey_counts,
             "user_counts": _admin_user_counts(session),
             "stats": compute_stats(session),
             "failed_logins": failed_logins,
@@ -1013,6 +1023,13 @@ def _profile_context(request: Request, session: Session, user: User) -> dict:
         "user": user,
         "csrf": _admin_csrf_token(request.cookies[SESSION_COOKIE]),
         "api_keys": api_keys,
+        "passkeys": list(
+            session.scalars(
+                select(PasskeyCredential)
+                .where(PasskeyCredential.user_id == user.id)
+                .order_by(PasskeyCredential.id)
+            )
+        ),
         "smtp_configured": _mail.smtp_configured(session),
         "pending_verification": pending_verification,
         "mfa_setup": mfa_setup,
@@ -1359,6 +1376,277 @@ def profile_mfa_disable(
         "/profile",
         f"MFA disabled. {int(revoked or 0)} other session(s) were signed out.",
     )
+
+
+# ------------------------- passkeys / WebAuthn (v0.5.0 step 5) -------------------------
+
+# Registration ceremony (session required, CSRF-gated, password-confirmed):
+#   POST /profile/passkeys/register-begin    → WebAuthn creation options JSON;
+#     the challenge rides in a short-lived Fernet pending cookie.
+#   POST /profile/passkeys/register-complete → verifies the attestation and
+#     stores the credential under the user-supplied name.
+# Username-first login ceremony (no session): the user enters their username,
+# we scope the assertion options to that user's credentials, and a successful
+# assertion creates a session directly. A passkey IS the second factor: a
+# successful passkey sign-in satisfies MFA (a user with totp_enabled skips the
+# /login/mfa challenge — documented on the login page).
+# rp_id/origin are derived per request from the Host header (scry/auth/webauthn.py).
+
+
+@app.post("/profile/passkeys/register-begin")
+def profile_passkey_register_begin(
+    request: Request,
+    session: Session = Depends(get_session),
+    csrf: str = Form(""),
+    password: str = Form(...),
+):
+    from scry.auth import webauthn as _webauthn
+
+    user = _profile_or_redirect(request, session)
+    if user is None:
+        raise HTTPException(403)
+    if not _check_admin_csrf(request, csrf):
+        return JSONResponse({"error": "Bad CSRF token — action rejected."}, status_code=403)
+    if not verify_password(password, user.password_hash):
+        return JSONResponse({"error": "Password is incorrect."}, status_code=403)
+    rp_id, _origin = _webauthn.rp_context(request)
+    credentials = list(
+        session.scalars(select(PasskeyCredential).where(PasskeyCredential.user_id == user.id))
+    )
+    options_json, challenge = _webauthn.registration_options_json(user, credentials, rp_id)
+    marker = _webauthn.issue_passkey_marker(user.id, challenge)
+    response = JSONResponse({"options": json.loads(options_json)})
+    response.set_cookie(
+        _webauthn.PASSKEY_PENDING_COOKIE,
+        marker,
+        max_age=int(_webauthn.PASSKEY_PENDING_TTL.total_seconds()),
+        httponly=True,
+        samesite="lax",
+        path="/",
+    )
+    return response
+
+
+@app.post("/profile/passkeys/register-complete")
+def profile_passkey_register_complete(
+    request: Request,
+    session: Session = Depends(get_session),
+    payload: dict = Body(default={}),
+):
+    from scry.auth import webauthn as _webauthn
+
+    user = _profile_or_redirect(request, session)
+    if user is None:
+        raise HTTPException(403)
+    if not _check_admin_csrf(request, payload.get("csrf")):
+        return JSONResponse({"error": "Bad CSRF token — action rejected."}, status_code=403)
+    marker = _webauthn.read_passkey_marker(request.cookies.get(_webauthn.PASSKEY_PENDING_COOKIE))
+    if marker is None or marker["uid"] != user.id:
+        return JSONResponse(
+            {"error": "The passkey setup has expired — please try again."}, status_code=400
+        )
+    rp_id, origin = _webauthn.rp_context(request)
+    credential = payload.get("credential") or {}
+    try:
+        verification = _webauthn.verify_registration_response(
+            credential=credential,
+            expected_challenge=_webauthn.challenge_bytes(marker["challenge"]),
+            expected_rp_id=rp_id,
+            expected_origin=origin,
+        )
+    except Exception:  # InvalidRegistrationResponse and friends — back to start.
+        response = JSONResponse(
+            {"error": "Passkey verification failed — please try again."}, status_code=400
+        )
+        response.delete_cookie(_webauthn.PASSKEY_PENDING_COOKIE, path="/")
+        return response
+    name = ((payload.get("name") or "").strip() or "Passkey")[:128]
+    transports = credential.get("transports")
+    session.add(
+        PasskeyCredential(
+            user_id=user.id,
+            credential_id=verification.credential_id,
+            public_key=verification.credential_public_key,
+            sign_count=verification.sign_count,
+            aaguid=verification.aaguid or None,
+            transports=",".join(transports) if isinstance(transports, list) else None,
+            name=name,
+        )
+    )
+    session.flush()
+    _audit_profile(
+        session, user, "passkey.register", {"name": name, "aaguid": verification.aaguid or None}
+    )
+    response = JSONResponse({"ok": True, "name": name})
+    response.delete_cookie(_webauthn.PASSKEY_PENDING_COOKIE, path="/")
+    return response
+
+
+@app.post("/profile/passkeys/{passkey_id}/rename")
+def profile_passkey_rename(
+    passkey_id: int,
+    request: Request,
+    session: Session = Depends(get_session),
+    csrf: str = Form(""),
+    name: str = Form(...),
+):
+    user = _profile_or_redirect(request, session)
+    if user is None:
+        raise HTTPException(403)
+    if not _check_admin_csrf(request, csrf):
+        return _redirect_flash("/profile", "Bad CSRF token — action rejected.", "error")
+    credential = session.scalar(
+        select(PasskeyCredential).where(
+            PasskeyCredential.id == passkey_id, PasskeyCredential.user_id == user.id
+        )
+    )
+    if credential is None:
+        return _redirect_flash("/profile", "Passkey not found.", "error")
+    old_name = credential.name
+    credential.name = name.strip()[:128] or "Passkey"
+    session.flush()
+    _audit_profile(session, user, "passkey.rename", {"from": old_name, "to": credential.name})
+    return _redirect_flash("/profile", f"Passkey renamed to '{credential.name}'.")
+
+
+@app.post("/profile/passkeys/{passkey_id}/delete")
+def profile_passkey_delete(
+    passkey_id: int,
+    request: Request,
+    session: Session = Depends(get_session),
+    csrf: str = Form(""),
+    password: str = Form(...),
+):
+    user = _profile_or_redirect(request, session)
+    if user is None:
+        raise HTTPException(403)
+    if not _check_admin_csrf(request, csrf):
+        return _redirect_flash("/profile", "Bad CSRF token — action rejected.", "error")
+    if not verify_password(password, user.password_hash):
+        return _redirect_flash("/profile", "Password is incorrect.", "error")
+    credential = session.scalar(
+        select(PasskeyCredential).where(
+            PasskeyCredential.id == passkey_id, PasskeyCredential.user_id == user.id
+        )
+    )
+    if credential is None:
+        return _redirect_flash("/profile", "Passkey not found.", "error")
+    name = credential.name
+    session.delete(credential)
+    session.flush()
+    _audit_profile(session, user, "passkey.delete", {"name": name})
+    return _redirect_flash("/profile", f"Deleted passkey '{name}'.")
+
+
+@app.post("/login/passkey/begin")
+def login_passkey_begin(request: Request, username: str = Form(...)):
+    """Username-first passkey sign-in: scope the assertion to the user's
+    credentials and hand the challenge to the browser via a pending cookie."""
+    from scry.auth import webauthn as _webauthn
+
+    rp_id, _origin = _webauthn.rp_context(request)
+    generic_error = JSONResponse(
+        {"error": "No passkeys are registered for that username."}, status_code=400
+    )
+    with session_scope() as session:
+        if not users_exist(session):
+            return JSONResponse({"error": "No user accounts exist yet."}, status_code=400)
+        user = session.scalar(select(User).where(func.lower(User.username) == username.lower()))
+        if user is None or user.status != "active":
+            return generic_error
+        credentials = list(
+            session.scalars(select(PasskeyCredential).where(PasskeyCredential.user_id == user.id))
+        )
+        if not credentials:
+            return generic_error
+        options_json, challenge = _webauthn.authentication_options_json(credentials, rp_id)
+        marker = _webauthn.issue_passkey_marker(user.id, challenge)
+    response = JSONResponse({"options": json.loads(options_json)})
+    response.set_cookie(
+        _webauthn.PASSKEY_PENDING_COOKIE,
+        marker,
+        max_age=int(_webauthn.PASSKEY_PENDING_TTL.total_seconds()),
+        httponly=True,
+        samesite="lax",
+        path="/",
+    )
+    return response
+
+
+@app.post("/login/passkey/complete")
+def login_passkey_complete(request: Request, payload: dict = Body(default={})):
+    from scry.auth import webauthn as _webauthn
+
+    marker = _webauthn.read_passkey_marker(request.cookies.get(_webauthn.PASSKEY_PENDING_COOKIE))
+    if marker is None:
+        return JSONResponse(
+            {"error": "The passkey sign-in has expired — please try again."}, status_code=400
+        )
+    rp_id, origin = _webauthn.rp_context(request)
+    credential = payload.get("credential") or {}
+    next_url = _safe_next(payload.get("next"))
+    with session_scope() as session:
+        user = session.get(User, marker["uid"])
+        cred_id = _webauthn.credential_id_bytes(credential)
+        credential_row = (
+            session.scalar(
+                select(PasskeyCredential).where(
+                    PasskeyCredential.user_id == marker["uid"],
+                    PasskeyCredential.credential_id == cred_id,
+                )
+            )
+            if cred_id is not None
+            else None
+        )
+        if user is None or user.status != "active" or credential_row is None:
+            response = JSONResponse({"error": "Unknown passkey."}, status_code=400)
+            response.delete_cookie(_webauthn.PASSKEY_PENDING_COOKIE, path="/")
+            return response
+        try:
+            verification = _webauthn.verify_authentication_response(
+                credential=credential,
+                expected_challenge=_webauthn.challenge_bytes(marker["challenge"]),
+                expected_rp_id=rp_id,
+                expected_origin=origin,
+                credential_public_key=credential_row.public_key,
+                credential_current_sign_count=credential_row.sign_count,
+            )
+        except Exception:  # InvalidAuthenticationResponse et al — fail closed.
+            _audit_login(session, user.username, success=False, detail={"reason": "passkey"})
+            session.commit()
+            response = JSONResponse({"error": "Passkey verification failed."}, status_code=400)
+            response.delete_cookie(_webauthn.PASSKEY_PENDING_COOKIE, path="/")
+            return response
+        # Verified: advance the sign counter (clone detection), touch last used.
+        credential_row.sign_count = verification.new_sign_count
+        credential_row.last_used_at = datetime.now(UTC)
+        record_login_success(session, user)
+        raw_token = create_session(
+            session,
+            user,
+            ip=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        )
+        # A passkey assertion IS the second factor: when TOTP MFA is enabled it
+        # is satisfied by the passkey sign-in (no /login/mfa challenge).
+        _audit_login(
+            session,
+            user.username,
+            success=True,
+            detail={"via": "passkey", "mfa": "satisfied" if user.totp_enabled else "not_required"},
+        )
+        session.commit()
+    response = JSONResponse({"ok": True, "redirect": next_url})
+    response.set_cookie(
+        SESSION_COOKIE,
+        raw_token,
+        max_age=int(SESSION_TTL.total_seconds()),
+        httponly=True,
+        samesite="lax",
+        path="/",
+    )
+    response.delete_cookie(_webauthn.PASSKEY_PENDING_COOKIE, path="/")
+    return response
 
 
 # ------------------------- helpers -------------------------
