@@ -196,7 +196,7 @@ escalation, and OTX pulse ingestion as a first-class source.
   Re-check (existing live lookup, labeled); observables page gains
   "Re-enrich stale" and "Force re-enrich all" (confirm-guarded); admin
   coverage table adds fresh/stale counts.
-- [ ] **Step 4 — Deploy + live verify.** Touch-restart the uvicorn --reload
+- [x] **Step 4 — Deploy + live verify.** Touch-restart the uvicorn --reload
   server, verify: OTX pulse pull with real key (small limit), escalation rule
   dry presence, enrichment run reports fresh_skipped on second pass.
 - [x] **Step 5 — Release.** 0.5.0 → 0.6.0 bump, CHANGELOG, README, tag,
