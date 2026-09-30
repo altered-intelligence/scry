@@ -76,3 +76,76 @@ Conventions for every step:
 - [x] Bump version to 0.4.0 (app version in `scry/main.py`, `pyproject.toml`,
       `CHANGELOG.md`, README feature list), tag `v0.4.0`, push + GitHub release
       via `/opt/homebrew/bin/gh`.
+
+---
+
+# scry v0.5.0 feature track — user accounts, auth, admin
+
+Same conventions as v0.4.0: one committed step at a time, full test suite
+(`.venv/bin/pytest -q`, currently 242 passed) green before each commit, commit
+prefix `v0.5.0 step N:`. Owner decisions locked 2026-09-29:
+
+- Background/scheduled ingest+enrichment uses the SYSTEM key (env/DB chain);
+  user-triggered actions (test button, verdict panel, manual enrich) use the
+  ACTING USER's personal VT/OTX keys; no personal key → provider skipped; all
+  enriched data stays shared in the common DB.
+- Per-user privacy: AI chat sessions visible only to their owner; reviews/alert
+  acks attributed to acting user. Intel data itself stays shared.
+- WebAuthn relying-party derived per-request from Host — works on localhost
+  now and LAN+HTTPS later.
+- Email required for all users. SMTP not configured → email verification
+  bypassed (auto-verified). SMTP configured → 6-digit PIN emailed, required at
+  first login; same code path serves future password reset. Admin SMTP config
+  page with test button; all SMTP functions bypass cleanly when unset.
+- Once ANY user exists: /api/* requires auth (session cookie, per-user API
+  key, or master CTI_API_KEY). Master key generated into .env + added to
+  Dashboard widget scripts. No users → legacy open behavior.
+- Seeded admins: alakhani + admin, password "Batman911!#", must change at
+  first login, MFA/passkeys off initially. Existing VT/OTX keys migrated from
+  .env into both profiles.
+
+## Steps
+
+- [ ] **Step 1 — Accounts core.** User + SessionToken models (scry/models/user.py);
+  bcrypt password hashes; DB-backed sessions (HttpOnly cookie, sliding 7-day
+  expiry, "log out everywhere"); /login /logout pages; middleware gating /ui/*
+  + future /admin behind session (redirect to /login; /login + /static exempt);
+  login throttling (5 fails → 15-min lockout); email column required;
+  `scry users` CLI (create/list/promote/demote/reset-password/disable/seed);
+  seed alakhani+admin (must_change_password=true); extension of
+  scry/api/auth.py: when users exist require session cookie OR valid API key
+  OR master CTI_API_KEY (per-user keys land in step 3 — design the dependency
+  so keys are pluggable); exemptions /health /api/health /api/ai/status
+  /api/ai/provider GET stay as today.
+- [ ] **Step 2 — Roles + /admin.** Role column (user|admin); /admin gated to
+  admins (403 page otherwise); admin dashboard: user table (create/edit role/
+  disable/reset password/delete), app stats reuse, failed-logins/lockouts
+  panel, admin audit via scry/audit.py. Nav link visible to admins only.
+- [ ] **Step 3 — /profile + per-user scry API keys + email verification.**
+  /profile page: display name, change password (enforces must_change_password),
+  email verification status + PIN entry UI; per-user API keys (create/revoke,
+  masked after creation, last-used tracking); SMTP mailer module (scry/mail.py)
+  using alert SMTP settings + DB-stored admin SMTP config with test — dormant
+  when unconfigured; verification PIN generated/stored, emailed when SMTP up,
+  bypassed otherwise.
+- [ ] **Step 4 — TOTP MFA.** pyotp; setup flow (secret + otpauth URI + QR via
+  qrcode lib), verify-before-enable, disable (password confirm), required at
+  login when enabled; 10 one-time recovery codes shown once at setup;
+  recovery-code login path. Admin can force-disable MFA.
+- [ ] **Step 5 — Passkeys.** webauthn package; register/rename/delete on
+  /profile; login via passkey (WebAuthn get assertion); per-request RP
+  ID/origin from Host; works localhost + LAN/HTTPS.
+- [ ] **Step 6 — Per-user threat-feed keys + feed features.** VT/OTX cards on
+  /ui/intel-feeds/threat-feeds: per-user key input (visible while typing,
+  masked after save+test), Test → Connected/Failed badge; migrate existing
+  .env keys into alakhani+admin profiles (encrypted); enrichment run uses
+  acting user's keys; observable detail verdict panel (live lookup, personal
+  key); bulk "enrich unenriched" with quota guard; enriched badges in
+  observable lists; enrichment coverage stats (admin).
+- [ ] **Step 7 — Master key + widget wiring.** Generate strong random
+  CTI_API_KEY into .env; add X-API-Key header to the three Dashboard widget
+  automation scripts under the kimi-desktop blueprint dir (ask scry, AI
+  provider, server status); verify each widget still works end-to-end.
+- [ ] **Step 8 — Release.** Bump 0.4.0 → 0.5.0 (pyproject, main.py app
+  version, CHANGELOG, README), tag v0.5.0, push, GitHub release via
+  /opt/homebrew/bin/gh.
