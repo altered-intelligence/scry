@@ -22,6 +22,9 @@
 subscriptions:
   - name: ransomware
     query: ransomware
-    tags: [ransomware]
+    # NOTE: tags are OPTIONAL narrowing. OTX search results carry no tags,
+    # so a tag filter forces one extra (slow) detail call per pulse — OTX
+    # detail endpoints often take 10-30s under load. Leave empty for the
+    # fast path (search results become articles directly).
     max_pulse_age_days: 30
     limit: 25
