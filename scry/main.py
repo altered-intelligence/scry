@@ -702,7 +702,9 @@ def ui_alerts(
     alerts = list(session.scalars(stmt.offset(offset).limit(limit)))
     filters = {"limit": limit, "offset": offset, "qs": ""}
     from scry.alerting.channels import channel_status
+    from scry.enrichment.provider_settings import PROVIDER_META, load_provider_states
 
+    states = load_provider_states(session)
     return templates.TemplateResponse(
         request,
         "alerts.html",
@@ -712,6 +714,7 @@ def ui_alerts(
             "filters": filters,
             "channels": channel_status(),
             "outbound_enabled": get_settings().enable_outbound_alerts,
+            "enrichment_providers": [states[name].as_dict() for name in PROVIDER_META],
         },
     )
 

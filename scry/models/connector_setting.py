@@ -15,6 +15,11 @@ class ConnectorSetting(Base, IdMixin, TimestampMixin):
 
     provider: Mapped[str] = mapped_column(String(32), unique=True, index=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # API key encrypted at rest via scry.crypto.encrypt(); when set it wins
+    # over the matching CTI_*_API_KEY env var for this provider.
+    api_key_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     last_check_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_check_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     last_check_error: Mapped[str | None] = mapped_column(Text, nullable=True)

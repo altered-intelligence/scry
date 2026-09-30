@@ -14,6 +14,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -26,6 +27,7 @@ from scry.clustering import cluster_articles
 from scry.config import load_pirs, load_watchlists
 from scry.conflicts import detect_conflicts
 from scry.enrichment import EnrichmentEngine
+from scry.enrichment.provider_settings import PROVIDER_META, load_provider_states
 from scry.exports import (
     export_articles_json,
     export_observables_csv,
@@ -188,11 +190,73 @@ async def ingest_run(session: Session = Depends(get_session)):
 
 
 @api_router.post("/enrichment/run")
-def enrichment_run(session: Session = Depends(get_session), limit: int = Query(200, ge=1, le=2000)):
-    """Run VT + OTX external enrichment on observables not yet checked (cached, rate-limited)."""
+def enrichment_run(
+    session: Session = Depends(get_session),
+    limit: int = Query(200, ge=1, le=2000),
+    providers: list[str] = Query(default=[]),
+):
+    """Run external enrichment (VT/OTX/AbuseIPDB/GreyNoise) on observables not
+    yet checked (cached, rate-limited). `providers` restricts which providers
+    run (repeatable query param); default = all enabled + keyed providers."""
     engine = EnrichmentEngine(session)
-    result = engine.run_external_enrichment_batch(limit=limit)
+    try:
+        result = engine.run_external_enrichment_batch(limit=limit, providers=providers or None)
+    except ValueError as exc:
+        raise HTTPException(400, detail=str(exc)) from None
     return result
+
+
+class EnrichmentProviderConfig(BaseModel):
+    provider: str
+    enabled: bool = True
+    api_key: str | None = None  # None = keep existing; "" + clear_api_key clears
+    clear_api_key: bool = False
+
+
+def _enrichment_provider_entry(session: Session, provider_id: str) -> dict[str, Any]:
+    state = load_provider_states(session)[provider_id]
+    return state.as_dict()
+
+
+@api_router.get("/enrichment/providers")
+def enrichment_provider_list(session: Session = Depends(get_session)) -> dict[str, Any]:
+    """External enrichment provider state — powers the Alerts-page panel."""
+    states = load_provider_states(session)
+    return {"providers": [states[name].as_dict() for name in PROVIDER_META]}
+
+
+@api_router.put("/enrichment/providers")
+def enrichment_provider_configure(
+    payload: EnrichmentProviderConfig, session: Session = Depends(get_session)
+) -> dict[str, Any]:
+    """Create/update one enrichment provider's settings (key encrypted at rest)."""
+    from scry.crypto import encrypt
+    from scry.models import ConnectorSetting
+
+    if payload.provider not in PROVIDER_META:
+        raise HTTPException(404, detail=f"Unknown enrichment provider '{payload.provider}'")
+
+    row = session.query(ConnectorSetting).filter_by(provider=payload.provider).one_or_none()
+    if row is None:
+        row = ConnectorSetting(provider=payload.provider)
+        session.add(row)
+
+    if payload.clear_api_key:
+        row.api_key_encrypted = None
+    elif payload.api_key:
+        row.api_key_encrypted = encrypt(payload.api_key)
+    row.enabled = payload.enabled
+    session.commit()
+
+    audit_record(
+        session,
+        action="enrichment.provider.configure",
+        target_type="connector_setting",
+        target_id=row.id,
+        detail={"provider": payload.provider, "enabled": payload.enabled},
+    )
+
+    return _enrichment_provider_entry(session, payload.provider)
 
 
 @api_router.post("/ingest/fetch-full")

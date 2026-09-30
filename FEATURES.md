@@ -55,7 +55,7 @@ Conventions for every step:
   `POST /api/ai/sessions` (rename). Search-page AI panel gains conversation
   list + history display. No schema migration needed (models use
   `Base.metadata.create_all`).
-- [ ] **Step 6 — External IOC enrichment providers.** Audit `scry/enrichment/`;
+- [x] **Step 6 — External IOC enrichment providers.** Audit `scry/enrichment/`;
   finish/wire VirusTotal + OTX (keys already in Settings), add AbuseIPDB
   (IP) and GreyNoise (IP) as providers following the existing
   `enrichment/base.py` interface. `POST /api/enrichment/run` gains

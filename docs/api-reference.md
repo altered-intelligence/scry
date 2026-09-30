@@ -36,7 +36,9 @@ in `scry/schemas/`.
 | POST | `/ingest/source/{source_id}` | — | ingest summary dict |
 | POST | `/ingest/run` | — | ingest-all summary (`articles`, `cves`, `errors`, `blocked`) + pipeline reprocess |
 | POST | `/ingest/fetch-full` | `limit` (50, ≤200) | second-pass full-HTML fetch + pipeline counts |
-| POST | `/enrichment/run` | `limit` (200, ≤2000) | VirusTotal/OTX batch enrichment results |
+| POST | `/enrichment/run` | `limit` (200, ≤2000), `providers` (repeatable, default all enabled+keyed) | per-provider enrichment counts, `skipped` reasons |
+| GET | `/enrichment/providers` | — | VT/OTX/AbuseIPDB/GreyNoise state (masked key, enabled, source) |
+| PUT | `/enrichment/providers` | JSON `{"provider", "enabled", "api_key"?, "clear_api_key"?}` | updated provider entry (key encrypted at rest) |
 
 ## Intelligence objects
 

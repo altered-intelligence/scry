@@ -5,7 +5,8 @@ Looks up reputation for domains, URLs, IPv4/IPv6 addresses, and file hashes
 crashes don't burn quota.
 
 Public-tier API: 4 req/min, 500/day. The token-bucket limiter respects the
-per-minute side; daily quota is tracked by the runner script.
+per-minute side; the daily quota (vt_daily_quota) is enforced by an
+in-memory counter that resets at UTC midnight.
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ import httpx
 
 from scry.config import get_settings
 from scry.enrichment.base import BaseEnricher, EnrichmentOutput
+from scry.enrichment.ratelimit import DailyQuota
 from scry.logging import get_logger
 
 logger = get_logger("vt")
@@ -62,10 +64,11 @@ class VirusTotalEnricher(BaseEnricher):
 
     SUPPORTED_TYPES: ClassVar[set[str]] = {"domain", "url", "ipv4", "ipv6", "sha256", "sha1", "md5"}
 
-    def __init__(self) -> None:
+    def __init__(self, api_key: str | None = None) -> None:
         settings = get_settings()
-        self.api_key = settings.virustotal_api_key
+        self.api_key = api_key if api_key is not None else settings.virustotal_api_key
         self.bucket = _MinuteBucket(settings.vt_rate_per_min)
+        self.daily = DailyQuota(settings.vt_daily_quota)
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
         self._client = (
             httpx.Client(
@@ -111,6 +114,9 @@ class VirusTotalEnricher(BaseEnricher):
                 return VTResult(True, True, _summarize(ot, raw), raw=raw)
             except Exception:
                 pass  # fall through to live lookup if cache is corrupted
+
+        if not self.daily.consume():
+            return VTResult(False, False, {}, error="daily quota exhausted", http_status=429)
 
         endpoint = _endpoint_for(ot, value)
         self.bucket.wait_slot()

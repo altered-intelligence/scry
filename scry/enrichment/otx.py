@@ -68,9 +68,9 @@ class OTXEnricher(BaseEnricher):
 
     SUPPORTED_TYPES: ClassVar[set[str]] = set(_TYPE_TO_PATH.keys())
 
-    def __init__(self) -> None:
+    def __init__(self, api_key: str | None = None) -> None:
         s = get_settings()
-        self.api_key = s.otx_api_key
+        self.api_key = api_key if api_key is not None else s.otx_api_key
         self.bucket = _SecondBucket(s.otx_rate_per_sec)
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
         self._client = (

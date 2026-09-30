@@ -68,6 +68,79 @@ document.getElementById("test-alerts-btn").addEventListener("click", async () =>
 </script>
 
 <div class="panel">
+  <h2>IOC enrichment providers</h2>
+  <p>
+    External reputation lookups run from
+    <code>POST /enrichment/run</code> (optionally <code>?providers=…</code>).
+    Keys are stored encrypted in the <code>connector_settings</code> table and
+    override the <code>CTI_*_API_KEY</code> env vars when set.
+  </p>
+  <table>
+    <thead><tr><th>Provider</th><th>State</th><th>Enabled</th><th>API key</th><th></th></tr></thead>
+    <tbody>
+      {% for p in enrichment_providers %}
+      <tr data-provider="{{ p.id }}">
+        <td><span class="chip">{{ p.display_name }}</span></td>
+        <td>
+          {% if p.key_present %}
+          <span class="badge good">key {{ p.api_key_masked }}</span>
+          {% else %}
+          <span class="badge dim">no key</span>
+          {% endif %}
+          {% if not p.enabled %}<span class="badge dim">disabled</span>{% endif %}
+        </td>
+        <td>
+          <input type="checkbox" class="enrich-enabled" {% if p.enabled %}checked{% endif %}>
+        </td>
+        <td>
+          <input type="password" class="enrich-key" placeholder="{% if p.key_present %}set ({{ p.api_key_source }}) — enter to replace{% else %}paste API key{% endif %}" style="min-width: 260px;">
+        </td>
+        <td>
+          <button class="btn enrich-save" type="button">Save</button>
+          <span class="chip enrich-status" style="display: none;"></span>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<script>
+document.querySelectorAll("tr[data-provider] .enrich-save").forEach(function (btn) {
+  btn.addEventListener("click", async function () {
+    var row = btn.closest("tr[data-provider]");
+    var status = row.querySelector(".enrich-status");
+    var payload = {
+      provider: row.dataset.provider,
+      enabled: row.querySelector(".enrich-enabled").checked
+    };
+    var key = row.querySelector(".enrich-key").value.trim();
+    if (key) payload.api_key = key;
+    btn.disabled = true;
+    status.style.display = "";
+    status.textContent = "saving…";
+    try {
+      const r = await fetch("/enrichment/providers", {
+        method: "PUT",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(payload)
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        status.textContent = data.detail || "save failed";
+      } else {
+        status.textContent = "saved (" + (data.key_present ? "key " + data.api_key_masked : "no key") + ")";
+      }
+    } catch (e) {
+      status.textContent = "request failed";
+    } finally {
+      btn.disabled = false;
+    }
+  });
+});
+</script>
+
+<div class="panel">
   <table>
     <thead><tr><th>#</th><th>Trigger</th><th>Title</th><th>Severity</th><th>Confidence</th><th>Delivered</th><th>Created</th></tr></thead>
     <tbody>

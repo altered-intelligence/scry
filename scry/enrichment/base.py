@@ -12,6 +12,8 @@ class EnrichmentOutput:
     fields: dict[str, Any] = field(default_factory=dict)
     confidence_delta: int = 0
     rationale: list[str] = field(default_factory=list)
+    # Suggested tags the engine merges into observable.tags (deduped).
+    tags: list[str] = field(default_factory=list)
 
 
 class BaseEnricher(ABC):
