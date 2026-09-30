@@ -63,7 +63,7 @@ Conventions for every step:
   surface (reuse provider-picker pattern from Search page). Rate-limit
   bookkeeping respects `vt_rate_per_min`, `vt_daily_quota`, `otx_rate_per_sec`.
   Tests with mocked HTTP.
-- [ ] **Step 7 — STIX 2.1 export + TAXII feed.** New `scry/exports/stix21.py`
+- [x] **Step 7 — STIX 2.1 export + TAXII feed.** New `scry/exports/stix21.py`
   emitting spec-valid STIX 2.1 bundles (SDOs for threat-actors, malware,
   campaigns, indicators, relationships; SCOs for observables; marking
   `spec_version: "2.1"`). `POST /api/exports/stix21`. Minimal read-only TAXII

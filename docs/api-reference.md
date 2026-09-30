@@ -96,6 +96,18 @@ in `scry/schemas/`.
 | POST | `/exports/json` | — | articles + observables JSON (text/plain) |
 | POST | `/exports/csv` | — | observables CSV (text/plain) |
 | POST | `/exports/stix-like` | — | STIX-2.1-shaped bundle (text/plain) |
+| POST | `/exports/stix21` | body: `collection` (`intel`\|`articles`, default `intel`), `limit?` ≤5000 | spec-valid STIX 2.1 bundle (`application/stix+json;version=2.1`) |
+
+## TAXII 2.1 (read-only)
+
+All under `/taxii2`, same `X-API-Key` / Bearer auth as the API when `CTI_API_KEY` is set (no discovery exemption).
+
+| Method | Path | Returns |
+| --- | --- | --- |
+| GET | `/taxii2/` | server discovery: `title`, `default`, `api_roots` (`application/taxii+json;version=2.1`) |
+| GET | `/taxii2/api-root/` | api-root discovery: `title`, `versions`, `max_content_length` |
+| GET | `/taxii2/api-root/collections/` | collections `intel` + `articles` (`can_read`, `can_write: false`) |
+| GET | `/taxii2/api-root/collections/{id}/objects/` | TAXII envelope `more` / `next` / `objects` (STIX 2.1); paginate with `?limit=` + `?next=` |
 | POST | `/decay/run` | — | `{"expired": n, "refreshed": n}` |
 
 ## Intel feeds

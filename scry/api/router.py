@@ -13,8 +13,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel
+from fastapi.responses import JSONResponse, PlainTextResponse
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -29,6 +29,8 @@ from scry.conflicts import detect_conflicts
 from scry.enrichment import EnrichmentEngine
 from scry.enrichment.provider_settings import PROVIDER_META, load_provider_states
 from scry.exports import (
+    build_articles_bundle,
+    build_intel_bundle,
     export_articles_json,
     export_observables_csv,
     export_observables_json,
@@ -658,6 +660,29 @@ def export_csv(session: Session = Depends(get_session)):
 @api_router.post("/exports/stix-like", response_class=PlainTextResponse)
 def export_stix(session: Session = Depends(get_session)):
     return export_stix_like_bundle(session)
+
+
+class Stix21ExportRequest(BaseModel):
+    collection: Literal["intel", "articles"] = "intel"
+    limit: int | None = Field(default=None, ge=1, le=5000)
+
+
+@api_router.post(
+    "/exports/stix21",
+    responses={200: {"content": {"application/stix+json;version=2.1": {}}}},
+)
+def export_stix21(
+    payload: Stix21ExportRequest | None = None,
+    session: Session = Depends(get_session),
+) -> JSONResponse:
+    """Spec-valid STIX 2.1 bundle. ``collection`` selects intel (entities,
+    observable indicators + SCOs, relationships) or articles (report SDOs)."""
+    req = payload or Stix21ExportRequest()
+    if req.collection == "articles":
+        bundle = build_articles_bundle(session, limit=req.limit)
+    else:
+        bundle = build_intel_bundle(session, limit=req.limit)
+    return JSONResponse(content=bundle, media_type="application/stix+json;version=2.1")
 
 
 @api_router.post("/decay/run")

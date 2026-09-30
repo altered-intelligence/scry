@@ -36,7 +36,7 @@ A defensive cyber threat intelligence platform that ingests public sources, extr
 - **Alerts** on CISA KEV additions, Microsoft exploited CVEs, high-risk observables, ransomware reporting. Outbound delivery (Slack / Teams / webhook) is **off by default** and only fires when `CTI_ENABLE_OUTBOUND_ALERTS=true`.
 - **Search**: full-text across articles / observables / entities / claims, plus a hash-embedding semantic search that works offline (a pgvector adapter slots in behind the same interface later).
 - **Reports**: daily and weekly Markdown summaries with confidence legend, top stories, KEV updates, high-risk observables, review queue digest, and collection gaps.
-- **Exports**: JSON, CSV, STIX-like bundle.
+- **Exports**: JSON, CSV, STIX-like bundle, spec-valid **STIX 2.1** bundles, and a read-only **TAXII 2.1** server (MISP / OpenCTI / Sentinel can poll scry directly).
 
 ## What it deliberately does *not* do
 
@@ -210,6 +210,43 @@ Notes:
 - **stdout must stay clean** — MCP speaks JSON-RPC on stdout, so scry logs to stderr when running as an MCP server. Any library printing to stdout at import time would break the protocol.
 - `scry_ask` uses whichever LLM provider is active (Search page → provider picker); with none configured it returns a graceful error instead of an answer.
 
+## STIX 2.1 & TAXII
+
+scry exports **spec-valid STIX 2.1** bundles (`scry/exports/stix21.py`) and serves them over a minimal **read-only TAXII 2.1** server so other tools (MISP, OpenCTI, Microsoft Sentinel) can consume scry intel. All object ids are deterministic (`uuid5` in a fixed scry namespace), so re-exports are stable and diffable.
+
+**Export endpoint** (same auth as the rest of the API when `CTI_API_KEY` is set):
+
+```bash
+# Entities + observable indicators (with SCOs) + relationships
+curl -X POST http://localhost:8000/exports/stix21 \
+  -H "X-API-Key: $CTI_API_KEY" -H "Content-Type: application/json" \
+  -d '{"collection": "intel", "limit": 500}' -o intel-bundle.json
+
+# Report SDOs for recent articles
+curl -X POST http://localhost:8000/exports/stix21 \
+  -H "X-API-Key: $CTI_API_KEY" -H "Content-Type: application/json" \
+  -d '{"collection": "articles"}' -o articles-bundle.json
+```
+
+**TAXII 2.1 server** (mounted at `/taxii2`, requires the API key when configured — no discovery exemption):
+
+```bash
+curl http://localhost:8000/taxii2/ -H "X-API-Key: $CTI_API_KEY"          # server discovery
+curl http://localhost:8000/taxii2/api-root/collections/ -H "X-API-Key: $CTI_API_KEY"
+curl 'http://localhost:8000/taxii2/api-root/collections/intel/objects/?limit=100' \
+  -H "X-API-Key: $CTI_API_KEY"
+```
+
+Two collections are offered: `intel` (entities + observables + relationships) and `articles` (report SDOs). The objects endpoint paginates with `?limit=` and `?next=` and returns TAXII envelopes (`more` / `next` / `objects`).
+
+**Pointing other tools at it:**
+
+- **OpenCTI** — add a TAXII 2.1 feed connector: URL `http://<host>:8000/taxii2`, API root `api-root`, collection `intel`, auth = your `CTI_API_KEY`.
+- **MISP** — add a TAXII 2.1 server (Owner Org → TAXII servers): discovery URL `http://<host>:8000/taxii2/`, key as the API key/password; or just import the `POST /exports/stix21` bundle JSON directly.
+- **Sentinel / Microsoft Defender TI** — use a TAXII 2.1 data connector pointed at the same discovery URL.
+
+Object-type mapping: scry entity types `threat_actor` / `malware_family` / `campaign` / `intrusion_set` / `tool` become the matching STIX SDOs; `organization` / `person` / `sector` become `identity`; `location` and `vulnerability` map directly; everything else is skipped. Observables of type `ipv4` / `ipv6` / `domain` / `url` / `email` become an `indicator` SDO (with a STIX pattern) plus the matching SCO (`ipv4-addr`, `ipv6-addr`, `domain-name`, `url`, `email-addr`); hash observables become `[file:hashes ...]` indicators plus a `file` SCO. Relationship types are hyphenated (`uses`, `attributed-to`, …).
+
 ## How scoring works
 
 See [`SCORING.md`](./SCORING.md). Highlights:
@@ -286,7 +323,6 @@ pytest -q
 - Replace the hash embedding with `pgvector` + a real model.
 - Plug in passive DNS / WHOIS / VirusTotal / EPSS enrichers behind the existing `BaseEnricher` interface.
 - Implement Sigma / YARA / Suricata generators with FP-rate guardrails.
-- STIX/TAXII server adapter.
 - Internal telemetry sightings (DNS, proxy, EDR) — the schema and connector interface are already in place.
 
 ## License

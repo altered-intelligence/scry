@@ -23,6 +23,7 @@ from scry.api.ai import ai_router
 from scry.api.auth import require_api_key
 from scry.api.chat import chat_router
 from scry.api.deps import get_session
+from scry.api.taxii import taxii_router
 from scry.config import get_settings
 from scry.db import get_engine, session_scope
 from scry.logging import configure_logging, get_logger
@@ -80,6 +81,9 @@ app = FastAPI(
 app.include_router(api_router, dependencies=[Depends(require_api_key)])
 app.include_router(ai_router, dependencies=[Depends(require_api_key)])
 app.include_router(chat_router, dependencies=[Depends(require_api_key)])
+# Read-only TAXII 2.1 server — authenticated like the rest of the API when a
+# key is configured (no discovery exemption).
+app.include_router(taxii_router, dependencies=[Depends(require_api_key)])
 
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
