@@ -4,6 +4,56 @@ All notable changes to Scry are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 semantic versioning.
 
+## [0.6.0] — 2026-09-30
+
+### Added
+
+- **OTX pulse ingestion as a first-class source** — subscribe to AlienVault
+  OTX pulses from `config/otx_pulses.yaml` (name, query, optional tags,
+  `max_pulse_age_days` default 30, `limit` default 25). Pulled pulses are
+  stored as Articles (`source: otx_pulse:<name>`) so the existing
+  extraction/enrichment pipeline picks up their IOCs, with URL-based dedup
+  making re-pulls idempotent. Trigger via `POST /api/ingest/otx-pulses`
+  (optional subscription filter), `GET /api/ingest/otx-pulses/subscriptions`,
+  `scry ingest otx-pulses`, the subscriptions panel on Threat Feeds, or the
+  scheduled job alongside the existing ingest jobs. Scheduled pulls use the
+  system OTX key; user-triggered pulls use the acting user's personal key;
+  disabled entirely when no OTX key is configured anywhere.
+- **Vendor-verdict alert escalation** — new AlertEngine trigger
+  `vendor_confirmed_malicious`: VirusTotal malicious votes
+  ≥ `CTI_VT_ESCALATE_MIN_DETECTIONS` (default 10) AND malicious ratio
+  ≥ `CTI_VT_ESCALATE_MIN_RATIO` (default 0.5), GreyNoise classification
+  matching `CTI_GN_ESCALATE_CLASSIFICATION` (default "malicious"), or
+  AbuseIPDB score ≥ `CTI_ABUSEIPDB_ESCALATE_MIN_SCORE` (default 80).
+  Confirmed observables get an alert (deduped once per observable+provider)
+  plus a risk_score bump (default `CTI_ESCALATION_RISK_BUMP`, capped at 100)
+  and a badge for the new trigger on the Alerts page.
+- **Staleness-aware enrichment refresh** — per-provider refresh TTLs
+  (`CTI_ENRICHMENT_REFRESH_DAYS_VIRUSTOTAL=7`, `..._OTX=14`,
+  `..._ABUSEIPDB=7`, `..._GREYNOISE=3`). Batch enrichment now re-enriches
+  only observables whose `{provider}_checked_at` marker is missing or older
+  than the TTL (fresh ones counted as `fresh_skipped`), orders work
+  oldest-first so quota goes to the stalest data, and reports
+  `fresh_skipped`/`refreshed` counts. `force=true` on
+  `POST /api/enrichment/run` ignores markers entirely. The UI shows
+  per-provider "last enriched Xd ago" with per-provider Re-check on
+  observable detail, "Re-enrich stale" / "Force re-enrich all"
+  (confirm-guarded) buttons on the observables page, and fresh/stale
+  coverage counts on /admin.
+
+### Fixed
+
+- **OTX pulse tag filtering** — tag matching is now case-insensitive, and a
+  tag filter triggers a pulse-detail fetch (OTX search results omit pulse
+  tags); the detail call uses a longer timeout with one retry on read
+  timeout.
+- **connector_settings migration** — existing databases missing the
+  `api_key_encrypted` column on `connector_settings` are backfilled
+  automatically at startup.
+- **Example OTX subscription config** — relaxed the shipped example
+  (dropped an over-strict tag filter that forced slow detail calls on every
+  pull).
+
 ## [0.5.0] — 2026-09-30
 
 ### Added

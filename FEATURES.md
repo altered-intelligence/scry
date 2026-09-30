@@ -199,5 +199,5 @@ escalation, and OTX pulse ingestion as a first-class source.
 - [ ] **Step 4 — Deploy + live verify.** Touch-restart the uvicorn --reload
   server, verify: OTX pulse pull with real key (small limit), escalation rule
   dry presence, enrichment run reports fresh_skipped on second pass.
-- [ ] **Step 5 — Release.** 0.5.0 → 0.6.0 bump, CHANGELOG, README, tag,
+- [x] **Step 5 — Release.** 0.5.0 → 0.6.0 bump, CHANGELOG, README, tag,
   push, GitHub release via /opt/homebrew/bin/gh.

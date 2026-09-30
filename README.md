@@ -18,6 +18,14 @@ A defensive cyber threat intelligence platform that ingests public sources, extr
 
 ---
 
+## What's new in 0.6.0
+
+- **OTX pulse ingestion** — subscribe to AlienVault OTX pulses in `config/otx_pulses.yaml` (query, optional tags, max age, limit); pulses land as Articles and flow through extraction/enrichment, with idempotent re-pulls. `POST /api/ingest/otx-pulses`, `scry ingest otx-pulses`, scheduler + Threat Feeds pull-now; scheduled pulls use the system key, user pulls use your personal key.
+- **Vendor-verdict alert escalation** — new `vendor_confirmed_malicious` trigger (VT votes ≥ 10 & ratio ≥ 0.5, GreyNoise "malicious", or AbuseIPDB ≥ 80) with a capped risk-score bump and env-tunable thresholds.
+- **Staleness-aware enrichment refresh** — per-provider TTLs (VT/AbuseIPDB 7d, OTX 14d, GreyNoise 3d); batch runs skip fresh markers (`fresh_skipped`), work oldest-first, and `force=true` re-enriches everything. UI shows per-provider "last enriched Xd ago" + Re-enrich stale / Force re-enrich all.
+
+See [CHANGELOG.md](./CHANGELOG.md) for details.
+
 ## What's new in 0.5.0
 
 - **User accounts** — bcrypt passwords, DB-backed sessions (sliding 7-day, revoke-anywhere), login throttling (5 fails → 15-min lockout), `scry users` CLI (create/list/promote/reset/disable/seed).
@@ -44,20 +52,20 @@ See [CHANGELOG.md](./CHANGELOG.md) for details.
 ## What it does
 
 - **Authenticates** every user and API call — accounts with bcrypt passwords, TOTP MFA and WebAuthn passkeys, DB-backed sessions with sliding expiry, an admin panel, and per-user scry API keys. Once any user exists, `/api/*` and `/taxii2` require a session cookie, per-user key, or the master `CTI_API_KEY`.
-- **Ingests** public RSS / blogs / vendor research / CISA KEV / Reddit (and any source you add to `config/sources.yaml`) under per-source collection policies.
+- **Ingests** public RSS / blogs / vendor research / CISA KEV / Reddit (and any source you add to `config/sources.yaml`) under per-source collection policies — plus **OTX pulse subscriptions** (`config/otx_pulses.yaml`): matching pulses are stored as articles and flow through extraction/enrichment with idempotent re-pulls.
 - **Parses** articles (trafilatura → readability → bs4 fallback), normalizes Unicode, redacts credentials / API keys / private keys before indexing.
 - **Extracts** IPv4/IPv6, domains, URLs, defanged variants, emails, hashes (MD5/SHA1/SHA256/SHA512/SSDEEP/TLSH), CVEs, ATT&CK techniques, ASNs, onion, wallets, registry keys, named pipes, Telegram/Discord handles — with evidence text and confidence scores.
 - **Identifies** threat actors and malware families via a curated alias dictionary, then resolves aliases to canonical names.
 - **Builds claims** as first-class objects ("exploited in the wild", "attributed to APT29", "ransomware deployed", "AppDomainManager hijacking", "AI-enabled phishing", "targets US defense industrial base", …) — every claim carries an evidence quote.
 - **Builds relationships** between observables / entities / CVEs with explicit_or_inferred provenance.
 - **Classifies topics** for every article: `microsoft`, `ransomware`, `wiper`, `exploit-poc`, `exploited-in-the-wild`, `appdomainmanager-hijacking`, `ai-security`, `defense-industry`, `supply-chain`, `infostealer`, `phishing`, `cloud`, `ics-ot`, `apt`.
-- **Enriches** observables with structural infrastructure attributes (cloud / CDN / dynamic-DNS / paste-site / URL-shortener / benign-shared-infrastructure flags), URL roles, email lure hints, CVE/KEV details, ATT&CK technique names + tactics, and prevalence/rarity.
+- **Enriches** observables with structural infrastructure attributes (cloud / CDN / dynamic-DNS / paste-site / URL-shortener / benign-shared-infrastructure flags), URL roles, email lure hints, CVE/KEV details, ATT&CK technique names + tactics, and prevalence/rarity — staleness-aware: per-provider TTLs (VirusTotal / AbuseIPDB 7d, OTX 14d, GreyNoise 3d) with oldest-first refresh, `fresh_skipped` bookkeeping, and a force override.
 - **Scores** each item with a transparent multi-factor model: source reliability, extraction confidence, maliciousness, attribution, corroboration, recency. Risk score has contributor breakdown so analysts can see *why* a score is what it is.
 - **IOC lifecycle / decay**: type-specific TTLs (cloud hosts decay faster than dedicated infra; CVEs never expire; expired indicators stay searchable but aren't block-recommended).
 - **Routes to analyst review** when confidence is low, attribution is weak/disputed, claims touch nation-state activity or ransomware victim naming, or high-risk + benign-shared-infrastructure context collides.
 - **Detects conflicts** between articles (e.g. two vendors attribute the same activity to different actors). Both claims are preserved.
 - **Clusters** related articles by shared IOCs / entities (union-find).
-- **Alerts** on CISA KEV additions, Microsoft exploited CVEs, high-risk observables, ransomware reporting. Outbound delivery (Slack / Teams / webhook) is **off by default** and only fires when `CTI_ENABLE_OUTBOUND_ALERTS=true`.
+- **Alerts** on CISA KEV additions, Microsoft exploited CVEs, high-risk observables, ransomware reporting, and **vendor-confirmed malicious** verdicts (VirusTotal votes/ratio, GreyNoise classification, AbuseIPDB score — env-tunable thresholds) with a capped risk-score bump. Outbound delivery (Slack / Teams / webhook) is **off by default** and only fires when `CTI_ENABLE_OUTBOUND_ALERTS=true`.
 - **Search**: full-text across articles / observables / entities / claims, plus a hash-embedding semantic search that works offline (a pgvector adapter slots in behind the same interface later).
 - **Reports**: daily and weekly Markdown summaries with confidence legend, top stories, KEV updates, high-risk observables, review queue digest, and collection gaps.
 - **Exports**: JSON, CSV, STIX-like bundle, spec-valid **STIX 2.1** bundles, and a read-only **TAXII 2.1** server (MISP / OpenCTI / Sentinel can poll scry directly).
@@ -233,6 +241,7 @@ Notes:
 - **MCP bypasses HTTP API-key auth** — the server is process-local and reads the same SQLite file as the web app, so `CTI_API_KEY` does not apply. Only configure it for clients you trust on this machine.
 - **stdout must stay clean** — MCP speaks JSON-RPC on stdout, so scry logs to stderr when running as an MCP server. Any library printing to stdout at import time would break the protocol.
 - `scry_ask` uses whichever LLM provider is active (Search page → provider picker); with none configured it returns a graceful error instead of an answer.
+- The tools read the shared database, so 0.6.0 data — OTX pulse articles, `vendor_confirmed_malicious` alerts, per-provider enrichment markers — shows up in `scry_search` / `scry_observables` / `scry_alerts` without any client-side changes.
 
 ## STIX 2.1 & TAXII
 
