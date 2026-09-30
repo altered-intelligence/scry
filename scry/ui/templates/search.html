@@ -72,6 +72,25 @@
     .ai-sources .chip { margin: 2px 4px 2px 0; }
     .ai-error { color: var(--bad); font-size: 13px; margin-top: 10px; display: none; white-space: pre-wrap; }
     .ai-disabled-note { color: var(--muted); font-size: 13px; margin: 0; }
+    .ai-sessions { margin-bottom: 12px; }
+    .ai-sessions-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+    .ai-session-list { list-style: none; margin: 0; padding: 0; max-height: 150px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; }
+    .ai-session-item { display: flex; align-items: center; gap: 8px; padding: 5px 10px; font-size: 13px; border-bottom: 1px solid var(--border); }
+    .ai-session-item:last-child { border-bottom: none; }
+    .ai-session-item:hover { background: var(--panel-2); }
+    .ai-session-item.active { background: var(--panel-2); font-weight: 600; }
+    .ai-session-item .t { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+    .ai-session-item .when { font-size: 11px; color: var(--muted); white-space: nowrap; }
+    .ai-session-item .act { font-size: 12px; color: var(--muted); background: none; border: none; cursor: pointer; padding: 0 2px; }
+    .ai-session-item .act:hover { color: var(--text); }
+    .ai-history { margin-bottom: 12px; max-height: 320px; overflow-y: auto; }
+    .ai-msg { margin-bottom: 10px; }
+    .ai-msg .who { font-size: 11px; color: var(--muted); margin-bottom: 2px; }
+    .ai-msg.user .who { text-align: right; }
+    .ai-msg .bubble { padding: 8px 12px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--border); white-space: pre-wrap; font-size: 13px; }
+    .ai-msg.user .bubble { background: transparent; }
+    .ai-msg .srcs { margin-top: 4px; }
+    .ai-msg .srcs .chip { margin: 2px 4px 2px 0; font-size: 11px; }
     /* provider picker */
     .ai-provider-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
     .ai-provider-bar label { font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
@@ -126,6 +145,14 @@
   </div>
 
   <div id="ai-body">
+    <div class="ai-sessions">
+      <div class="ai-sessions-head">
+        <span class="muted" style="font-size:12px">Conversations</span>
+        <button class="btn" id="ai-session-new" type="button" style="font-size:12px">New conversation</button>
+      </div>
+      <ul id="ai-session-list" class="ai-session-list"></ul>
+    </div>
+    <div id="ai-history" class="ai-history" hidden></div>
     <div class="ai-ask-row">
       <textarea id="ai-question" rows="2" placeholder="Ask about your collected intel… e.g. “Which ransomware groups hit healthcare this month?”"></textarea>
       <button class="btn" id="ai-ask-btn" type="button">Ask</button>
@@ -307,25 +334,169 @@
     errorEl.style.display = msg ? 'block' : 'none';
   }
 
+  /* ---------- conversation memory ---------- */
+
+  var activeSessionId = null;
+  var historyMsgs = [];
+  var sessionListEl = document.getElementById('ai-session-list');
+  var newSessionBtn = document.getElementById('ai-session-new');
+  var historyEl = document.getElementById('ai-history');
+
+  function timeAgo(iso) {
+    if (!iso) return '';
+    var secs = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+    if (secs < 60) return 'just now';
+    if (secs < 3600) return Math.floor(secs / 60) + 'm ago';
+    if (secs < 86400) return Math.floor(secs / 3600) + 'h ago';
+    return Math.floor(secs / 86400) + 'd ago';
+  }
+
+  function msgHtml(m) {
+    var who = m.role === 'user'
+      ? 'You'
+      : ((m.model_provider || 'assistant') + (m.model_id ? '/' + m.model_id : ''));
+    var html = '<div class="ai-msg ' + (m.role === 'user' ? 'user' : 'assistant') + '">';
+    html += '<div class="who">' + esc(who) + '</div><div class="bubble">' + esc(m.content) + '</div>';
+    var srcs = m.sources || [];
+    if (srcs.length) {
+      html += '<div class="srcs"><span class="muted" style="font-size:11px">Sources:</span> ';
+      srcs.forEach(function (s) {
+        var label = '[' + s.n + '] ' + s.title;
+        html += s.link
+          ? '<a class="chip" href="' + esc(s.link) + '">' + esc(label) + '</a>'
+          : '<span class="chip">' + esc(label) + '</span>';
+      });
+      html += '</div>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  function renderHistory(messages) {
+    historyMsgs = (messages || []).slice();
+    historyEl.innerHTML = historyMsgs.map(msgHtml).join('');
+    historyEl.hidden = !historyMsgs.length;
+    historyEl.scrollTop = historyEl.scrollHeight;
+  }
+
+  function renderSessions(sessions) {
+    var html = '';
+    (sessions || []).forEach(function (s) {
+      html += '<li class="ai-session-item' + (s.id === activeSessionId ? ' active' : '') + '" data-id="' + s.id + '">';
+      html += '<span class="t" title="' + esc(s.title) + '">' + esc(s.title) + '</span>';
+      html += '<span class="when">' + esc(timeAgo(s.updated_at)) + '</span>';
+      html += '<button class="act" data-rename="' + s.id + '" title="Rename" type="button">&#9998;</button>';
+      html += '<button class="act" data-delete="' + s.id + '" title="Delete" type="button">&#10005;</button>';
+      html += '</li>';
+    });
+    sessionListEl.innerHTML = html
+      || '<li class="ai-session-item"><span class="when">no conversations yet</span></li>';
+  }
+
+  function loadSessions() {
+    fetch('/api/ai/sessions').then(function (r) { return r.json(); }).then(function (data) {
+      renderSessions(data.sessions || []);
+    }).catch(function () { /* keep the previous list */ });
+  }
+
+  function openSession(id) {
+    fetch('/api/ai/sessions/' + id).then(function (r) {
+      if (!r.ok) { loadSessions(); return null; }
+      return r.json();
+    }).then(function (data) {
+      if (!data) return;
+      activeSessionId = data.id;
+      showError('');
+      answerEl.style.display = 'none';
+      sourcesEl.style.display = 'none';
+      renderHistory(data.messages);
+      loadSessions();
+    }).catch(function () { /* leave current state */ });
+  }
+
+  function clearSession() {
+    activeSessionId = null;
+    historyMsgs = [];
+    historyEl.innerHTML = '';
+    historyEl.hidden = true;
+    for (var i = 0; i < sessionListEl.children.length; i++) {
+      sessionListEl.children[i].classList.remove('active');
+    }
+  }
+
+  sessionListEl.addEventListener('click', function (e) {
+    var t = e.target;
+    var renameId = t.getAttribute && t.getAttribute('data-rename');
+    var deleteId = t.getAttribute && t.getAttribute('data-delete');
+    if (renameId) {
+      var item = t.closest('.ai-session-item');
+      var current = item ? item.querySelector('.t').textContent : '';
+      var next = window.prompt('Rename conversation', current);
+      if (next && next.trim()) {
+        fetch('/api/ai/sessions', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({id: Number(renameId), title: next.trim()})
+        }).then(loadSessions);
+      }
+      return;
+    }
+    if (deleteId) {
+      if (window.confirm('Delete this conversation and its history?')) {
+        fetch('/api/ai/sessions/' + deleteId, {method: 'DELETE'}).then(function () {
+          if (activeSessionId === Number(deleteId)) clearSession();
+          loadSessions();
+        });
+      }
+      return;
+    }
+    var li = t.closest && t.closest('.ai-session-item');
+    if (li && li.getAttribute('data-id')) openSession(Number(li.getAttribute('data-id')));
+  });
+
+  newSessionBtn.addEventListener('click', function () {
+    clearSession();
+    qEl.focus();
+  });
+
   function ask() {
     var q = qEl.value.trim();
     if (!q) return;
     showError('');
     sourcesEl.style.display = 'none';
-    answerEl.style.display = 'block';
-    answerEl.innerHTML = '<span class="ai-loading">Consulting the crystal ball…</span>';
+    var inSession = activeSessionId !== null;
+    if (!inSession) {
+      answerEl.style.display = 'block';
+      answerEl.innerHTML = '<span class="ai-loading">Consulting the crystal ball…</span>';
+    }
     askBtn.disabled = true;
+    var payload = {question: q};
+    if (inSession) payload.session_id = activeSessionId;
     fetch('/api/ai/ask', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({question: q})
+      body: JSON.stringify(payload)
     }).then(function (r) {
       return r.json().then(function (data) { return {ok: r.ok, data: data}; });
     }).then(function (res) {
       if (!res.ok) {
-        answerEl.style.display = 'none';
+        if (!inSession) answerEl.style.display = 'none';
         var d = res.data && res.data.detail;
         showError(typeof d === 'string' ? d : 'Request failed.');
+        return;
+      }
+      if (inSession) {
+        // Keep the exchange with its conversation: append to the history
+        // and drop the one-off answer box.
+        historyMsgs.push({role: 'user', content: q});
+        historyMsgs.push({
+          role: 'assistant',
+          content: res.data.answer,
+          model_provider: res.data.model,
+          sources: res.data.sources || []
+        });
+        renderHistory(historyMsgs);
+        loadSessions();
         return;
       }
       answerEl.textContent = res.data.answer;
@@ -342,7 +513,7 @@
         sourcesEl.style.display = 'block';
       }
     }).catch(function () {
-      answerEl.style.display = 'none';
+      if (!inSession) answerEl.style.display = 'none';
       showError('Network error — is Scry still running?');
     }).finally(function () { askBtn.disabled = false; });
   }
@@ -358,6 +529,7 @@
 
   applyToggle();  // fires no requests when the toggle is off
   loadProviders();
+  loadSessions();
 })();
 </script>
 {% endif %}

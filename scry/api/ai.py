@@ -27,6 +27,7 @@ from scry.ai.prompts import AI_SEARCH_SYSTEM_PROMPT, build_ai_search_user_prompt
 from scry.ai.providers.local import LocalLlamaProvider
 from scry.ai.registry import PROVIDER_CLASSES, resolve_ai_provider
 from scry.ai.registry import provider_model as _provider_model
+from scry.api.chat import load_chat_session, persist_exchange, recent_turns
 from scry.api.deps import get_session
 from scry.audit import record
 from scry.config import get_settings
@@ -158,6 +159,9 @@ def _keywords(question: str) -> list[str]:
 
 class AskRequest(BaseModel):
     question: str = Field(min_length=1, max_length=4000)
+    # Optional conversation memory: when set, prior turns become context and
+    # the exchange is persisted onto the session (see scry/api/chat.py).
+    session_id: int | None = None
 
 
 class ProviderConfig(BaseModel):
@@ -361,11 +365,31 @@ async def ai_provider_configure(
 # re-exported here via the import above so existing imports keep working.
 
 
-async def answer_question(session: Session, question: str) -> dict[str, Any]:
+# Appended to the system prompt when a session's prior turns are included.
+_HISTORY_SYSTEM_SUFFIX = """
+
+The analyst is continuing an ongoing conversation with you. The messages
+before their new question are the conversation so far: recent prior turns,
+oldest first. Use them to resolve follow-ups ("it", "that group", "which
+CVEs did you mean") and to stay consistent with your earlier answers. The
+grounding rules still apply: answer only from the numbered sources supplied
+with the new question and cite them as [1], [2], …
+"""
+
+
+async def answer_question(
+    session: Session,
+    question: str,
+    history: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
     """Answer a natural-language question from the collected intel (shared core).
 
     Powers both POST /api/ai/ask and the MCP `scry_ask` tool. Raises AskError
     on any failure: feature disabled, no usable provider, timeout, model error.
+
+    When `history` is given (conversation memory), the prior turns are passed
+    to the model as alternating user/assistant messages before the new user
+    prompt, and the system prompt notes the continuing conversation.
     """
     settings = get_settings()
     if not settings.enable_ai_search:
@@ -399,18 +423,32 @@ async def answer_question(session: Session, question: str) -> dict[str, Any]:
     sources = _collect_sources(session, question, settings.ai_search_max_sources)
     user_prompt = build_ai_search_user_prompt(question, sources)
 
+    # Conversation memory: prior turns precede the new user prompt as real
+    # alternating messages (never concatenated into one prompt).
+    messages: list[dict[str, str]] = list(history or [])
+    system = AI_SEARCH_SYSTEM_PROMPT + (_HISTORY_SYSTEM_SUFFIX if history else "")
+    messages.append({"role": "user", "content": user_prompt})
+
+    tokens_in: int | None = None
+    tokens_out: int | None = None
+
     async def _collect_answer() -> str:
+        nonlocal tokens_in, tokens_out
         parts: list[str] = []
         async for chunk in provider.chat_stream(
-            [{"role": "user", "content": user_prompt}],
+            messages,
             model=model,
-            system=AI_SEARCH_SYSTEM_PROMPT,
+            system=system,
             max_tokens=settings.ai_search_max_tokens,
         ):
             if chunk.error:
                 raise RuntimeError(chunk.error)
             if chunk.text:
                 parts.append(chunk.text)
+            if chunk.tokens_in is not None:
+                tokens_in = chunk.tokens_in
+            if chunk.tokens_out is not None:
+                tokens_out = chunk.tokens_out
         return "".join(parts).strip()
 
     start = time.monotonic()
@@ -436,12 +474,23 @@ async def answer_question(session: Session, question: str) -> dict[str, Any]:
         ],
         "model": f"{provider.name}/{model}",
         "elapsed_ms": elapsed_ms,
+        "tokens_in": tokens_in,
+        "tokens_out": tokens_out,
     }
 
 
 @ai_router.post("/ask")
 async def ai_ask(payload: AskRequest, session: Session = Depends(get_session)) -> dict[str, Any]:
+    chat = None
+    history = None
+    if payload.session_id is not None:
+        chat = load_chat_session(session, payload.session_id)
+        history = recent_turns(session, chat)
     try:
-        return await answer_question(session, payload.question)
+        result = await answer_question(session, payload.question, history=history)
     except AskError as exc:
         raise HTTPException(exc.status_code, detail=exc.detail) from None
+    if chat is not None:
+        persist_exchange(session, chat, payload.question.strip(), result)
+        result["session_id"] = chat.id
+    return result

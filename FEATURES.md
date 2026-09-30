@@ -48,7 +48,7 @@ Conventions for every step:
   on `/ui/alerts` showing channel state + test button. Auto-run
   `AlertEngine.evaluate()` at end of `/api/ingest/run` (behind existing
   `CTI_ENABLE_OUTBOUND_ALERTS` gate for delivery only — alerts always recorded).
-- [ ] **Step 5 — Ask follow-up memory.** Wire `ChatSession`/`ChatMessage`:
+- [x] **Step 5 — Ask follow-up memory.** Wire `ChatSession`/`ChatMessage`:
   `POST /api/ai/ask` accepts optional `session_id`; history (last N turns) is
   prepended to the model context; assistant reply + sources persisted.
   `GET /api/ai/sessions`, `GET /api/ai/sessions/{id}`, `DELETE /api/ai/sessions/{id}`,
