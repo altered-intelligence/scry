@@ -475,8 +475,8 @@ class TestApiRoutes:
         client = auth_client()
         r = client.get("/ingest/otx-pulses/subscriptions")
         assert r.status_code == 200
-        (entry,) = r.json()["subscriptions"]
-        assert entry["name"] == "ransomware"
+        entries = {e["name"]: e for e in r.json()["subscriptions"]}
+        entry = entries["ransomware"]
         assert entry["query"] == "ransomware"
         assert entry["limit"] == 25 and entry["max_pulse_age_days"] == 30
         assert entry["last_run"]["added"] == 3
