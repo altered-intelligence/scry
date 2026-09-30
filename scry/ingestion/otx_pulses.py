@@ -135,7 +135,7 @@ def resolve_key(session: Session, acting_user: Any | None) -> tuple[str, str]:
 class OTXPulseClient:
     """Thin httpx client for the OTX pulse search API. Caller supplies the key."""
 
-    def __init__(self, api_key: str, *, timeout: float = 20.0) -> None:
+    def __init__(self, api_key: str, *, timeout: float = 45.0) -> None:
         self._client = httpx.Client(
             timeout=httpx.Timeout(timeout),
             headers={"X-OTX-API-KEY": api_key, "User-Agent": "Scry/0.1"},
@@ -162,11 +162,21 @@ class OTXPulseClient:
         return [p for p in results if isinstance(p, dict)][:limit]
 
     def get_pulse(self, pulse_id: str) -> dict[str, Any]:
-        """Fetch one pulse's full detail (search results omit tags)."""
-        r = self._client.get(PULSE_DETAIL_URL.format(pulse_id=pulse_id))
-        r.raise_for_status()
-        data = r.json()
-        return data if isinstance(data, dict) else {}
+        """Fetch one pulse's full detail (search results omit tags).
+
+        OTX detail endpoints are slow under burst — one retry on read timeout.
+        """
+        url = PULSE_DETAIL_URL.format(pulse_id=pulse_id)
+        for attempt in (1, 2):
+            try:
+                r = self._client.get(url)
+                r.raise_for_status()
+                data = r.json()
+                return data if isinstance(data, dict) else {}
+            except httpx.TimeoutException:
+                if attempt == 2:
+                    raise
+        return {}
 
 
 def _parse_ts(value: Any) -> datetime | None:
