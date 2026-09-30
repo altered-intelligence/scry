@@ -240,7 +240,7 @@ def pull_subscription(client: OTXPulseClient, sub: PulseSubscription, session: S
             counts["filtered"] += 1
             continue
         tags = _pulse_tags(pulse)
-        if sub.tags and not set(sub.tags) & set(tags):
+        if sub.tags and not {t.lower() for t in sub.tags} & {t.lower() for t in tags}:
             counts["filtered"] += 1
             continue
 

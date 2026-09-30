@@ -259,6 +259,21 @@ class TestPullSubscription:
         assert set(art.tags) == {"ransomware"}
 
     @respx.mock
+    def test_tag_filter_case_insensitive(self, session):
+        # OTX capitalizes many pulse tags ("Ransomware") — matching must be
+        # case-insensitive (live incident 2026-09-30: an all-25-filtered pull).
+        mock_search([pulse("t1", tags=["Ransomware"]), pulse("t2", tags=["APT"])])
+        s = sub(tags=["ransomware"])
+
+        from scry.ingestion.otx_pulses import OTXPulseClient, pull_subscription
+
+        with OTXPulseClient(SYS_OTX_KEY) as client:
+            counts = pull_subscription(client, s, session)
+        assert counts["added"] == 1 and counts["filtered"] == 1
+        art = session.scalar(select(Article))
+        assert art.url.endswith("/pulse/t1")
+
+    @respx.mock
     def test_limit_caps_results(self, session):
         mock_search([pulse(f"p{i}") for i in range(10)])
         s = sub(limit=3)

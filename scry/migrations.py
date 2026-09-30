@@ -40,6 +40,14 @@ MIGRATIONS: tuple[AddColumn, ...] = (
         column="totp_pending",
         ddl="ALTER TABLE users ADD COLUMN totp_pending BOOLEAN NOT NULL DEFAULT 0",
     ),
+    # v0.4.0 step 6 introduced connector_settings.api_key_encrypted via
+    # create_all only — existing databases never got the column (the code's
+    # defensive fallback masked it). Backfill it here.
+    AddColumn(
+        table="connector_settings",
+        column="api_key_encrypted",
+        ddl="ALTER TABLE connector_settings ADD COLUMN api_key_encrypted VARCHAR",
+    ),
 )
 
 
