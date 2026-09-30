@@ -28,3 +28,7 @@ subscriptions:
     # fast path (search results become articles directly).
     max_pulse_age_days: 30
     limit: 25
+  - name: apt-activity
+    query: apt
+    max_pulse_age_days: 30
+    limit: 25

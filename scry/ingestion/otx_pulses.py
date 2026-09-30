@@ -151,15 +151,22 @@ class OTXPulseClient:
         self.close()
 
     def search_pulses(self, query: str, *, limit: int) -> list[dict[str, Any]]:
-        """Search pulses newest-modified first; returns up to ``limit`` pulse dicts."""
-        r = self._client.get(
-            SEARCH_URL,
-            params={"q": query, "sort": "-modified", "limit": limit, "page": 1},
-        )
-        r.raise_for_status()
-        data = r.json()
-        results = data.get("results") or []
-        return [p for p in results if isinstance(p, dict)][:limit]
+        """Search pulses newest-modified first; returns up to ``limit`` pulse dicts.
+
+        OTX is slow under load — one retry on read timeout.
+        """
+        params = {"q": query, "sort": "-modified", "limit": limit, "page": 1}
+        for attempt in (1, 2):
+            try:
+                r = self._client.get(SEARCH_URL, params=params)
+                r.raise_for_status()
+                data = r.json()
+                results = data.get("results") or []
+                return [p for p in results if isinstance(p, dict)][:limit]
+            except httpx.TimeoutException:
+                if attempt == 2:
+                    raise
+        return []
 
     def get_pulse(self, pulse_id: str) -> dict[str, Any]:
         """Fetch one pulse's full detail (search results omit tags).
