@@ -45,7 +45,14 @@ from scry.auth.sessions import (
 from scry.config import get_settings
 from scry.crypto import decrypt, encrypt, mask
 from scry.db import get_engine, session_scope
-from scry.enrichment.engine import EnrichmentEngine
+from scry.enrichment.engine import (
+    _EXTERNAL_PROVIDERS,
+    EnrichmentEngine,
+    _is_stale,
+    _is_valid_for_external,
+    _marker_age_seconds,
+    _provider_refresh_ttls,
+)
 from scry.enrichment.otx import OTXEnricher
 from scry.enrichment.user_keys import (
     delete_key,
@@ -502,6 +509,20 @@ def _audit_admin(session: Session, actor: User, action: str, target: User | None
     )
 
 
+def _humanize_checked_age(enrichment: dict, provider: str, now: datetime) -> str:
+    """Human-readable age of the ``{provider}_checked_at`` marker (v0.6.0 step 3)."""
+    age = _marker_age_seconds(enrichment, provider, now)
+    if age is None:
+        return "never"
+    if age < 90:
+        return "just now"
+    if age < 3600:
+        return f"{int(age // 60)}m ago"
+    if age < 86400:
+        return f"{int(age // 3600)}h ago"
+    return f"{int(age // 86400)}d ago"
+
+
 def _enrichment_coverage(session: Session) -> dict:
     """Per-provider enrichment coverage + VT daily-quota snapshot (v0.5.0 step 6).
 
@@ -512,12 +533,22 @@ def _enrichment_coverage(session: Session) -> dict:
     restart, so a missing/stale snapshot just shows a fresh day).
     """
     providers = ("virustotal", "otx", "abuseipdb", "greynoise")
-    coverage = {p: {"checked": 0, "malicious": 0, "benign": 0} for p in providers}
+    coverage = {p: {"checked": 0, "stale": 0, "malicious": 0, "benign": 0} for p in providers}
+    # v0.6.0 step 3 — stale = marker missing or older than the provider's
+    # refresh TTL, among observables valid for that provider's external check.
+    now = datetime.now(UTC)
+    ttls = _provider_refresh_ttls()
     for ob in session.scalars(select(Observable)).all():
         enrichment = ob.enrichment or {}
         for name in providers:
             if f"{name}_checked_at" in enrichment:
                 coverage[name]["checked"] += 1
+            if (
+                ob.type in _EXTERNAL_PROVIDERS[name]["types"]
+                and _is_valid_for_external(ob.type, ob.normalized_value)
+                and _is_stale(enrichment, name, ttls[name], now)
+            ):
+                coverage[name]["stale"] += 1
         vt = enrichment.get("virustotal") or {}
         if vt and not vt.get("not_found"):
             if (vt.get("malicious") or 0) > 0:
@@ -1950,15 +1981,24 @@ def ui_enrich_unenriched(
     request: Request,
     session: Session = Depends(get_session),
     csrf: str = Form(""),
+    mode: str = Form("unenriched"),
 ):
-    """Bulk-enrich observables not yet checked, using the ACTING USER's
-    personal VT/OTX keys (capped per run; VT daily-quota guard applies)."""
+    """Bulk-enrich observables with the ACTING USER's personal VT/OTX keys
+    (capped per run; VT daily-quota guard applies).
+
+    v0.6.0 step 3 — `mode` picks the staleness behaviour:
+    ``unenriched`` = only never-checked records; ``stale`` = staleness path
+    (missing OR older than the provider refresh TTL); ``force`` = ignore
+    markers entirely and re-enrich everything (burns quota).
+    """
     user = _signed_in_user(request, session)
     if user is None:
         return RedirectResponse(url="/login", status_code=303)
     back = "/ui/observables"
     if not _check_admin_csrf(request, csrf):
         return _redirect_flash(back, "Bad CSRF token — action rejected.", "error")
+    if mode not in ("unenriched", "stale", "force"):
+        return _redirect_flash(back, f"Unknown enrichment mode {mode!r}.", "error")
     keys = keys_for_user(session, user.id)
     if not keys:
         return _redirect_flash(
@@ -1968,13 +2008,30 @@ def ui_enrich_unenriched(
             "error",
         )
     engine = EnrichmentEngine(session, user_api_keys=keys)
-    result = engine.run_external_enrichment_batch(limit=_ENRICH_UNENRICHED_CAP)
+    result = engine.run_external_enrichment_batch(
+        limit=_ENRICH_UNENRICHED_CAP,
+        force=mode == "force",
+        include_stale=mode in ("stale", "force"),
+    )
 
+    mode_labels = {
+        "unenriched": "Enrich unenriched (my keys)",
+        "stale": "Re-enrich stale (my keys)",
+        "force": "Force re-enrich all (my keys)",
+    }
     parts = [f"checked {result['total_candidates']}"]
     for provider in _PERSONAL_KEY_PROVIDERS:
         if provider in result["providers"]:
             count_key = _PROVIDER_COUNT_KEYS[provider]
             parts.append(f"{provider} enriched {result.get(count_key, 0)}")
+            refreshed = result.get("refreshed", {}).get(provider)
+            if refreshed:
+                parts.append(f"{provider} re-enriched stale {refreshed}")
+    if result.get("fresh_skipped"):
+        parts.append(
+            "fresh (skipped): "
+            + ", ".join(f"{k} {v}" for k, v in sorted(result["fresh_skipped"].items()))
+        )
     if result.get("quota_skipped"):
         parts.append(
             "skipped per quota: "
@@ -1986,8 +2043,8 @@ def ui_enrich_unenriched(
         )
     if result.get("errors"):
         parts.append(f"errors {result['errors']}")
-    _feed_key_audit(session, user, "observables.enrich_unenriched", "+".join(sorted(keys)))
-    return _redirect_flash(back, "Enrich unenriched (my keys) — " + "; ".join(parts) + ".")
+    _feed_key_audit(session, user, f"observables.enrich_unenriched.{mode}", "+".join(sorted(keys)))
+    return _redirect_flash(back, f"{mode_labels[mode]} — " + "; ".join(parts) + ".")
 
 
 @app.get("/ui/observables/{ob_id}", response_class=HTMLResponse)
@@ -2026,8 +2083,14 @@ def ui_observable_detail(ob_id: int, request: Request, session: Session = Depend
         rels.append(("in", r, _resolve_rel_target(session, r.source_type, r.source_id)))
 
     enrichment_json = json.dumps(ob.enrichment or {}, indent=2, default=str)
-    vt_status = (ob.enrichment or {}).get("virustotal_checked_at")
-    otx_status = (ob.enrichment or {}).get("otx_checked_at")
+
+    # v0.6.0 step 3 — per-provider last-enriched age for the sidebar.
+    now = datetime.now(UTC)
+    enrichment_now = ob.enrichment or {}
+    provider_ages = {
+        name: _humanize_checked_age(enrichment_now, name, now)
+        for name in ("virustotal", "otx", "abuseipdb", "greynoise")
+    }
 
     # v0.5.0 step 6 — live lookup is only offered for providers the acting
     # user has a personal key for (user-triggered actions use personal keys).
@@ -2066,8 +2129,7 @@ def ui_observable_detail(ob_id: int, request: Request, session: Session = Depend
             "mentions": mentions,
             "relationships": rels,
             "enrichment_json": enrichment_json,
-            "vt_provider_status": vt_status,
-            "otx_provider_status": otx_status,
+            "provider_ages": provider_ages,
             "can_lookup_vt": "virustotal" in personal_keys,
             "can_lookup_otx": "otx" in personal_keys,
             "lookup_csrf": _admin_csrf_token(raw_cookie) if raw_cookie else "",
@@ -2085,8 +2147,12 @@ def ui_observable_lookup(
     session: Session = Depends(get_session),
     csrf: str = Form(""),
 ):
-    """Single live enrichment with the ACTING USER's personal key (fresh —
-    bypasses the disk cache so the verdict reflects the provider right now)."""
+    """Single live enrichment with the ACTING USER's personal key.
+
+    v0.6.0 step 3 — this is the per-record FORCE path: it always bypasses the
+    disk cache AND the staleness check, so the verdict reflects the provider
+    right now — at the cost of one real API call against the user's quota.
+    """
     user = _signed_in_user(request, session)
     if user is None:
         return RedirectResponse(url="/login", status_code=303)

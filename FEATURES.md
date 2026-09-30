@@ -186,7 +186,7 @@ escalation, and OTX pulse ingestion as a first-class source.
   observable+provider), plus an observable risk_score bump (cap 100) on
   confirmation. Thresholds as Settings (env-tunable CTI_*). Alerts page badge
   for the new trigger.
-- [ ] **Step 3 — Enrichment idempotency + refresh.** Per-provider staleness TTL
+- [x] **Step 3 — Enrichment idempotency + refresh.** Per-provider staleness TTL
   (Settings `enrichment_refresh_days_<provider>`, defaults: virustotal 7,
   otx 14, abuseipdb 7, greynoise 3): batch re-enriches ONLY observables whose
   `{provider}_checked_at` is missing OR older than TTL (fresh ones counted as

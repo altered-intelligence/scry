@@ -46,17 +46,17 @@
     {% if can_lookup_vt or can_lookup_otx %}
     <div class="panel">
       <h3>Live lookup</h3>
-      <p class="muted">Runs now with <em>your</em> personal API key, bypassing the disk cache. The result is stored in the shared enrichment.</p>
+      <p class="muted">Re-checks now with <em>your</em> personal API key, bypassing both the disk cache and the freshness check — the verdict reflects the provider right now, at the cost of one real API call against your quota. The result is stored in the shared enrichment and resets the provider's staleness timer.</p>
       {% if can_lookup_vt %}
       <form method="post" action="/ui/observables/{{ observable.id }}/lookup/virustotal" style="display:inline">
         <input type="hidden" name="csrf" value="{{ lookup_csrf }}">
-        <button class="btn" type="submit">Lookup VirusTotal</button>
+        <button class="btn" type="submit">Re-check VirusTotal now (uses your quota)</button>
       </form>
       {% endif %}
       {% if can_lookup_otx %}
       <form method="post" action="/ui/observables/{{ observable.id }}/lookup/otx" style="display:inline">
         <input type="hidden" name="csrf" value="{{ lookup_csrf }}">
-        <button class="btn" type="submit">Lookup OTX</button>
+        <button class="btn" type="submit">Re-check OTX now (uses your quota)</button>
       </form>
       {% endif %}
     </div>
@@ -154,11 +154,13 @@
         <dt>Defanged</dt><dd>{% if observable.defanged_value %}<code>{{ observable.defanged_value }}</code>{% else %}—{% endif %}</dd>
         <dt>Validation</dt><dd>{{ observable.validation_status }}</dd>
       </dl>
-      {% if vt_provider_status or otx_provider_status %}
+      {% if provider_ages %}
         <h3>Enrichment providers</h3>
+        <p class="muted">Last enriched with each provider (refreshes after the provider's staleness TTL):</p>
         <dl class="kv">
-          {% if vt_provider_status %}<dt>VirusTotal</dt><dd>{{ vt_provider_status }}</dd>{% endif %}
-          {% if otx_provider_status %}<dt>OTX</dt><dd>{{ otx_provider_status }}</dd>{% endif %}
+          {% for name, age in provider_ages.items() %}
+          <dt>{{ name }}</dt><dd>{% if age == 'never' %}<span class="muted">never</span>{% else %}{{ age }}{% endif %}</dd>
+          {% endfor %}
         </dl>
       {% endif %}
     </div>

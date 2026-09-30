@@ -45,7 +45,19 @@
   {% if personal_key_providers %}
   <form method="post" action="/ui/observables/enrich-unenriched" style="display:inline; margin-left:12px">
     <input type="hidden" name="csrf" value="{{ enrich_csrf }}">
-    <button class="btn" type="submit" title="Runs VT/OTX with your personal keys on observables not yet enriched (capped at 50/run)">Enrich unenriched (my keys)</button>
+    <input type="hidden" name="mode" value="unenriched">
+    <button class="btn" type="submit" title="Runs VT/OTX with your personal keys on observables never enriched (capped at 50/run)">Enrich unenriched (my keys)</button>
+  </form>
+  <form method="post" action="/ui/observables/enrich-unenriched" style="display:inline; margin-left:6px">
+    <input type="hidden" name="csrf" value="{{ enrich_csrf }}">
+    <input type="hidden" name="mode" value="stale">
+    <button class="btn secondary" type="submit" title="Re-checks records whose last enrichment is missing or older than the provider refresh TTL (uses your quota)">Re-enrich stale (my keys)</button>
+  </form>
+  <form method="post" action="/ui/observables/enrich-unenriched" style="display:inline; margin-left:6px"
+        onsubmit="return confirm('Force re-enrich ALL matching observables now? This ignores freshness markers and burns your API quota.');">
+    <input type="hidden" name="csrf" value="{{ enrich_csrf }}">
+    <input type="hidden" name="mode" value="force">
+    <button class="btn danger" type="submit" title="Ignores freshness markers and re-checks everything (capped at 50/run)">Force re-enrich all (my keys)</button>
   </form>
   {% endif %}
 </form>

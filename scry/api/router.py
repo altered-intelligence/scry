@@ -199,10 +199,16 @@ def enrichment_run(
     session: Session = Depends(get_session),
     limit: int = Query(200, ge=1, le=2000),
     providers: list[str] = Query(default=[]),
+    force: bool = Query(False),
 ):
-    """Run external enrichment (VT/OTX/AbuseIPDB/GreyNoise) on observables not
-    yet checked (cached, rate-limited). `providers` restricts which providers
-    run (repeatable query param); default = all enabled + keyed providers.
+    """Run external enrichment (VT/OTX/AbuseIPDB/GreyNoise) on observables due
+    for (re-)checking (cached, rate-limited). `providers` restricts which
+    providers run (repeatable query param); default = all enabled + keyed
+    providers. `force=true` ignores `{provider}_checked_at` staleness markers
+    and re-enriches everything (burns quota); the default staleness path
+    re-checks only records whose marker is missing or older than the
+    provider's refresh TTL (`enrichment_refresh_days_<provider>`), counting
+    fresh records as `fresh_skipped` and stale re-enrichments as `refreshed`.
 
     Key resolution (v0.5.0 step 6): when an acting user is known (session
     cookie or per-user API key), VT/OTX use that user's personal keys —
@@ -214,7 +220,9 @@ def enrichment_run(
     user_api_keys = keys_for_user(session, user.id) if user is not None else None
     engine = EnrichmentEngine(session, user_api_keys=user_api_keys)
     try:
-        result = engine.run_external_enrichment_batch(limit=limit, providers=providers or None)
+        result = engine.run_external_enrichment_batch(
+            limit=limit, providers=providers or None, force=force
+        )
     except ValueError as exc:
         raise HTTPException(400, detail=str(exc)) from None
     return result

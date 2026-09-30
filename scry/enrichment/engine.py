@@ -9,7 +9,7 @@ from __future__ import annotations
 import ipaddress
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from scry.config import get_settings
 from scry.enrichment.abuseipdb import AbuseIPDBEnricher
 from scry.enrichment.attack_mapping import AttackMappingEnricher
 from scry.enrichment.email import EmailEnricher
@@ -80,6 +81,47 @@ def _is_valid_for_external(ob_type: str, value: str) -> bool:
 class EnrichmentResult:
     fields: dict[str, Any]
     rationale: list[str]
+    # v0.6.0 step 3 — providers skipped because their checked marker is still
+    # fresh (within the refresh TTL); populated by enrich_observable_external.
+    fresh_skipped: list[str] = field(default_factory=list)
+
+
+def _provider_refresh_ttls() -> dict[str, int]:
+    """Per-provider staleness TTLs (days) from Settings (CTI_ env-tunable)."""
+    settings = get_settings()
+    return {
+        name: max(0, getattr(settings, f"enrichment_refresh_days_{name}", 7))
+        for name in _EXTERNAL_PROVIDERS
+    }
+
+
+def _marker_age_seconds(enrichment: dict, provider: str, now: datetime) -> float | None:
+    """Age of the ``{provider}_checked_at`` marker in seconds.
+
+    Returns None when the marker is missing or unparseable — callers treat
+    that as "needs enrichment" (fail-safe: prefer a wasted re-check over
+    trusting data of unknown age).
+    """
+    marker = enrichment.get(f"{provider}_checked_at")
+    if not isinstance(marker, str) or not marker:
+        return None
+    try:
+        checked_at = datetime.fromisoformat(marker)
+    except ValueError:
+        return None
+    if checked_at.tzinfo is None:
+        checked_at = checked_at.replace(tzinfo=UTC)
+    return (now - checked_at).total_seconds()
+
+
+def _is_stale(enrichment: dict, provider: str, ttl_days: int, now: datetime) -> bool:
+    """Staleness check on the ``{provider}_checked_at`` marker.
+
+    Missing or unparseable marker → stale (never checked / unknown age).
+    Otherwise stale when the last check is older than ``ttl_days``.
+    """
+    age = _marker_age_seconds(enrichment, provider, now)
+    return age is None or age > ttl_days * 86400
 
 
 class EnrichmentEngine:
@@ -233,12 +275,21 @@ class EnrichmentEngine:
         return runnable, skipped
 
     def enrich_observable_external(
-        self, observable: Observable, providers: list[str] | None = None
+        self,
+        observable: Observable,
+        providers: list[str] | None = None,
+        force: bool = False,
     ) -> EnrichmentResult:
         """Run external enrichment on a single observable (network calls, cached).
 
         `providers` optionally restricts which providers run (default: all
         configured/enabled). Disabled or keyless providers are skipped.
+
+        v0.6.0 step 3 — staleness-aware by default: a provider whose
+        `{provider}_checked_at` marker is still fresh (within its refresh TTL)
+        is skipped without a network call and reported in
+        `EnrichmentResult.fresh_skipped`. `force=True` ignores the marker and
+        always calls the provider (burns quota).
         """
         ob_type = observable.type
         value = observable.normalized_value
@@ -250,11 +301,18 @@ class EnrichmentEngine:
         for name, reason in skipped.items():
             rationale.append(f"{name} skipped: {reason}")
 
+        now = datetime.now(UTC)
+        ttls = _provider_refresh_ttls()
+        fresh_skipped: list[str] = []
         for name in runnable:
             if ob_type not in _EXTERNAL_PROVIDERS[name]["types"]:
                 continue
             if not _is_valid_for_external(ob_type, value):
                 rationale.append(f"{name} skipped: value failed sanity check")
+                continue
+            if not force and not _is_stale(merged, name, ttls[name], now):
+                fresh_skipped.append(name)
+                rationale.append(f"{name} skipped: fresh (within refresh TTL)")
                 continue
             try:
                 self._merge_external_result(observable, merged, rationale, name)
@@ -265,14 +323,34 @@ class EnrichmentEngine:
         merged["prevalence"] = prevalence_summary(self.session, observable.id)
 
         observable.enrichment = merged
-        return EnrichmentResult(fields=merged, rationale=rationale)
+        return EnrichmentResult(
+            fields=merged, rationale=rationale, fresh_skipped=fresh_skipped
+        )
 
     def run_external_enrichment_batch(
-        self, limit: int = 200, providers: list[str] | None = None
+        self,
+        limit: int = 200,
+        providers: list[str] | None = None,
+        force: bool = False,
+        include_stale: bool = True,
     ) -> dict[str, Any]:
-        """Enrich observables not yet checked by the selected providers.
+        """Enrich observables due for (re-)checking by the selected providers.
 
-        Returns per-provider enriched counts plus errors/skip bookkeeping.
+        v0.6.0 step 3 — staleness-aware selection: an observable is a candidate
+        for a provider when its `{provider}_checked_at` marker is missing,
+        unparseable, or older than the provider's refresh TTL (Settings
+        `enrichment_refresh_days_<provider>`). Fresh markers are counted per
+        provider in ``fresh_skipped`` and skipped without network calls.
+        ``force=True`` ignores markers entirely (re-enrich everything);
+        ``include_stale=False`` restricts the run to never-checked records
+        (the old "unenriched only" behaviour).
+
+        Candidates are processed oldest-checked-first (missing markers first,
+        then descending marker age) so quota reaches the stalest data first.
+
+        Returns per-provider enriched counts plus errors/skip bookkeeping;
+        ``refreshed`` counts re-enrichments of records that carried a stale
+        marker (as opposed to first-time enrichments).
         """
         runnable, skipped = self._select_external(providers)
         # Only observables whose type at least one selected provider supports.
@@ -280,22 +358,46 @@ class EnrichmentEngine:
         for name in runnable:
             selected_types |= _EXTERNAL_PROVIDERS[name]["types"]
 
+        now = datetime.now(UTC)
+        ttls = _provider_refresh_ttls()
+
         counts = {name: 0 for name in runnable}
+        refreshed = {name: 0 for name in runnable}
         quota_skipped = {name: 0 for name in runnable}
+        fresh_skipped = {name: 0 for name in runnable}
         errors = 0
 
         all_obs = self.session.scalars(select(Observable)).all()
-        to_enrich = [
-            ob
-            for ob in all_obs
-            if ob.type in selected_types
-            and _is_valid_for_external(ob.type, ob.normalized_value)
-            and any(
-                f"{name}_checked_at" not in (ob.enrichment or {})
-                for name in runnable
-                if ob.type in _EXTERNAL_PROVIDERS[name]["types"]
-            )
-        ][:limit]
+        candidates: list[tuple[tuple[int, float], Observable]] = []
+        for ob in all_obs:
+            if ob.type not in selected_types:
+                continue
+            if not _is_valid_for_external(ob.type, ob.normalized_value):
+                continue
+            enrichment = ob.enrichment or {}
+            due = False
+            has_missing_marker = False
+            oldest_age: float | None = None
+            for name in runnable:
+                if ob.type not in _EXTERNAL_PROVIDERS[name]["types"]:
+                    continue
+                age = _marker_age_seconds(enrichment, name, now)
+                if force or age is None or (include_stale and age > ttls[name] * 86400):
+                    due = True
+                    if age is None:
+                        has_missing_marker = True
+                    else:
+                        oldest_age = age if oldest_age is None else min(oldest_age, age)
+                elif age <= ttls[name] * 86400:
+                    fresh_skipped[name] += 1
+            if not due:
+                continue
+            # Oldest-checked-first: missing markers before any dated ones,
+            # then descending marker age (stalest data gets the quota first).
+            key = (0, 0.0) if has_missing_marker else (1, -(oldest_age or 0.0))
+            candidates.append((key, ob))
+        candidates.sort(key=lambda item: item[0])
+        to_enrich = [ob for _, ob in candidates[:limit]]
 
         logger.info(
             "external_enrichment_batch_start", total=len(to_enrich), providers=sorted(runnable)
@@ -308,13 +410,21 @@ class EnrichmentEngine:
                 for name in runnable:
                     if ob.type not in _EXTERNAL_PROVIDERS[name]["types"]:
                         continue
-                    if f"{name}_checked_at" in merged:
-                        continue
+                    if not force:
+                        age = _marker_age_seconds(merged, name, now)
+                        if age is not None and (
+                            not include_stale or age <= ttls[name] * 86400
+                        ):
+                            continue  # fresh (or "unenriched only" mode)
+                        # age None → missing/unparseable marker → enrich.
+                    had_stale_marker = _marker_age_seconds(merged, name, now) is not None
                     before = dict(merged)
                     rationale_len = len(rationale)
                     self._merge_external_result(ob, merged, rationale, name)
                     if merged != before or f"{name}_checked_at" in merged:
                         counts[name] += 1
+                        if had_stale_marker:
+                            refreshed[name] += 1
                     new_rationale = rationale[rationale_len:]
                     if any(
                         "quota" in entry.lower() or "rate limit" in entry.lower()
@@ -339,6 +449,8 @@ class EnrichmentEngine:
                 "providers": sorted(runnable),
                 "skipped": skipped,
                 "quota_skipped": {k: v for k, v in quota_skipped.items() if v},
+                "fresh_skipped": {k: v for k, v in fresh_skipped.items() if v},
+                "refreshed": {k: v for k, v in refreshed.items() if v},
             }
         )
         logger.info("external_enrichment_batch_done", counts=counts, errors=errors)

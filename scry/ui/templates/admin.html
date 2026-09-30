@@ -123,18 +123,20 @@
 
   <h3>Enrichment coverage</h3>
   <table>
-    <thead><tr><th>Provider</th><th>Observables enriched</th><th>Malicious verdicts</th><th>Benign / clean</th></tr></thead>
+    <thead><tr><th>Provider</th><th>Observables enriched</th><th>Stale / due for refresh</th><th>Malicious verdicts</th><th>Benign / clean</th></tr></thead>
     <tbody>
       {% for name, cov in enrichment_coverage.providers.items() %}
       <tr>
         <td><span class="chip">{{ name }}</span></td>
         <td>{{ cov.checked|format_number }}</td>
+        <td>{% if cov.stale %}<span class="badge warn">{{ cov.stale|format_number }}</span>{% else %}<span class="muted">0</span>{% endif %}</td>
         <td>{% if cov.malicious %}<span class="badge bad">{{ cov.malicious|format_number }}</span>{% else %}<span class="muted">0</span>{% endif %}</td>
         <td>{% if cov.benign %}<span class="badge dim">{{ cov.benign|format_number }}</span>{% else %}<span class="muted">0</span>{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
+  <p class="muted">Stale = marker missing or older than the provider's refresh TTL.</p>
   <p class="muted">
     VirusTotal daily quota (system key): <strong>{{ enrichment_coverage.vt_quota.remaining|format_number }}</strong>
     / {{ enrichment_coverage.vt_quota.limit|format_number }} remaining

@@ -308,11 +308,17 @@ class TestBatchRun:
 
     @respx.mock
     def test_already_checked_observable_skipped(self, all_keys, session):
+        # v0.6.0 step 3 — the batch is staleness-aware now: a *fresh* marker
+        # (within the refresh TTL) is skipped as fresh_skipped without network
+        # calls. (2024-01-01 markers would be STALE now and get re-enriched.)
+        from datetime import UTC, datetime
+
+        fresh = datetime.now(UTC).isoformat()
         _seed_ip(
             session,
             enrichment={
-                "virustotal_checked_at": "2024-01-01T00:00:00+00:00",
-                "otx_checked_at": "2024-01-01T00:00:00+00:00",
+                "virustotal_checked_at": fresh,
+                "otx_checked_at": fresh,
             },
         )
         respx.get(ABUSEIPDB_CHECK).mock(return_value=httpx.Response(200, json=ABUSEIPDB_PAYLOAD))
@@ -329,6 +335,7 @@ class TestBatchRun:
         body = r.json()
         assert body["vt_enriched"] == 0
         assert body["otx_enriched"] == 0
+        assert body["fresh_skipped"] == {"virustotal": 1, "otx": 1}
         assert not vt_route.called
         assert not otx_route.called
 

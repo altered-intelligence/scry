@@ -98,6 +98,14 @@ class Settings(BaseSettings):
     urlscan_api_key: str = ""
     abuseipdb_api_key: str = ""
 
+    # Enrichment refresh TTLs (v0.6.0 step 3): a provider re-checks an
+    # observable only when its `{provider}_checked_at` marker is older than
+    # this many days (or missing/unparseable). CTI_ENRICHMENT_REFRESH_DAYS_*.
+    enrichment_refresh_days_virustotal: int = 7
+    enrichment_refresh_days_otx: int = 14
+    enrichment_refresh_days_abuseipdb: int = 7
+    enrichment_refresh_days_greynoise: int = 3
+
     # Vendor-verdict alert escalation (v0.6.0 step 2): when an enrichment
     # provider confirms an observable malicious, AlertEngine raises it.
     vt_escalate_min_detections: int = 10  # VT malicious votes (AND ratio below)
