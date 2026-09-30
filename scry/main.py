@@ -24,6 +24,18 @@ from scry.api.auth import require_api_key
 from scry.api.chat import chat_router
 from scry.api.deps import get_session
 from scry.api.taxii import taxii_router
+from scry.auth.dependencies import current_user, path_requires_ui_auth
+from scry.auth.passwords import verify_password
+from scry.auth.sessions import (
+    SESSION_COOKIE,
+    SESSION_TTL,
+    create_session,
+    lockout_remaining,
+    record_login_failure,
+    record_login_success,
+    revoke_session,
+    users_exist,
+)
 from scry.config import get_settings
 from scry.db import get_engine, session_scope
 from scry.logging import configure_logging, get_logger
@@ -43,6 +55,7 @@ from scry.models import (
     Source,
     SourceFetch,
     ThreatFeedItem,
+    User,
 )
 
 _HERE = Path(__file__).resolve().parent
@@ -126,6 +139,146 @@ def _redirect_flash(url: str, message: str, kind: str = "success") -> RedirectRe
     return RedirectResponse(
         url=f"{url}{sep}{urlencode({'flash': message, 'flash_kind': kind})}", status_code=303
     )
+
+
+# ------------------------- auth (v0.5.0 step 1) -------------------------
+
+
+@app.middleware("http")
+async def ui_auth_middleware(request: Request, call_next):
+    """Gate browser UI behind a session once any user account exists.
+
+    Legacy behavior is preserved exactly: zero users → everything stays open
+    (the MCP server and local automations depend on this). Gated paths: the
+    dashboard (``/``), ``/ui/*``, and the future ``/admin`` prefix. ``/login``
+    and ``/static`` are not under these prefixes, so they stay reachable.
+    """
+    if not path_requires_ui_auth(request.url.path):
+        return await call_next(request)
+
+    from scry.db import session_scope
+
+    with session_scope() as session:
+        has_users = users_exist(session)
+    request.state.auth_required = has_users
+    user = current_user(request) if has_users else None
+    request.state.user = user
+    if has_users and user is None:
+        return RedirectResponse(url="/login", status_code=303)
+    return await call_next(request)
+
+
+def _safe_next(next_url: str | None) -> str:
+    """Only allow same-site relative redirects after login."""
+    if next_url and next_url.startswith("/") and not next_url.startswith("//"):
+        return next_url
+    return "/"
+
+
+def _login_redirect(message: str, next_url: str | None = None) -> RedirectResponse:
+    params = {"error": message}
+    if next_url:
+        params["next"] = next_url
+    return RedirectResponse(url=f"/login?{urlencode(params)}", status_code=303)
+
+
+def _audit_login(session: Session, username: str, success: bool, detail: dict | None = None) -> None:
+    from scry.audit import record
+
+    record(
+        session,
+        action="login.success" if success else "login.failure",
+        actor=username,
+        target_type="user",
+        detail=detail or {},
+    )
+
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page(request: Request):
+    with session_scope() as session:
+        has_users = users_exist(session)
+    if has_users and current_user(request) is not None:
+        return RedirectResponse(url="/", status_code=303)
+    return templates.TemplateResponse(
+        request,
+        "login.html",
+        {
+            "has_users": has_users,
+            "error": request.query_params.get("error"),
+            "next": request.query_params.get("next"),
+        },
+    )
+
+
+@app.post("/login")
+def login_submit(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    next: str | None = Form(None),
+):
+    with session_scope() as session:
+        if not users_exist(session):
+            return RedirectResponse(url="/login", status_code=303)
+
+        user = session.scalar(select(User).where(func.lower(User.username) == username.lower()))
+        generic_error = "Invalid username or password."
+        if user is None:
+            _audit_login(session, username, success=False)
+            return _login_redirect(generic_error, next)
+
+        remaining = lockout_remaining(user)
+        if remaining is not None:
+            minutes = max(1, int(remaining.total_seconds() // 60) + (1 if remaining.seconds % 60 else 0))
+            _audit_login(session, username, success=False, detail={"reason": "locked"})
+            return _login_redirect(f"Account locked. Try again in {minutes} minutes.", next)
+
+        if user.status != "active":
+            _audit_login(session, username, success=False, detail={"reason": "disabled"})
+            return _login_redirect("This account is disabled.", next)
+
+        if not verify_password(password, user.password_hash):
+            record_login_failure(session, user)
+            session.flush()
+            remaining = lockout_remaining(user)
+            _audit_login(session, username, success=False)
+            if remaining is not None:
+                return _login_redirect(
+                    f"Too many failed attempts. Account locked for {int(remaining.total_seconds() // 60)} minutes.",
+                    next,
+                )
+            return _login_redirect(generic_error, next)
+
+        record_login_success(session, user)
+        raw_token = create_session(
+            session,
+            user,
+            ip=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        )
+        _audit_login(session, username, success=True)
+        session.commit()
+
+    response = RedirectResponse(url=_safe_next(next), status_code=303)
+    response.set_cookie(
+        SESSION_COOKIE,
+        raw_token,
+        max_age=int(SESSION_TTL.total_seconds()),
+        httponly=True,
+        samesite="lax",
+        path="/",
+    )
+    return response
+
+
+@app.post("/logout")
+def logout(request: Request):
+    with session_scope() as session:
+        revoke_session(session, request.cookies.get(SESSION_COOKIE))
+    response = RedirectResponse(url="/login", status_code=303)
+    response.delete_cookie(SESSION_COOKIE, path="/")
+    return response
 
 
 # ------------------------- helpers -------------------------

@@ -18,12 +18,20 @@ Commands:
   alerts list              List recent alerts
   decay run                Apply IOC decay
   stats                    Show DB counts
+  users create             Create a user account
+  users list               List user accounts
+  users promote|demote     Grant/revoke the admin role
+  users reset-password     Reset a user's password (forces change + logout)
+  users disable|enable     Disable/enable a user account
+  users seed               Seed alakhani+admin (--yes; CTI_ADMIN_INITIAL_PASSWORD)
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+import os
+import re
 import sys
 
 import typer
@@ -32,6 +40,7 @@ from rich.table import Table
 from sqlalchemy import func, select
 
 from scry.ai.errors import AskError
+from scry.auth.passwords import hash_password
 from scry.db import get_engine, session_scope
 from scry.enrichment import EnrichmentEngine
 from scry.ingestion import IngestionEngine
@@ -45,6 +54,7 @@ from scry.models import (
     Base,
     Observable,
     Source,
+    User,
 )
 from scry.pipeline import CTIPipeline
 from scry.reporting import generate_brief, generate_daily_report, generate_weekly_report
@@ -380,6 +390,199 @@ def mcp_command() -> None:
         console.print("[red]The 'mcp' package is not installed. Run: pip install scry[mcp][/red]")
         raise typer.Exit(1) from exc
     mcp_main()
+
+
+# ------------------------- users (v0.5.0 step 1) -------------------------
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+SEED_INITIAL_PASSWORD_ENV = "CTI_ADMIN_INITIAL_PASSWORD"
+SEED_INITIAL_PASSWORD_DEFAULT = "Batman911!#"
+
+
+def _audit_user(session, action: str, user: User, detail: dict | None = None) -> None:
+    from scry.audit import record
+
+    record(
+        session,
+        action=action,
+        actor="cli",
+        target_type="user",
+        target_id=user.id,
+        detail={"username": user.username, **(detail or {})},
+    )
+
+
+def _find_user(session, username: str) -> User | None:
+    return session.scalar(select(User).where(func.lower(User.username) == username.lower()))
+
+
+def _require_user(session, username: str) -> User:
+    user = _find_user(session, username)
+    if user is None:
+        console.print(f"[red]No user named {username!r}[/red]")
+        raise typer.Exit(1)
+    return user
+
+
+def _validate_email(email: str) -> str:
+    email = email.strip()
+    if not _EMAIL_RE.match(email):
+        console.print(f"[red]Invalid email address: {email!r}[/red]")
+        raise typer.Exit(2)
+    return email
+
+
+def _prompt_password() -> str:
+    return typer.prompt("Password", hide_input=True, confirmation_prompt=True)
+
+
+users_app = typer.Typer(help="User account management (v0.5.0)")
+app.add_typer(users_app, name="users")
+
+
+@users_app.command("create")
+def users_create(
+    username: str,
+    email: str = typer.Option(..., "--email", "-e", help="Required — email is mandatory for all users"),
+    password: str | None = typer.Option(None, "--password", "-p", help="Prompted when omitted"),
+    role: str = typer.Option("user", "--role", help="user | admin"),
+    admin: bool = typer.Option(False, "--admin", help="Shortcut for --role admin"),
+) -> None:
+    """Create a user account."""
+    if admin:
+        role = "admin"
+    if role not in ("user", "admin"):
+        console.print("[red]--role must be 'user' or 'admin'[/red]")
+        raise typer.Exit(2)
+    email = _validate_email(email)
+    if password is None:
+        password = _prompt_password()
+    with session_scope() as session:
+        if _find_user(session, username) is not None:
+            console.print(f"[red]Username {username!r} already exists[/red]")
+            raise typer.Exit(1)
+        user = User(username=username, email=email, role=role, password_hash=hash_password(password))
+        session.add(user)
+        session.flush()
+        _audit_user(session, "user.create", user, {"role": role})
+    console.print(f"[green]Created user {username!r} ({role})[/green]")
+
+
+@users_app.command("list")
+def users_list() -> None:
+    """List user accounts."""
+    with session_scope() as session:
+        table = Table("id", "username", "email", "role", "status", "last_login")
+        for u in session.scalars(select(User).order_by(User.id)):
+            last = u.last_login_at.strftime("%Y-%m-%d %H:%M") if u.last_login_at else "—"
+            table.add_row(str(u.id), u.username, u.email, u.role, u.status, last)
+        console.print(table)
+
+
+def _set_role(username: str, role: str) -> None:
+    with session_scope() as session:
+        user = _require_user(session, username)
+        user.role = role
+        session.flush()
+        _audit_user(session, f"user.{role}", user)
+    console.print(f"[green]{username!r} is now {role}[/green]")
+
+
+@users_app.command("promote")
+def users_promote(username: str) -> None:
+    """Grant the admin role."""
+    _set_role(username, "admin")
+
+
+@users_app.command("demote")
+def users_demote(username: str) -> None:
+    """Revoke the admin role (back to user)."""
+    _set_role(username, "user")
+
+
+@users_app.command("reset-password")
+def users_reset_password(
+    username: str,
+    password: str | None = typer.Option(None, "--password", "-p", help="Prompted when omitted"),
+) -> None:
+    """Reset a user's password; forces a change at next login and logs them out."""
+    if password is None:
+        password = _prompt_password()
+    from scry.auth.sessions import revoke_all_sessions
+
+    with session_scope() as session:
+        user = _require_user(session, username)
+        user.password_hash = hash_password(password)
+        user.must_change_password = True
+        user.failed_login_count = 0
+        user.locked_until = None
+        revoked = revoke_all_sessions(session, user.id)
+        session.flush()
+        _audit_user(session, "user.reset_password", user, {"revoked_sessions": revoked})
+    console.print(f"[green]Password reset for {username!r} ({revoked} session(s) revoked)[/green]")
+
+
+@users_app.command("disable")
+def users_disable(username: str) -> None:
+    """Disable a user account (blocks login and invalidates sessions)."""
+    from scry.auth.sessions import revoke_all_sessions
+
+    with session_scope() as session:
+        user = _require_user(session, username)
+        user.status = "disabled"
+        revoked = revoke_all_sessions(session, user.id)
+        session.flush()
+        _audit_user(session, "user.disable", user, {"revoked_sessions": revoked})
+    console.print(f"[green]Disabled {username!r}[/green]")
+
+
+@users_app.command("enable")
+def users_enable(username: str) -> None:
+    """Re-enable a disabled user account."""
+    with session_scope() as session:
+        user = _require_user(session, username)
+        user.status = "active"
+        session.flush()
+        _audit_user(session, "user.enable", user)
+    console.print(f"[green]Enabled {username!r}[/green]")
+
+
+@users_app.command("seed")
+def users_seed(
+    yes: bool = typer.Option(False, "--yes", help="Confirm creation of the seeded admin accounts"),
+) -> None:
+    """Seed the standard admin accounts (alakhani + admin).
+
+    Reads the initial password from $CTI_ADMIN_INITIAL_PASSWORD
+    (default "Batman911!#"); both accounts are created with
+    must_change_password=true. Existing usernames are skipped.
+    """
+    if not yes:
+        console.print("[yellow]This creates admin accounts. Re-run with --yes to confirm.[/yellow]")
+        raise typer.Exit(2)
+    password = os.environ.get(SEED_INITIAL_PASSWORD_ENV, SEED_INITIAL_PASSWORD_DEFAULT)
+    seeded: list[str] = []
+    with session_scope() as session:
+        for username, email in (("alakhani", "alakhani@example.com"), ("admin", "admin@example.com")):
+            if _find_user(session, username) is not None:
+                continue
+            user = User(
+                username=username,
+                email=email,
+                role="admin",
+                password_hash=hash_password(password),
+                must_change_password=True,
+            )
+            session.add(user)
+            session.flush()
+            _audit_user(session, "user.seed", user)
+            seeded.append(username)
+    if seeded:
+        source = f"${SEED_INITIAL_PASSWORD_ENV}" if SEED_INITIAL_PASSWORD_ENV in os.environ else "default"
+        console.print(f"[green]Seeded admin accounts: {', '.join(seeded)}[/green]")
+        console.print(f"[dim]Initial password from {source}; must be changed at first login.[/dim]")
+    else:
+        console.print("[yellow]Seed usernames already exist — nothing to do.[/yellow]")
 
 
 def main() -> None:  # entry point

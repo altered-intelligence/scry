@@ -419,6 +419,14 @@
     <a href="/ui/search">Search</a>
     <a href="/docs" target="_blank" rel="noopener">API</a>
     <span class="spacer"></span>
+    {% if request.state.user %}
+      <span class="meta">{{ request.state.user.username }}</span>
+      <form method="post" action="/logout" style="display: inline; margin: 0;">
+        <button type="submit" class="theme-toggle" title="Sign out">Logout</button>
+      </form>
+    {% elif request.state.auth_required %}
+      <a href="/login">Login</a>
+    {% endif %}
     <span class="meta">Defensive use only · {{ request.url.hostname }}</span>
     <button id="theme-toggle" class="theme-toggle" aria-label="Toggle light/dark theme" title="Toggle theme">☾</button>
   </header>

@@ -106,7 +106,7 @@ prefix `v0.5.0 step N:`. Owner decisions locked 2026-09-29:
 
 ## Steps
 
-- [ ] **Step 1 — Accounts core.** User + SessionToken models (scry/models/user.py);
+- [x] **Step 1 — Accounts core.** User + SessionToken models (scry/models/user.py);
   bcrypt password hashes; DB-backed sessions (HttpOnly cookie, sliding 7-day
   expiry, "log out everywhere"); /login /logout pages; middleware gating /ui/*
   + future /admin behind session (redirect to /login; /login + /static exempt);

@@ -1,19 +1,25 @@
-"""Optional static API-token auth for the REST routers.
+"""Auth for the REST routers: optional master key + user-account sessions.
 
-When ``CTI_API_KEY`` is set, every route on the API routers requires the key
-via the ``X-API-Key`` header or an ``Authorization: Bearer <key>`` header.
-When the setting is empty (the default), everything stays open and behavior
-is unchanged.
+v0.4.0 behavior (unchanged): when ``CTI_API_KEY`` is set, every route on the
+API routers requires the key via the ``X-API-Key`` header or an
+``Authorization: Bearer <key>`` header. When the setting is empty (the
+default) and no user accounts exist, everything stays open.
 
-Exemptions: a small set of routes stays unauthenticated even when a key is
-configured, so monitoring probes and the Search-page provider picker keep
+v0.5.0 addition: once ANY user account exists, ``/api/*`` requires auth even
+without a master key — a valid ``scry_session`` cookie (browser/UI fetch
+calls) or a per-user API key (plug-in hook, step 3) also satisfies it. With
+zero users the API stays fully open, preserving legacy behavior for the MCP
+server and local automations.
+
+Exemptions: a small set of routes stays unauthenticated even when auth is
+enabled, so monitoring probes and the Search-page provider picker keep
 working:
 
 - ``/api/health`` / ``/health`` — health probe (mounted without prefix)
 - ``/api/ai/status``, ``/api/ai/provider`` — Search-page provider picker
 
-The HTML UI routes (``/ui/*`` and the dashboard) are plain ``@app`` routes in
-``scry/main.py`` and are not wired through this dependency at all.
+The HTML UI routes (``/ui/*`` and the dashboard) are gated by middleware in
+``scry/main.py``, not through this dependency.
 """
 
 from __future__ import annotations
@@ -35,28 +41,54 @@ _UNAUTHENTICATED_PATHS = frozenset(
 )
 
 
-def require_api_key(request: Request) -> None:
-    """FastAPI dependency enforcing the optional static API key.
-
-    Settings are read lazily per request (local import) so tests and runtime
-    config changes take effect without re-importing the routers.
-    """
-    if request.url.path in _UNAUTHENTICATED_PATHS:
-        return
-
-    from scry.config import get_settings
-
-    expected = get_settings().api_key
-    if not expected:
-        return  # auth not configured — open by default (unchanged behavior)
-
+def _provided_key(request: Request) -> str | None:
     provided = request.headers.get("x-api-key")
     auth_header = request.headers.get("authorization")
     if not provided and auth_header:
         scheme, _, token = auth_header.partition(" ")
         if scheme.lower() == "bearer" and token.strip():
             provided = token.strip()
+    return provided
 
+
+def require_api_key(request: Request) -> None:
+    """FastAPI dependency enforcing API auth.
+
+    Settings and the user table are read lazily per request (local imports)
+    so tests and runtime config changes take effect without re-importing.
+    """
+    if request.url.path in _UNAUTHENTICATED_PATHS:
+        return
+
+    from scry.auth.dependencies import current_user, validate_user_api_key
+    from scry.auth.sessions import users_exist
+    from scry.db import session_scope
+
+    with session_scope() as session:
+        has_users = users_exist(session)
+
+    if has_users:
+        # Browser/UI fetch calls carry the session cookie; per-user API keys
+        # plug in via validate_user_api_key (step 3).
+        if current_user(request) is not None:
+            return
+        if validate_user_api_key(request) is not None:
+            return
+
+    from scry.config import get_settings
+
+    expected = get_settings().api_key
+    if not expected:
+        if has_users:
+            # Accounts exist but no credentials were presented — auth is on.
+            raise HTTPException(
+                status_code=401,
+                detail="Authentication required (session cookie, user API key, or master key)",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return  # no users and no master key — open by default (legacy behavior)
+
+    provided = _provided_key(request)
     if provided is not None and hmac.compare_digest(
         provided.encode("utf-8"), expected.encode("utf-8")
     ):

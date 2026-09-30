@@ -24,6 +24,7 @@ from scry.models.source import Source, SourceFetch, SourceReliabilityProfile
 from scry.models.telegram_channel import TelegramChannel
 from scry.models.threat_feed import ThreatFeedItem
 from scry.models.threat_intel_source import ThreatIntelSource
+from scry.models.user import SessionToken, User
 from scry.models.workflow import (
     Alert,
     AnalystReview,
@@ -58,6 +59,7 @@ __all__ = [
     "ObservableMention",
     "RansomwareFeedItem",
     "Relationship",
+    "SessionToken",
     "Source",
     "SourceFetch",
     "SourceReliabilityProfile",
@@ -65,4 +67,5 @@ __all__ = [
     "ThreatActor",
     "ThreatFeedItem",
     "ThreatIntelSource",
+    "User",
 ]

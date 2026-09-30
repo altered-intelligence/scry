@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Login · Scry{% endblock %}
+{% block content %}
+<div class="panel" style="max-width: 420px; margin: 48px auto;">
+  {% if not has_users %}
+    <h1 style="font-size: 20px;">No accounts configured</h1>
+    <p class="muted" style="font-size: 14px;">
+      Scry is currently open to everyone because no user accounts exist yet.
+      Create the first one with
+      <code>scry users create --email you@example.com &lt;username&gt;</code>
+      or seed the standard admins with <code>scry users seed --yes</code>.
+    </p>
+  {% else %}
+    <h1 style="font-size: 20px;">Sign in</h1>
+    {% if error %}
+      <div class="flash error" role="alert"><span>{{ error }}</span></div>
+    {% endif %}
+    <form method="post" action="/login" style="display: grid; gap: 12px;">
+      {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+      <label style="display: grid; gap: 4px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em;">
+        Username
+        <input type="text" name="username" required autofocus autocomplete="username">
+      </label>
+      <label style="display: grid; gap: 4px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em;">
+        Password
+        <input type="password" name="password" required autocomplete="current-password">
+      </label>
+      <button type="submit" class="btn" style="justify-self: start;">Sign in</button>
+    </form>
+  {% endif %}
+</div>
+{% endblock %}
