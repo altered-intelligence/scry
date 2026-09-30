@@ -4,6 +4,49 @@ All notable changes to Scry are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 semantic versioning.
 
+## [0.4.0] — 2026-09-29
+
+### Added
+
+- **Optional API token auth** — set `CTI_API_KEY` and all `/api/*` and
+  `/taxii2/*` routes require it via `X-API-Key` or `Authorization: Bearer`
+  (constant-time compare, `401` + `WWW-Authenticate` challenge). When unset,
+  everything stays open as before. `/health` and the AI status/provider
+  endpoints stay exempt; the HTML UI (`/ui/*`) is never authenticated.
+- **MCP server** — expose scry to AI clients (Claude Desktop, Cursor, any
+  MCP host) over stdio: `pip install scry[mcp]`, then `scry mcp` or
+  `python -m scry.mcp_server`. Six tools: `scry_health`, `scry_stats`,
+  `scry_search`, `scry_observables`, `scry_alerts`, and `scry_ask`
+  (grounded LLM Q&A, same pipeline as the Search page).
+- **AI-synthesized briefs** — `POST /api/reports/brief?scope=daily|weekly`
+  pipes the plain-text report through the active LLM provider into an
+  executive summary (cached in-memory per scope/day). Also
+  `scry reporting brief --scope daily|weekly` and a dashboard button.
+- **Alert notification channels** — generic webhook (`CTI_WEBHOOK_URL`),
+  email via SMTP (`CTI_ALERT_EMAIL_*`, `CTI_SMTP_*`), and macOS desktop
+  notifications (`osascript`, no extra deps). `POST /api/alerts/test` sends
+  a test message through every configured channel; a channel status panel
+  on `/ui/alerts` shows state with a test button. `AlertEngine.evaluate()`
+  now runs automatically at the end of every ingest run (delivery still
+  gated by `CTI_ENABLE_OUTBOUND_ALERTS`; alerts are always recorded).
+- **Ask conversation memory** — `POST /api/ai/ask` accepts an optional
+  `session_id` and prepends the last N turns of history to the model
+  context; assistant replies and sources are persisted. New sessions API
+  under `/api/ai/sessions` (list, get, rename, delete), and the Search
+  page gains a conversation sidebar with per-session history.
+- **External IOC enrichment** — new AbuseIPDB (IP) and GreyNoise (IP)
+  providers alongside VirusTotal and OTX; the VirusTotal daily quota is
+  now enforced alongside per-minute rate limits. Per-provider enable
+  toggles and API keys live in the database (Fernet-encrypted) with env
+  fallback, managed from a new panel on `/ui/alerts`.
+- **STIX 2.1 export + TAXII 2.1 server** — `POST /api/exports/stix21`
+  emits spec-valid STIX 2.1 bundles (deterministic uuid5 ids): SDOs for
+  threat actors, malware, campaigns, indicators, and relationships; SCOs
+  for observables. A minimal read-only TAXII 2.1 server at `/taxii2/`
+  offers server/api-root discovery plus two collections (`intel` and
+  `articles`) with paginated object endpoints, protected by the same
+  `CTI_API_KEY` when configured.
+
 ## [0.3.0] — 2026-09-29
 
 ### Added

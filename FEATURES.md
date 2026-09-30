@@ -73,6 +73,6 @@ Conventions for every step:
   Tests validating bundle structure + TAXII discovery JSON.
 
 ## Release (after all steps)
-- [ ] Bump version to 0.4.0 (app version in `scry/main.py`, `pyproject.toml`,
+- [x] Bump version to 0.4.0 (app version in `scry/main.py`, `pyproject.toml`,
       `CHANGELOG.md`, README feature list), tag `v0.4.0`, push + GitHub release
       via `/opt/homebrew/bin/gh`.

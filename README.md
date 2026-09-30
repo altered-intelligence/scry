@@ -18,6 +18,18 @@ A defensive cyber threat intelligence platform that ingests public sources, extr
 
 ---
 
+## What's new in 0.4.0
+
+- **Optional API token auth** — set `CTI_API_KEY` to require `X-API-Key` / `Bearer` on all `/api` + `/taxii2` routes (health & AI-status stay open).
+- **MCP server** — six tools (`scry_health`, `scry_stats`, `scry_search`, `scry_observables`, `scry_alerts`, `scry_ask`) over stdio for Claude Desktop / Cursor: `pip install scry[mcp]`, `scry mcp`.
+- **AI briefs** — `POST /api/reports/brief?scope=daily|weekly` turns daily/weekly reports into executive summaries; dashboard button + `scry reporting brief`.
+- **Alert channels** — generic webhook, SMTP email, and macOS desktop notifications with `POST /api/alerts/test` and a channel status panel on `/ui/alerts`; auto-evaluated after every ingest.
+- **Ask memory** — multi-turn AI Search conversations with sessions API (`/api/ai/sessions`) and a conversation sidebar on the Search page.
+- **IOC enrichment** — AbuseIPDB + GreyNoise providers, VirusTotal daily quota enforced, per-provider toggles + Fernet-encrypted keys with env fallback.
+- **STIX 2.1 + TAXII 2.1** — spec-valid bundle export (`POST /exports/stix21`) and a read-only TAXII server at `/taxii2/` with `intel` + `articles` collections.
+
+See [CHANGELOG.md](./CHANGELOG.md) for details.
+
 ## What it does
 
 - **Ingests** public RSS / blogs / vendor research / CISA KEV / Reddit (and any source you add to `config/sources.yaml`) under per-source collection policies.
