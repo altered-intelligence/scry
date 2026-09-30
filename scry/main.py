@@ -60,6 +60,7 @@ from scry.models import (
     Observable,
     ObservableMention,
     RansomwareFeedItem,
+    RecoveryCode,
     Relationship,
     SessionToken,
     Source,
@@ -279,6 +280,28 @@ def login_submit(
             return _login_redirect(generic_error, next)
 
         record_login_success(session, user)
+        from scry.auth import totp as _totp
+
+        if user.totp_enabled:
+            # MFA required: do NOT create a session yet. Hand the browser a
+            # short-lived signed pending marker (Fernet-encrypted {uid, exp}
+            # cookie, no DB table); the challenge at /login/mfa completes the
+            # login with a TOTP or recovery code.
+            pending = _totp.issue_pending_marker(user.id)
+            _audit_login(session, username, success=True, detail={"mfa": "pending"})
+            session.commit()
+            params = f"?{urlencode({'next': next})}" if next else ""
+            response = RedirectResponse(url=f"/login/mfa{params}", status_code=303)
+            response.set_cookie(
+                _totp.MFA_PENDING_COOKIE,
+                pending,
+                max_age=int(_totp.MFA_PENDING_TTL.total_seconds()),
+                httponly=True,
+                samesite="lax",
+                path="/",
+            )
+            return response
+
         raw_token = create_session(
             session,
             user,
@@ -306,6 +329,118 @@ def logout(request: Request):
         revoke_session(session, request.cookies.get(SESSION_COOKIE))
     response = RedirectResponse(url="/login", status_code=303)
     response.delete_cookie(SESSION_COOKIE, path="/")
+    return response
+
+
+# ------------------------- MFA login challenge (v0.5.0 step 4) -------------------------
+
+
+def _mfa_redirect(message: str, next_url: str | None = None) -> RedirectResponse:
+    params = {"error": message}
+    if next_url:
+        params["next"] = next_url
+    return RedirectResponse(url=f"/login/mfa?{urlencode(params)}", status_code=303)
+
+
+@app.get("/login/mfa", response_class=HTMLResponse)
+def mfa_challenge_page(request: Request):
+    from scry.auth import totp as _totp
+
+    if current_user(request) is not None:
+        return RedirectResponse(url="/", status_code=303)
+    if _totp.read_pending_marker(request.cookies.get(_totp.MFA_PENDING_COOKIE)) is None:
+        return _login_redirect("Your sign-in has expired — please log in again.")
+    return templates.TemplateResponse(
+        request,
+        "login.html",
+        {
+            "has_users": True,
+            "mfa_pending": True,
+            "error": request.query_params.get("error"),
+            "next": request.query_params.get("next"),
+        },
+    )
+
+
+@app.post("/login/mfa")
+def mfa_challenge_submit(
+    request: Request,
+    code: str = Form(...),
+    next: str | None = Form(None),
+):
+    from scry.auth import totp as _totp
+
+    uid = _totp.read_pending_marker(request.cookies.get(_totp.MFA_PENDING_COOKIE))
+    if uid is None:
+        return _login_redirect("Your sign-in has expired — please log in again.")
+
+    with session_scope() as session:
+        user = session.get(User, uid)
+        if user is None or user.status != "active" or not user.totp_enabled:
+            return _login_redirect("Please log in again.")
+
+        submitted = (code or "").strip()
+        via = None
+        secret = decrypt(user.totp_secret_encrypted)
+        if secret and _totp.verify_totp(secret, submitted):
+            via = "totp"
+        elif _totp.use_recovery_code(session, user, submitted):
+            via = "recovery"
+
+        if via is None:
+            count = _totp.record_mfa_failure(user.id)
+            if count >= _totp.MAX_MFA_ATTEMPTS:
+                # Too many wrong codes: invalidate the pending marker — the
+                # user must log in again from the password step.
+                _audit_login(session, user.username, success=False, detail={"reason": "mfa_exhausted"})
+                session.commit()
+                response = _login_redirect(
+                    "Too many failed codes — please sign in again.", next
+                )
+                response.delete_cookie(_totp.MFA_PENDING_COOKIE, path="/")
+                return response
+            _audit_login(session, user.username, success=False, detail={"reason": "mfa"})
+            session.commit()
+            return _mfa_redirect("Invalid authentication code.", next)
+
+        _totp.clear_mfa_failures(user.id)
+        raw_token = create_session(
+            session,
+            user,
+            ip=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        )
+        detail = {"via": via}
+        if via == "recovery":
+            from scry.audit import record
+
+            remaining = session.scalar(
+                select(func.count(RecoveryCode.id)).where(
+                    RecoveryCode.user_id == user.id, RecoveryCode.used_at.is_(None)
+                )
+            )
+            record(
+                session,
+                action="mfa.recovery_code_use",
+                actor=user.username,
+                target_type="user",
+                target_id=user.id,
+                detail={"remaining": remaining},
+            )
+            detail["remaining_recovery_codes"] = remaining
+        _audit_login(session, user.username, success=True, detail=detail)
+        session.commit()
+
+    response = RedirectResponse(url=_safe_next(next), status_code=303)
+    response.set_cookie(
+        SESSION_COOKIE,
+        raw_token,
+        max_age=int(SESSION_TTL.total_seconds()),
+        httponly=True,
+        samesite="lax",
+        path="/",
+    )
+    response.delete_cookie(_totp.MFA_PENDING_COOKIE, path="/")
     return response
 
 
@@ -651,6 +786,52 @@ def admin_revoke_user_sessions(
     return _redirect_flash("/admin", f"Revoked {revoked} session(s) for {user.username!r}.")
 
 
+@app.post("/admin/users/{user_id}/reset-mfa")
+def admin_reset_mfa(
+    user_id: int,
+    request: Request,
+    session: Session = Depends(get_session),
+    csrf: str = Form(""),
+    confirm: str = Form(""),
+):
+    """Force-disable MFA for a user (locked decision: admin can force-disable).
+    Clears the enabled flag + secret + recovery codes and revokes sessions."""
+    admin = _admin_or_none(request)
+    if admin is None:
+        raise HTTPException(403)
+    if not _check_admin_csrf(request, csrf):
+        return _redirect_flash("/admin", "Bad CSRF token — action rejected.", "error")
+    user = _get_target(session, user_id)
+    if user is None:
+        return _redirect_flash("/admin", "User not found.", "error")
+    if not user.totp_enabled and not user.totp_pending:
+        return _redirect_flash("/admin", f"{user.username} does not have MFA enabled.")
+    if confirm != user.username:
+        return _redirect_flash(
+            "/admin",
+            f"Reset not confirmed — type the username ({user.username}) to confirm.",
+            "error",
+        )
+    from scry.auth import totp as _totp
+
+    user.totp_enabled = False
+    user.totp_pending = False
+    user.totp_secret_encrypted = None
+    deleted = _totp.delete_recovery_codes(session, user.id)
+    revoked = revoke_all_sessions(session, user.id)
+    session.flush()
+    _audit_admin(
+        session,
+        admin,
+        "mfa.admin_reset",
+        user,
+        {"recovery_codes_deleted": deleted, "revoked_sessions": revoked},
+    )
+    return _redirect_flash(
+        "/admin", f"Reset MFA for {user.username!r} ({revoked} session(s) revoked)."
+    )
+
+
 @app.post("/admin/sessions/{token_id}/revoke")
 def admin_revoke_session(
     token_id: int,
@@ -790,12 +971,11 @@ def _audit_profile(session: Session, actor: User, action: str, detail: dict | No
     )
 
 
-@app.get("/profile", response_class=HTMLResponse)
-def profile_page(request: Request, session: Session = Depends(get_session)):
-    user = _profile_or_redirect(request, session)
-    if user is None:
-        return RedirectResponse(url="/login", status_code=303)
+def _profile_context(request: Request, session: Session, user: User) -> dict:
+    """Template context shared by GET /profile and the MFA enable step (which
+    renders the recovery codes once)."""
     from scry import mail as _mail
+    from scry.auth import totp as _totp
 
     api_keys = list(
         session.scalars(select(ApiKey).where(ApiKey.user_id == user.id).order_by(ApiKey.id.desc()))
@@ -817,16 +997,36 @@ def profile_page(request: Request, session: Session = Depends(get_session)):
         )
         .order_by(EmailVerification.id.desc())
     )
+    # A pending (not yet confirmed) setup shows the QR + manual code inline.
+    mfa_setup = None
+    if user.totp_pending and not user.totp_enabled:
+        secret = decrypt(user.totp_secret_encrypted)
+        if secret:
+            uri = _totp.provisioning_uri(secret, user.username)
+            mfa_setup = {"secret": secret, "uri": uri, "qr": _totp.qr_data_uri(uri)}
+    unused_recovery_codes = session.scalar(
+        select(func.count(RecoveryCode.id)).where(
+            RecoveryCode.user_id == user.id, RecoveryCode.used_at.is_(None)
+        )
+    )
+    return {
+        "user": user,
+        "csrf": _admin_csrf_token(request.cookies[SESSION_COOKIE]),
+        "api_keys": api_keys,
+        "smtp_configured": _mail.smtp_configured(session),
+        "pending_verification": pending_verification,
+        "mfa_setup": mfa_setup,
+        "mfa_unused_recovery_codes": unused_recovery_codes or 0,
+    }
+
+
+@app.get("/profile", response_class=HTMLResponse)
+def profile_page(request: Request, session: Session = Depends(get_session)):
+    user = _profile_or_redirect(request, session)
+    if user is None:
+        return RedirectResponse(url="/login", status_code=303)
     return templates.TemplateResponse(
-        request,
-        "profile.html",
-        {
-            "user": user,
-            "csrf": _admin_csrf_token(request.cookies[SESSION_COOKIE]),
-            "api_keys": api_keys,
-            "smtp_configured": _mail.smtp_configured(session),
-            "pending_verification": pending_verification,
-        },
+        request, "profile.html", _profile_context(request, session, user)
     )
 
 
@@ -1026,6 +1226,139 @@ def profile_revoke_api_key(
     session.flush()
     _audit_profile(session, user, "api_key.revoke", {"name": api_key.name, "prefix": api_key.prefix})
     return _redirect_flash("/profile", f"Revoked API key '{api_key.name}'.")
+
+
+# ------------------------- TOTP MFA (v0.5.0 step 4) -------------------------
+
+# Setup is verify-before-enable: POST /profile/mfa/setup (password confirm)
+# generates + encrypts a secret and marks it pending; GET /profile then shows
+# the QR code (inline data URI — no standalone QR endpoint exists) until the
+# user confirms a valid code via POST /profile/mfa/verify, which enables MFA
+# and shows the 10 one-time recovery codes exactly once.
+
+
+@app.post("/profile/mfa/setup")
+def profile_mfa_setup(
+    request: Request,
+    session: Session = Depends(get_session),
+    csrf: str = Form(""),
+    password: str = Form(...),
+):
+    user = _profile_or_redirect(request, session)
+    if user is None:
+        raise HTTPException(403)
+    if not _check_admin_csrf(request, csrf):
+        return _redirect_flash("/profile", "Bad CSRF token — action rejected.", "error")
+    if user.totp_enabled:
+        return _redirect_flash("/profile", "MFA is already enabled.")
+    if not verify_password(password, user.password_hash):
+        return _redirect_flash("/profile", "Password is incorrect.", "error")
+    from scry.auth import totp as _totp
+
+    # Restarting setup while pending regenerates the secret — the old QR
+    # simply stops working.
+    user.totp_secret_encrypted = encrypt(_totp.generate_secret())
+    user.totp_pending = True
+    session.flush()
+    _audit_profile(session, user, "mfa.setup")
+    return _redirect_flash(
+        "/profile",
+        "Scan the QR code with your authenticator app, then enter the 6-digit code to finish.",
+    )
+
+
+@app.post("/profile/mfa/verify")
+def profile_mfa_verify(
+    request: Request,
+    session: Session = Depends(get_session),
+    csrf: str = Form(""),
+    code: str = Form(...),
+):
+    user = _profile_or_redirect(request, session)
+    if user is None:
+        raise HTTPException(403)
+    if not _check_admin_csrf(request, csrf):
+        return _redirect_flash("/profile", "Bad CSRF token — action rejected.", "error")
+    if user.totp_enabled:
+        return _redirect_flash("/profile", "MFA is already enabled.")
+    if not user.totp_pending or not user.totp_secret_encrypted:
+        return _redirect_flash("/profile", "Set up MFA first.", "error")
+    from scry.auth import totp as _totp
+
+    secret = decrypt(user.totp_secret_encrypted)
+    if not secret or not _totp.verify_totp(secret, code):
+        # Stay in pending state so the user can retry with the same QR.
+        return _redirect_flash("/profile", "Incorrect code — try again.", "error")
+    user.totp_enabled = True
+    user.totp_pending = False
+    codes = _totp.generate_recovery_codes()
+    _totp.store_recovery_codes(session, user.id, codes)
+    session.flush()
+    _audit_profile(session, user, "mfa.enable")
+    context = _profile_context(request, session, user)
+    context["mfa_recovery_codes"] = codes
+    return templates.TemplateResponse(request, "profile.html", context)
+
+
+@app.post("/profile/mfa/cancel")
+def profile_mfa_cancel(
+    request: Request,
+    session: Session = Depends(get_session),
+    csrf: str = Form(""),
+):
+    user = _profile_or_redirect(request, session)
+    if user is None:
+        raise HTTPException(403)
+    if not _check_admin_csrf(request, csrf):
+        return _redirect_flash("/profile", "Bad CSRF token — action rejected.", "error")
+    if user.totp_pending:
+        user.totp_secret_encrypted = None
+        user.totp_pending = False
+        session.flush()
+        _audit_profile(session, user, "mfa.setup_cancel")
+    return _redirect_flash("/profile", "MFA setup cancelled.")
+
+
+@app.post("/profile/mfa/disable")
+def profile_mfa_disable(
+    request: Request,
+    session: Session = Depends(get_session),
+    csrf: str = Form(""),
+    password: str = Form(...),
+):
+    user = _profile_or_redirect(request, session)
+    if user is None:
+        raise HTTPException(403)
+    if not _check_admin_csrf(request, csrf):
+        return _redirect_flash("/profile", "Bad CSRF token — action rejected.", "error")
+    if not user.totp_enabled:
+        return _redirect_flash("/profile", "MFA is not enabled.")
+    if not verify_password(password, user.password_hash):
+        return _redirect_flash("/profile", "Password is incorrect.", "error")
+    from scry.auth import totp as _totp
+
+    user.totp_enabled = False
+    user.totp_pending = False
+    user.totp_secret_encrypted = None
+    deleted = _totp.delete_recovery_codes(session, user.id)
+    # Sign out every OTHER session; keep the one driving this request.
+    keep = hash_token(request.cookies.get(SESSION_COOKIE) or "")
+    revoked = session.execute(
+        delete(SessionToken).where(
+            SessionToken.user_id == user.id, SessionToken.token_hash != keep
+        )
+    ).rowcount
+    session.flush()
+    _audit_profile(
+        session,
+        user,
+        "mfa.disable",
+        {"recovery_codes_deleted": deleted, "revoked_sessions": int(revoked or 0)},
+    )
+    return _redirect_flash(
+        "/profile",
+        f"MFA disabled. {int(revoked or 0)} other session(s) were signed out.",
+    )
 
 
 # ------------------------- helpers -------------------------

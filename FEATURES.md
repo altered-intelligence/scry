@@ -131,7 +131,7 @@ prefix `v0.5.0 step N:`. Owner decisions locked 2026-09-29:
   using alert SMTP settings + DB-stored admin SMTP config with test — dormant
   when unconfigured; verification PIN generated/stored, emailed when SMTP up,
   bypassed otherwise.
-- [ ] **Step 4 — TOTP MFA.** pyotp; setup flow (secret + otpauth URI + QR via
+- [x] **Step 4 — TOTP MFA.** pyotp; setup flow (secret + otpauth URI + QR via
   qrcode lib), verify-before-enable, disable (password confirm), required at
   login when enabled; 10 one-time recovery codes shown once at setup;
   recovery-code login path. Admin can force-disable MFA.

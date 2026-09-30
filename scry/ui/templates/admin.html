@@ -26,7 +26,8 @@
       {% for u in users %}
       <tr>
         <td><b>{{ u.username }}</b>{% if u.must_change_password %}
-          <span class="badge warn" title="Must change password at next login">pw</span>{% endif %}</td>
+          <span class="badge warn" title="Must change password at next login">pw</span>{% endif %}
+          {% if u.totp_enabled %}<span class="badge good" title="Two-factor authentication enabled">mfa</span>{% endif %}</td>
         <td>{{ u.display_name or '—' }}</td>
         <td>{{ u.email }}</td>
         <td><span class="badge {{ 'purple' if u.role == 'admin' else 'gray' }}">{{ u.role }}</span></td>
@@ -57,6 +58,13 @@
           <form method="post" action="/admin/users/{{ u.id }}/reset-password" style="display: inline;">
             <input type="hidden" name="csrf" value="{{ csrf }}">
             <button type="submit" class="btn secondary" style="font-size: 12px; padding: 4px 10px;">Reset password</button>
+          </form>
+          <form method="post" action="/admin/users/{{ u.id }}/reset-mfa" style="display: inline;">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input type="text" name="confirm" placeholder="username to confirm" required
+                   style="width: 130px; font-size: 12px; padding: 4px 8px;">
+            <button type="submit" class="btn secondary" style="font-size: 12px; padding: 4px 10px;"
+                    title="Force-disable MFA: clears the secret + recovery codes and revokes sessions">Reset MFA</button>
           </form>
           <form method="post" action="/admin/users/{{ u.id }}/revoke-sessions" style="display: inline;">
             <input type="hidden" name="csrf" value="{{ csrf }}">

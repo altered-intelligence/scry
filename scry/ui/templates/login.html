@@ -2,7 +2,26 @@
 {% block title %}Login · Scry{% endblock %}
 {% block content %}
 <div class="panel" style="max-width: 420px; margin: 48px auto;">
-  {% if not has_users %}
+  {% if mfa_pending %}
+    <h1 style="font-size: 20px;">Two-factor authentication</h1>
+    {% if error %}
+      <div class="flash error" role="alert"><span>{{ error }}</span></div>
+    {% endif %}
+    <p class="muted" style="font-size: 14px;">
+      Enter the 6-digit code from your authenticator app, or one of your
+      one-time recovery codes.
+    </p>
+    <form method="post" action="/login/mfa" style="display: grid; gap: 12px;">
+      {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+      <label style="display: grid; gap: 4px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em;">
+        Authentication code
+        <input type="text" name="code" required autofocus autocomplete="one-time-code"
+               inputmode="numeric" pattern="[0-9a-zA-Z_\-]+" placeholder="123456"
+               style="letter-spacing: 0.2em;">
+      </label>
+      <button type="submit" class="btn" style="justify-self: start;">Verify</button>
+    </form>
+  {% elif not has_users %}
     <h1 style="font-size: 20px;">No accounts configured</h1>
     <p class="muted" style="font-size: 14px;">
       Scry is currently open to everyone because no user accounts exist yet.

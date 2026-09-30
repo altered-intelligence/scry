@@ -39,6 +39,8 @@ dependencies = [
   "openai>=1.40",
   "google-generativeai>=0.7",
   "bcrypt>=4",
+  "pyotp>=2.9",
+  "qrcode[pil]>=7",
 ]
 
 [project.optional-dependencies]

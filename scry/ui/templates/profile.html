@@ -87,6 +87,67 @@
   {% endif %}
 </div>
 
+{# ------------------------- two-factor authentication ------------------------- #}
+<div class="panel" id="mfa">
+  <h2 style="margin-top: 0;">Two-factor authentication</h2>
+
+  {% if mfa_recovery_codes %}
+    {# Shown exactly once, immediately after a successful setup. #}
+    <div class="flash success" role="alert"><span>MFA is now enabled.</span></div>
+    <h3>Recovery codes — save them now</h3>
+    <p class="muted">Each code works <b>once</b> if you lose your authenticator device.
+      They are shown only this one time.</p>
+    <textarea readonly rows="10" style="width: 100%; font-family: monospace; font-size: 13px;"
+      onclick="this.select();">{{ mfa_recovery_codes|join('\n') }}</textarea>
+    <form method="get" action="/profile" style="margin-top: 8px;">
+      <button type="submit" class="btn">I saved them — continue</button>
+    </form>
+  {% elif user.totp_enabled %}
+    <p><span class="badge good">enabled</span> Your account requires a code from your
+      authenticator app (or a recovery code) at sign-in.</p>
+    <p class="muted">{{ mfa_unused_recovery_codes }} unused recovery code(s) remaining.</p>
+    <h3>Disable MFA</h3>
+    <form method="post" action="/profile/mfa/disable" class="filters" style="align-items: end;">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <label>Password <input type="password" name="password" required autocomplete="current-password"></label>
+      <button type="submit" class="btn danger">Disable MFA</button>
+    </form>
+    <p class="muted">Disabling MFA removes the authenticator requirement, deletes your
+      recovery codes, and signs out every other session.</p>
+  {% elif mfa_setup %}
+    <p><span class="badge warn">setup in progress</span> Scan this QR code with your
+      authenticator app (Google Authenticator, 1Password, …), then enter the 6-digit
+      code it shows to finish.</p>
+    <div style="display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap;">
+      <img src="{{ mfa_setup.qr }}" alt="TOTP QR code" width="200" height="200"
+           style="image-rendering: pixelated; border: 1px solid var(--border, #444);">
+      <div>
+        <p style="margin-bottom: 4px;">Can't scan? Enter this key manually:</p>
+        <p><code style="font-size: 15px; letter-spacing: 0.1em;">{{ mfa_setup.secret }}</code></p>
+        <form method="post" action="/profile/mfa/verify" class="filters" style="align-items: end;">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <label>6-digit code <input type="text" name="code" required
+                   inputmode="numeric" pattern="\d{6}" maxlength="6" placeholder="123456"
+                   style="min-width: 100px; letter-spacing: 0.2em;"></label>
+          <button type="submit" class="btn">Verify and enable</button>
+        </form>
+      </div>
+    </div>
+    <form method="post" action="/profile/mfa/cancel" style="margin-top: 12px;">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button type="submit" class="btn secondary">Cancel setup</button>
+    </form>
+  {% else %}
+    <p><span class="badge gray">disabled</span> Add a second factor: your account will
+      require a code from an authenticator app at sign-in.</p>
+    <form method="post" action="/profile/mfa/setup" class="filters" style="align-items: end;">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <label>Password <input type="password" name="password" required autocomplete="current-password"></label>
+      <button type="submit" class="btn">Set up MFA</button>
+    </form>
+  {% endif %}
+</div>
+
 {# ------------------------- API keys ------------------------- #}
 <div class="panel" id="api-keys">
   <h2 style="margin-top: 0;">API keys</h2>

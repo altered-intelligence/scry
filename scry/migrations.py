@@ -35,6 +35,11 @@ MIGRATIONS: tuple[AddColumn, ...] = (
         column="user_id",
         ddl="ALTER TABLE chat_sessions ADD COLUMN user_id INTEGER",
     ),
+    AddColumn(
+        table="users",
+        column="totp_pending",
+        ddl="ALTER TABLE users ADD COLUMN totp_pending BOOLEAN NOT NULL DEFAULT 0",
+    ),
 )
 
 

@@ -29,10 +29,11 @@ class User(Base, IdMixin, TimestampMixin):
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    # RESERVED for step 4 (TOTP MFA) — columns created now so no migration is
-    # needed later. Unused this step.
+    # TOTP MFA (v0.5.0 step 4). totp_pending marks a secret that was generated
+    # for setup but not yet confirmed with a valid code (verify-before-enable).
     totp_secret_encrypted: Mapped[str | None] = mapped_column(String(512), nullable=True)
     totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    totp_pending: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     sessions: Mapped[list[SessionToken]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
@@ -77,6 +78,23 @@ class ApiKey(Base, IdMixin):
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    user: Mapped[User] = relationship()
+
+
+class RecoveryCode(Base, IdMixin):
+    """One-time MFA recovery code (v0.5.0 step 4).
+
+    Only the sha256 of the random code is persisted; the plaintext codes are
+    shown exactly once at MFA setup. Each code is single-use (``used_at``).
+    """
+
+    __tablename__ = "recovery_codes"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    code_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped[User] = relationship()
 
