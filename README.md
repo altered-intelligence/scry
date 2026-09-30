@@ -180,6 +180,36 @@ curl -H "Authorization: Bearer change-me-long-random-string" http://localhost:80
 
 The key is compared in constant time; wrong or missing keys get `401` with a `WWW-Authenticate: Bearer` challenge. Exemptions that stay unauthenticated even with a key set: `/health` (monitoring) and `/api/ai/status` + `/api/ai/provider` (the Search-page provider picker). The HTML UI routes (`/ui/*`, dashboard) are never authenticated — if you expose Scry on a network, put the UI behind a reverse proxy or SSO instead.
 
+### MCP server (AI clients)
+
+Scry can expose its intel database directly to AI clients — [Claude Desktop](https://claude.com/download), [Cursor](https://cursor.com), anything that speaks the [Model Context Protocol](https://modelcontextprotocol.io) — over stdio, no HTTP involved. Six tools: `scry_health`, `scry_stats`, `scry_search`, `scry_observables`, `scry_alerts`, and `scry_ask` (grounded LLM Q&A, same pipeline as the Search page).
+
+```bash
+pip install scry[mcp]   # adds the official `mcp` package
+scry mcp                # serves MCP over stdio
+```
+
+Then register the server in your client's config (Claude Desktop: `claude_desktop_config.json`; Cursor: Settings → MCP). Use the module entry point with the venv's Python:
+
+```json
+{
+  "mcpServers": {
+    "scry": {
+      "command": "/path/to/cti-enrichment-agent/.venv/bin/python",
+      "args": ["-m", "scry.mcp_server"]
+    }
+  }
+}
+```
+
+(`scry mcp` as the command works too if the `scry` console script is on the client's PATH.)
+
+Notes:
+
+- **MCP bypasses HTTP API-key auth** — the server is process-local and reads the same SQLite file as the web app, so `CTI_API_KEY` does not apply. Only configure it for clients you trust on this machine.
+- **stdout must stay clean** — MCP speaks JSON-RPC on stdout, so scry logs to stderr when running as an MCP server. Any library printing to stdout at import time would break the protocol.
+- `scry_ask` uses whichever LLM provider is active (Search page → provider picker); with none configured it returns a graceful error instead of an answer.
+
 ## How scoring works
 
 See [`SCORING.md`](./SCORING.md). Highlights:

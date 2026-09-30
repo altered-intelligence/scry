@@ -57,6 +57,11 @@ dev = [
 ai = [
   "llama-cpp-python>=0.3.35",
 ]
+# MCP server for AI clients (Claude Desktop, Cursor…): `scry mcp`.
+# Pinned to 1.x: 2.x renamed FastMCP (see the migration guide).
+mcp = [
+  "mcp>=1.8,<2",
+]
 
 [project.scripts]
 scry = "scry.cli:main"

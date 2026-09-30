@@ -28,7 +28,7 @@ Conventions for every step:
   `scry/api/auth.py`, wired with `dependencies=[Depends(require_api_key)]` on
   `include_router` calls in `scry/main.py`. When `api_key` is empty: no auth
   (current behavior). Constant-time compare. Tests + README/SECURITY.md note.
-- [ ] **Step 2 — MCP server wrapper.** New `scry/mcp_server.py` exposing scry
+- [x] **Step 2 — MCP server wrapper.** New `scry/mcp_server.py` exposing scry
   tools over stdio (official `mcp` package, add to pyproject): `scry_search`,
   `scry_ask`, `scry_observables`, `scry_alerts`, `scry_stats`, `scry_health`.
   Thin adapters over existing service functions (import, don't reimplement).

@@ -369,39 +369,56 @@ async def ai_provider_configure(
     return entry
 
 
-@ai_router.post("/ask")
-async def ai_ask(payload: AskRequest, session: Session = Depends(get_session)) -> dict[str, Any]:
+class AskError(Exception):
+    """A question could not be answered — carries an HTTP-style status + message.
+
+    Raised by `answer_question` so the HTTP endpoint (maps it to
+    HTTPException) and the MCP `scry_ask` tool (maps it to an error dict)
+    share one implementation without web exceptions leaking into the MCP
+    server.
+    """
+
+    def __init__(self, status_code: int, detail: str) -> None:
+        self.status_code = status_code
+        self.detail = detail
+        super().__init__(detail)
+
+
+async def answer_question(session: Session, question: str) -> dict[str, Any]:
+    """Answer a natural-language question from the collected intel (shared core).
+
+    Powers both POST /api/ai/ask and the MCP `scry_ask` tool. Raises AskError
+    on any failure: feature disabled, no usable provider, timeout, model error.
+    """
     settings = get_settings()
     if not settings.enable_ai_search:
-        raise HTTPException(
+        raise AskError(
             403,
-            detail="AI Search is disabled. Set CTI_ENABLE_AI_SEARCH=true and restart to enable it.",
+            "AI Search is disabled. Set CTI_ENABLE_AI_SEARCH=true and restart to enable it.",
         )
 
     provider = _resolve_provider(session)
     if provider is None:
-        raise HTTPException(
+        raise AskError(
             503,
-            detail=(
+            (
                 "No LLM provider available. Configure one on the Search page "
                 "(OpenAI / Anthropic / Ollama…) or run: scry ai-setup for the bundled model."
             ),
         )
     if isinstance(provider, LocalLlamaProvider) and not provider.is_available():
-        raise HTTPException(
+        raise AskError(
             503,
-            detail=(
-                f"Model file not found at {settings.ai_search_model_path}. " "Download it with: scry ai-setup"
-            ),
+            f"Model file not found at {settings.ai_search_model_path}. Download it with: scry ai-setup",
         )
     model = _provider_model(provider)
     if not model:
-        raise HTTPException(
+        raise AskError(
             400,
-            detail=f"No model configured for provider '{provider.name}' — set a default model on the Search page.",
+            f"No model configured for provider '{provider.name}' — set a default model on the Search page.",
         )
 
-    question = payload.question.strip()
+    question = question.strip()
     sources = _collect_sources(session, question, settings.ai_search_max_sources)
     user_prompt = build_ai_search_user_prompt(question, sources)
 
@@ -423,16 +440,16 @@ async def ai_ask(payload: AskRequest, session: Session = Depends(get_session)) -
     try:
         answer = await asyncio.wait_for(_collect_answer(), timeout=settings.ai_search_timeout_s)
     except TimeoutError:
-        raise HTTPException(
+        raise AskError(
             504,
-            detail=(
+            (
                 f"The model did not answer within {settings.ai_search_timeout_s}s. "
                 "The first local question loads the model (~10s); try again."
             ),
         ) from None
     except RuntimeError as exc:
         logger.warning("ai_ask_provider_error", error=str(exc))
-        raise HTTPException(502, detail=f"Model error: {exc}") from None
+        raise AskError(502, f"Model error: {exc}") from None
     elapsed_ms = int((time.monotonic() - start) * 1000)
 
     return {
@@ -443,3 +460,11 @@ async def ai_ask(payload: AskRequest, session: Session = Depends(get_session)) -
         "model": f"{provider.name}/{model}",
         "elapsed_ms": elapsed_ms,
     }
+
+
+@ai_router.post("/ask")
+async def ai_ask(payload: AskRequest, session: Session = Depends(get_session)) -> dict[str, Any]:
+    try:
+        return await answer_question(session, payload.question)
+    except AskError as exc:
+        raise HTTPException(exc.status_code, detail=exc.detail) from None

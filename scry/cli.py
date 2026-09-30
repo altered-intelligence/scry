@@ -340,6 +340,20 @@ def stats() -> None:
         console.print_json(json.dumps(out))
 
 
+@app.command("mcp")
+def mcp_command() -> None:
+    """Run the MCP server (stdio) for AI clients like Claude Desktop / Cursor.
+
+    Requires the `mcp` extra: pip install scry[mcp]
+    """
+    try:
+        from scry.mcp_server import main as mcp_main
+    except ImportError as exc:  # pragma: no cover
+        console.print("[red]The 'mcp' package is not installed. Run: pip install scry[mcp][/red]")
+        raise typer.Exit(1) from exc
+    mcp_main()
+
+
 def main() -> None:  # entry point
     app()
 

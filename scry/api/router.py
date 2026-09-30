@@ -485,8 +485,8 @@ def run_conflicts(session: Session = Depends(get_session)):
 # ---------- Stats / trending / reports / exports ----------
 
 
-@api_router.get("/stats")
-def stats(session: Session = Depends(get_session)) -> dict[str, Any]:
+def compute_stats(session: Session) -> dict[str, Any]:
+    """DB counts behind GET /stats — also used by the MCP `scry_stats` tool."""
     def _count(model) -> int:
         return session.scalar(select(func.count(model.id))) or 0
 
@@ -513,6 +513,11 @@ def stats(session: Session = Depends(get_session)) -> dict[str, Any]:
         )
         or 0,
     }
+
+
+@api_router.get("/stats")
+def stats(session: Session = Depends(get_session)) -> dict[str, Any]:
+    return compute_stats(session)
 
 
 @api_router.get("/trending")

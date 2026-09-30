@@ -21,7 +21,7 @@ def configure_logging() -> None:
 
     logging.basicConfig(
         format="%(message)s",
-        stream=sys.stdout,
+        stream=sys.stderr,  # stdout must stay clean for the MCP stdio server
         level=level,
     )
     structlog.configure(
