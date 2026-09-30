@@ -177,7 +177,7 @@ escalation, and OTX pulse ingestion as a first-class source.
   (optional subscription filter), `scry ingest otx-pulses` CLI, subscriptions
   summary + pull-now on the threat-feeds UI page, scheduler hook alongside
   existing ingest jobs. Disabled entirely when no OTX key anywhere.
-- [ ] **Step 2 — Vendor-verdict alert escalation.** AlertEngine gains
+- [x] **Step 2 — Vendor-verdict alert escalation.** AlertEngine gains
   `_vendor_confirmed_alerts()`: observables whose enrichment JSON shows VT
   malicious votes >= `vt_escalate_min_detections` (default 10) AND ratio >=
   `vt_escalate_min_ratio` (default 0.5), OR GreyNoise classification ==

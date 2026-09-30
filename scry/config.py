@@ -98,6 +98,14 @@ class Settings(BaseSettings):
     urlscan_api_key: str = ""
     abuseipdb_api_key: str = ""
 
+    # Vendor-verdict alert escalation (v0.6.0 step 2): when an enrichment
+    # provider confirms an observable malicious, AlertEngine raises it.
+    vt_escalate_min_detections: int = 10  # VT malicious votes (AND ratio below)
+    vt_escalate_min_ratio: float = 0.5  # malicious / total analysis votes
+    abuseipdb_escalate_min_score: int = 80  # abuseConfidenceScore
+    gn_escalate_classification: str = "malicious"  # GreyNoise classification
+    escalation_risk_bump: int = 10  # risk_score bump per confirmed verdict (cap 100)
+
     # Infrastructure discovery
     censys_api_id: str = ""
     censys_api_secret: str = ""
