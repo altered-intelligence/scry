@@ -34,6 +34,15 @@ All knobs default to the conservative side. Explicit opt-in required to flip:
 | `CTI_MAX_FETCH_BYTES` | 5 MiB | Hard size cap |
 | `CTI_FETCH_TIMEOUT_SECONDS` | 20 | Hard timeout |
 
+## API authentication
+
+All REST endpoints accept an optional static API token (`CTI_API_KEY` in `.env`, implemented as a FastAPI dependency in `scry/api/auth.py`). When unset, every endpoint is open (single-operator default). When set:
+
+- Clients must send `X-API-Key: <key>` or `Authorization: Bearer <key>`; anything else gets `401` with a `WWW-Authenticate: Bearer` challenge.
+- The key is compared with `hmac.compare_digest` (constant time) to avoid timing leaks.
+- Exemptions stay unauthenticated so dependent surfaces keep working: `/health` (monitoring probes) and `/api/ai/status` + `/api/ai/provider` (Search-page provider picker).
+- The HTML UI routes (`/ui/*`, dashboard) are **never** authenticated by this token — they are plain FastAPI routes outside the API routers. If Scry is exposed beyond localhost, put the UI behind a reverse proxy / SSO; do not rely on `CTI_API_KEY` to protect browser pages.
+
 ## SSRF guard
 
 `scry/ingestion/ssrf.py` runs before every fetch:

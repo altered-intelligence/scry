@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     api_host: str = "0.0.0.0"
     api_port: int = 8000
 
+    # API auth: when set, all /api routes require this token (X-API-Key or
+    # Authorization: Bearer). Empty (default) keeps every endpoint open.
+    api_key: str = ""
+
     # Safety
     enable_dark_web: bool = False
     enable_js_rendering: bool = False

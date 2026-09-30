@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from scry.api import api_router
 from scry.api.ai import ai_router
+from scry.api.auth import require_api_key
 from scry.api.deps import get_session
 from scry.config import get_settings
 from scry.db import get_engine, session_scope
@@ -75,8 +76,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.include_router(api_router)
-app.include_router(ai_router)
+app.include_router(api_router, dependencies=[Depends(require_api_key)])
+app.include_router(ai_router, dependencies=[Depends(require_api_key)])
 
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")

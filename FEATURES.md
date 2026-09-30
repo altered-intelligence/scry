@@ -21,7 +21,7 @@ Conventions for every step:
 
 ## Steps
 
-- [ ] **Step 1 — API token auth.** Optional static API key: new `Settings.api_key`
+- [x] **Step 1 — API token auth.** Optional static API key: new `Settings.api_key`
   (env `CTI_API_KEY`). When set, all `/api/*` routes require it via
   `X-API-Key` header or `Authorization: Bearer <key>`; `/api/health` and all
   `/ui/*` routes stay open. Implement as a FastAPI dependency in a new

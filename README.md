@@ -163,6 +163,23 @@ scry stats
 | Aliases | `config/aliases.yaml` | Conservative APT / ransomware / malware aliases | Canonical-name resolution |
 | Env vars | `.env` (see `.env.example`) | All risky knobs default to false | Toggle dark web, file downloads, outbound alerts, LLM provider |
 
+### API authentication
+
+All REST endpoints (`/api/*`, plus the api_router routes such as `/health`, `/articles`, `/stats`) accept an optional static API token. Set it in `.env`:
+
+```bash
+CTI_API_KEY=change-me-long-random-string
+```
+
+When `CTI_API_KEY` is empty (the default), every endpoint stays open — behavior is unchanged. When set, clients must pass the key on every request via either header:
+
+```bash
+curl -H "X-API-Key: change-me-long-random-string" http://localhost:8000/articles
+curl -H "Authorization: Bearer change-me-long-random-string" http://localhost:8000/articles
+```
+
+The key is compared in constant time; wrong or missing keys get `401` with a `WWW-Authenticate: Bearer` challenge. Exemptions that stay unauthenticated even with a key set: `/health` (monitoring) and `/api/ai/status` + `/api/ai/provider` (the Search-page provider picker). The HTML UI routes (`/ui/*`, dashboard) are never authenticated — if you expose Scry on a network, put the UI behind a reverse proxy or SSO instead.
+
 ## How scoring works
 
 See [`SCORING.md`](./SCORING.md). Highlights:
