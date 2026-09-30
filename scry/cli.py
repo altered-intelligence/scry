@@ -24,6 +24,7 @@ Commands:
   users reset-password     Reset a user's password (forces change + logout)
   users disable|enable     Disable/enable a user account
   users seed               Seed alakhani+admin (--yes; CTI_ADMIN_INITIAL_PASSWORD)
+  feeds migrate-env-keys   Copy env VT/OTX keys into user profiles (--users a,b)
 """
 
 from __future__ import annotations
@@ -604,6 +605,69 @@ def users_seed(
         console.print(f"[dim]Initial password from {source}; must be changed at first login.[/dim]")
     else:
         console.print("[yellow]Seed usernames already exist — nothing to do.[/yellow]")
+
+
+# ------------------------- feeds (v0.5.0 step 6) -------------------------
+
+
+feeds_app = typer.Typer(help="Per-user threat-feed API keys")
+app.add_typer(feeds_app, name="feeds")
+
+
+@feeds_app.command("migrate-env-keys")
+def feeds_migrate_env_keys(
+    users: str = typer.Option(..., "--users", help="Comma-separated usernames to receive the keys"),
+) -> None:
+    """Store CTI_VIRUSTOTAL_API_KEY / CTI_OTX_API_KEY as personal feed keys.
+
+    Deployment-time helper: copies the env/.env system keys into the named
+    users' profiles (encrypted, one row per user+provider). Skips users that
+    already have a personal key for a provider, unknown usernames, and
+    providers with an empty env key. Never prints key material.
+    """
+    from scry.config import get_settings
+    from scry.enrichment.user_keys import get_key, set_key
+
+    env_keys = {
+        "virustotal": get_settings().virustotal_api_key,
+        "otx": get_settings().otx_api_key,
+    }
+    usernames = [u.strip() for u in users.split(",") if u.strip()]
+    migrated: list[str] = []
+    skipped_existing: list[str] = []
+    skipped_no_env: list[str] = []
+    unknown_users: list[str] = []
+    with session_scope() as session:
+        for username in usernames:
+            user = session.scalar(select(User).where(func.lower(User.username) == username.lower()))
+            if user is None:
+                unknown_users.append(username)
+                continue
+            for provider, env_key in env_keys.items():
+                label = f"{username}:{provider}"
+                if not env_key:
+                    skipped_no_env.append(label)
+                    continue
+                if get_key(session, user.id, provider) is not None:
+                    skipped_existing.append(label)
+                    continue
+                set_key(session, user.id, provider, env_key)
+                migrated.append(label)
+
+    table = Table("user:provider", "action")
+    for label in migrated:
+        table.add_row(label, "[green]migrated[/green]")
+    for label in skipped_existing:
+        table.add_row(label, "[yellow]skipped — personal key already set[/yellow]")
+    for label in skipped_no_env:
+        table.add_row(label, "[yellow]skipped — env key empty[/yellow]")
+    for label in unknown_users:
+        table.add_row(label, "[red]skipped — no such user[/red]")
+    console.print(table)
+    console.print(
+        f"[dim]Summary: {len(migrated)} migrated, {len(skipped_existing)} already had keys, "
+        f"{len(skipped_no_env)} no env key, {len(unknown_users)} unknown users.[/dim]"
+    )
 
 
 def main() -> None:  # entry point

@@ -36,15 +36,64 @@
       <div class="panel">
         <h3>Enrichment</h3>
         {{ m.enrichment_summary(observable.enrichment) }}
-        {% set other = {} %}
-        {% for k, v in observable.enrichment.items() if k not in ('virustotal','otx','virustotal_checked_at','otx_checked_at','prevalence','enrichment_score_notes') %}
-          {# accumulate into other via macro trick: we'll just list them #}
-        {% endfor %}
         <details>
           <summary class="muted">Show raw enrichment JSON</summary>
           <pre><code>{{ enrichment_json }}</code></pre>
         </details>
       </div>
+    {% endif %}
+
+    {% if can_lookup_vt or can_lookup_otx %}
+    <div class="panel">
+      <h3>Live lookup</h3>
+      <p class="muted">Runs now with <em>your</em> personal API key, bypassing the disk cache. The result is stored in the shared enrichment.</p>
+      {% if can_lookup_vt %}
+      <form method="post" action="/ui/observables/{{ observable.id }}/lookup/virustotal" style="display:inline">
+        <input type="hidden" name="csrf" value="{{ lookup_csrf }}">
+        <button class="btn" type="submit">Lookup VirusTotal</button>
+      </form>
+      {% endif %}
+      {% if can_lookup_otx %}
+      <form method="post" action="/ui/observables/{{ observable.id }}/lookup/otx" style="display:inline">
+        <input type="hidden" name="csrf" value="{{ lookup_csrf }}">
+        <button class="btn" type="submit">Lookup OTX</button>
+      </form>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if vt_verdict or otx_verdict %}
+    <div class="panel">
+      <h3>Verdict</h3>
+      {% if vt_verdict %}
+      <div class="enrich-card">
+        <div class="enrich-head"><b>VirusTotal verdict</b>
+          {% if vt_verdict.malicious > 0 %}<span class="badge bad">malicious {{ vt_verdict.malicious }}</span>
+          {% elif vt_verdict.suspicious > 0 %}<span class="badge warn">suspicious {{ vt_verdict.suspicious }}</span>
+          {% else %}<span class="badge good">clean</span>{% endif %}
+        </div>
+        <dl class="kv">
+          <dt>malicious</dt><dd>{{ vt_verdict.malicious }}</dd>
+          <dt>suspicious</dt><dd>{{ vt_verdict.suspicious }}</dd>
+          <dt>undetected</dt><dd>{{ vt_verdict.undetected }}</dd>
+          {% if vt_verdict.last_analysis %}<dt>last analysis</dt><dd>{{ vt_verdict.last_analysis }}</dd>{% endif %}
+        </dl>
+        {% if vt_verdict.tags %}<div class="tags">{{ m.tag_list(vt_verdict.tags[:8]) }}</div>{% endif %}
+      </div>
+      {% endif %}
+      {% if otx_verdict %}
+      <div class="enrich-card">
+        <div class="enrich-head"><b>OTX verdict</b>
+          {% if (otx_verdict.pulse_count or 0) >= 3 %}<span class="badge warn">pulses {{ otx_verdict.pulse_count }}</span>
+          {% else %}<span class="badge dim">pulses {{ otx_verdict.pulse_count or 0 }}</span>{% endif %}
+        </div>
+        <dl class="kv">
+          <dt>pulse count</dt><dd>{{ otx_verdict.pulse_count if otx_verdict.pulse_count is not none else '—' }}</dd>
+          <dt>reputation</dt><dd>{{ otx_verdict.reputation if otx_verdict.reputation is not none else '—' }}</dd>
+        </dl>
+      </div>
+      {% endif %}
+    </div>
     {% endif %}
 
     <div class="panel">

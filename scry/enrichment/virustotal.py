@@ -100,7 +100,7 @@ class VirusTotalEnricher(BaseEnricher):
 
     # ---- lookup dispatcher ----
 
-    def lookup(self, value: str, observable_type: str) -> VTResult:
+    def lookup(self, value: str, observable_type: str, *, bypass_cache: bool = False) -> VTResult:
         if self._client is None or not self.api_key:
             return VTResult(False, False, {}, error="VT API key not configured")
         ot = observable_type.lower()
@@ -108,7 +108,7 @@ class VirusTotalEnricher(BaseEnricher):
             return VTResult(False, False, {}, error=f"unsupported type {ot!r}")
 
         cache_path = _cache_path(ot, value)
-        if cache_path.exists():
+        if not bypass_cache and cache_path.exists():
             try:
                 raw = json.loads(cache_path.read_text())
                 return VTResult(True, True, _summarize(ot, raw), raw=raw)

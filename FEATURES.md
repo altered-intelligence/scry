@@ -138,7 +138,7 @@ prefix `v0.5.0 step N:`. Owner decisions locked 2026-09-29:
 - [x] **Step 5 — Passkeys.** webauthn package; register/rename/delete on
   /profile; login via passkey (WebAuthn get assertion); per-request RP
   ID/origin from Host; works localhost + LAN/HTTPS.
-- [ ] **Step 6 — Per-user threat-feed keys + feed features.** VT/OTX cards on
+- [x] **Step 6 — Per-user threat-feed keys + feed features.** VT/OTX cards on
   /ui/intel-feeds/threat-feeds: per-user key input (visible while typing,
   masked after save+test), Test → Connected/Failed badge; migrate existing
   .env keys into alakhani+admin profiles (encrypted); enrichment run uses

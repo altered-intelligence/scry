@@ -484,7 +484,7 @@ class TestAlertsPagePanel:
         with TestClient(app) as client:
             r = client.get("/ui/alerts")
         assert r.status_code == 200
-        assert "IOC enrichment providers" in r.text
+        assert "System keys (background jobs)" in r.text
         assert "VirusTotal" in r.text
         assert "AbuseIPDB" in r.text
         assert "GreyNoise" in r.text

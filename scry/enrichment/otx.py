@@ -98,7 +98,7 @@ class OTXEnricher(BaseEnricher):
             rationale=[result.error] if result.error else [],
         )
 
-    def lookup(self, value: str, observable_type: str) -> OTXResult:
+    def lookup(self, value: str, observable_type: str, *, bypass_cache: bool = False) -> OTXResult:
         if self._client is None or not self.api_key:
             return OTXResult(False, False, {}, error="OTX API key not configured")
         ot = observable_type.lower()
@@ -106,7 +106,7 @@ class OTXEnricher(BaseEnricher):
             return OTXResult(False, False, {}, error=f"unsupported type {ot!r}")
 
         cache_path = _cache_path(ot, value)
-        if cache_path.exists():
+        if not bypass_cache and cache_path.exists():
             try:
                 raw = json.loads(cache_path.read_text())
                 return OTXResult(True, True, _summarize(raw))

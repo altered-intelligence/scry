@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
@@ -28,6 +28,7 @@ from scry.config import load_pirs, load_watchlists
 from scry.conflicts import detect_conflicts
 from scry.enrichment import EnrichmentEngine
 from scry.enrichment.provider_settings import PROVIDER_META, load_provider_states
+from scry.enrichment.user_keys import keys_for_user
 from scry.exports import (
     build_articles_bundle,
     build_intel_bundle,
@@ -193,14 +194,24 @@ async def ingest_run(session: Session = Depends(get_session)):
 
 @api_router.post("/enrichment/run")
 def enrichment_run(
+    request: Request,
     session: Session = Depends(get_session),
     limit: int = Query(200, ge=1, le=2000),
     providers: list[str] = Query(default=[]),
 ):
     """Run external enrichment (VT/OTX/AbuseIPDB/GreyNoise) on observables not
     yet checked (cached, rate-limited). `providers` restricts which providers
-    run (repeatable query param); default = all enabled + keyed providers."""
-    engine = EnrichmentEngine(session)
+    run (repeatable query param); default = all enabled + keyed providers.
+
+    Key resolution (v0.5.0 step 6): when an acting user is known (session
+    cookie or per-user API key), VT/OTX use that user's personal keys —
+    providers without a personal key are skipped with reason "no personal
+    key". With no acting user (master-key/widget/background context) the
+    system env/DB key chain is used, unchanged.
+    """
+    user = getattr(request.state, "api_user", None)
+    user_api_keys = keys_for_user(session, user.id) if user is not None else None
+    engine = EnrichmentEngine(session, user_api_keys=user_api_keys)
     try:
         result = engine.run_external_enrichment_batch(limit=limit, providers=providers or None)
     except ValueError as exc:

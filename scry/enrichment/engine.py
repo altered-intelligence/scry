@@ -7,6 +7,7 @@ the result into the observable's `enrichment` JSON column.
 from __future__ import annotations
 
 import ipaddress
+import json
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -28,7 +29,7 @@ from scry.enrichment.url import URLEnricher
 from scry.enrichment.virustotal import VirusTotalEnricher
 from scry.enrichment.vulnerability import VulnerabilityEnricher
 from scry.logging import get_logger
-from scry.models import Observable
+from scry.models import Observable, SystemSetting
 
 logger = get_logger("enrichment")
 
@@ -82,7 +83,7 @@ class EnrichmentResult:
 
 
 class EnrichmentEngine:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, user_api_keys: dict[str, str] | None = None) -> None:
         self.session = session
         self.infra = InfrastructureEnricher()
         self.url = URLEnricher()
@@ -92,8 +93,25 @@ class EnrichmentEngine:
         # External providers: DB-stored key wins over the env fallback;
         # toggle state comes from connector_settings (default enabled).
         self.provider_states = load_provider_states(session)
-        self.vt = VirusTotalEnricher(api_key=self.provider_states["virustotal"].api_key)
-        self.otx = OTXEnricher(api_key=self.provider_states["otx"].api_key)
+        # v0.5.0 step 6 — key-resolution rule. ``user_api_keys`` is the acting
+        # user's decrypted personal VT/OTX keys; when it is not None this is a
+        # user-triggered run: VT/OTX resolve ONLY from personal keys (missing
+        # → skipped "no personal key"), while AbuseIPDB/GreyNoise (no per-user
+        # key concept) keep the system env/DB chain. When None (master-key /
+        # widget / background context) everything uses the system chain.
+        self.user_api_keys = user_api_keys
+        vt_key = (
+            user_api_keys.get("virustotal", "")
+            if user_api_keys is not None
+            else self.provider_states["virustotal"].api_key
+        )
+        otx_key = (
+            user_api_keys.get("otx", "")
+            if user_api_keys is not None
+            else self.provider_states["otx"].api_key
+        )
+        self.vt = VirusTotalEnricher(api_key=vt_key)
+        self.otx = OTXEnricher(api_key=otx_key)
         self.abuseipdb = AbuseIPDBEnricher(api_key=self.provider_states["abuseipdb"].api_key)
         self.greynoise = GreyNoiseEnricher(api_key=self.provider_states["greynoise"].api_key)
         self._external = {
@@ -174,13 +192,45 @@ class EnrichmentEngine:
         """Apply the providers filter + enable/key gating.
 
         Returns (runnable name→enricher, skipped name→reason). Raises
-        ValueError on unknown provider names.
+        ValueError on unknown provider names. In user-triggered mode
+        (``user_api_keys`` set) VT/OTX run only on the acting user's personal
+        keys; AbuseIPDB/GreyNoise keep the system env/DB chain.
         """
-        runnable_states, skipped = selected_providers(self.provider_states, providers)
-        return (
-            {name: self._external[name] for name in runnable_states},
-            skipped,
-        )
+        if self.user_api_keys is None:
+            runnable_states, skipped = selected_providers(self.provider_states, providers)
+            return (
+                {name: self._external[name] for name in runnable_states},
+                skipped,
+            )
+
+        all_names = list(self.provider_states)
+        if providers:
+            unknown = [p for p in providers if p not in all_names]
+            if unknown:
+                raise ValueError(
+                    f"Unknown enrichment provider(s): {', '.join(sorted(unknown))}. "
+                    f"Supported: {', '.join(sorted(all_names))}"
+                )
+            wanted = list(dict.fromkeys(providers))
+        else:
+            wanted = all_names
+
+        runnable: dict[str, Any] = {}
+        skipped: dict[str, str] = {}
+        for name in wanted:
+            state = self.provider_states[name]
+            if not state.enabled:
+                skipped[name] = "disabled"
+            elif name in ("virustotal", "otx"):
+                if name in self.user_api_keys:
+                    runnable[name] = self._external[name]
+                else:
+                    skipped[name] = "no personal key"
+            elif not state.api_key:
+                skipped[name] = "no api key"
+            else:
+                runnable[name] = self._external[name]
+        return runnable, skipped
 
     def enrich_observable_external(
         self, observable: Observable, providers: list[str] | None = None
@@ -231,6 +281,7 @@ class EnrichmentEngine:
             selected_types |= _EXTERNAL_PROVIDERS[name]["types"]
 
         counts = {name: 0 for name in runnable}
+        quota_skipped = {name: 0 for name in runnable}
         errors = 0
 
         all_obs = self.session.scalars(select(Observable)).all()
@@ -260,9 +311,16 @@ class EnrichmentEngine:
                     if f"{name}_checked_at" in merged:
                         continue
                     before = dict(merged)
+                    rationale_len = len(rationale)
                     self._merge_external_result(ob, merged, rationale, name)
                     if merged != before or f"{name}_checked_at" in merged:
                         counts[name] += 1
+                    new_rationale = rationale[rationale_len:]
+                    if any(
+                        "quota" in entry.lower() or "rate limit" in entry.lower()
+                        for entry in new_rationale
+                    ):
+                        quota_skipped[name] += 1
 
                 merged["prevalence"] = prevalence_summary(self.session, ob.id)
                 ob.enrichment = merged
@@ -280,7 +338,30 @@ class EnrichmentEngine:
                 "total_candidates": len(to_enrich),
                 "providers": sorted(runnable),
                 "skipped": skipped,
+                "quota_skipped": {k: v for k, v in quota_skipped.items() if v},
             }
         )
         logger.info("external_enrichment_batch_done", counts=counts, errors=errors)
+        self._record_vt_daily_usage()
         return result
+
+    def _record_vt_daily_usage(self) -> None:
+        """Persist the VT daily-quota counter for the admin coverage panel.
+
+        DailyQuota is in-memory per enricher instance, so the batch records
+        its VT counter into system_settings after every run; the admin page
+        reads the latest snapshot (date-stamped, stale dates show a fresh day).
+        """
+        try:
+            row = self.session.scalar(
+                select(SystemSetting).where(SystemSetting.key == "enrichment.vt_daily_quota")
+            )
+            if row is None:
+                row = SystemSetting(key="enrichment.vt_daily_quota", value="")
+                self.session.add(row)
+            row.value = json.dumps(
+                {"date": datetime.now(UTC).date().isoformat(), "used": self.vt.daily.used}
+            )
+            self.session.commit()
+        except Exception as exc:  # pragma: no cover - stats must never break runs
+            logger.warning("vt_quota_snapshot_failed", exc=str(exc))

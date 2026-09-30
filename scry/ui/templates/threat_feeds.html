@@ -11,6 +11,58 @@
   </div>
 </div>
 
+{# --- My API keys (per-user VT/OTX personal keys, v0.5.0 step 6) --- #}
+{% if my_keys %}
+<div class="panel" id="my-api-keys">
+  <h2>My API keys</h2>
+  <p class="muted">
+    Personal VirusTotal / OTX keys power <em>your</em> manual enrichment runs, live lookups and
+    key tests. Background jobs use the <a href="/ui/alerts">system keys</a>. All enriched data
+    stays shared — everyone sees the results.
+  </p>
+  <div class="grid-2">
+    {% for k in my_keys.cards %}
+    <div class="card">
+      <h3>{{ k.display_name }}</h3>
+      <dl class="kv">
+        <dt>Key</dt>
+        <dd>{% if k.has_key %}<code>{{ k.masked }}</code>{% else %}<span class="muted">not set</span>{% endif %}</dd>
+        <dt>Status</dt>
+        <dd>
+          {% if k.last_test_ok is not none %}
+            {% if k.last_test_ok %}<span class="badge good">Connected</span>
+            {% else %}<span class="badge bad">Failed{% if k.last_test_error %} ({{ k.last_test_error }}){% endif %}</span>{% endif %}
+            {% if k.last_test_at %}<span class="muted"> · {{ k.last_test_at | timeago }}</span>{% endif %}
+          {% else %}<span class="muted">never tested</span>{% endif %}
+        </dd>
+      </dl>
+      <form method="post" action="/ui/intel-feeds/my-keys/{{ k.provider }}/save" style="margin:6px 0">
+        <input type="hidden" name="csrf" value="{{ my_keys.csrf }}">
+        {# type="text" on purpose: owner wants the key visible while typing #}
+        <input type="text" name="api_key" value="" autocomplete="off"
+               placeholder="{% if k.has_key %}paste new key to replace{% else %}paste API key{% endif %}"
+               style="min-width:280px">
+        <button class="btn" type="submit">Save</button>
+      </form>
+      <form method="post" action="/ui/intel-feeds/my-keys/{{ k.provider }}/test" style="display:inline">
+        <input type="hidden" name="csrf" value="{{ my_keys.csrf }}">
+        <button class="btn secondary" type="submit" {% if not k.has_key %}disabled{% endif %}>Test</button>
+      </form>
+      {% if k.has_key %}
+      <form method="post" action="/ui/intel-feeds/my-keys/{{ k.provider }}/remove" style="display:inline">
+        <input type="hidden" name="csrf" value="{{ my_keys.csrf }}">
+        <button class="btn secondary" type="submit">Remove</button>
+      </form>
+      {% endif %}
+      {% if not k.has_key %}
+      <p class="muted" style="margin-top:6px">No personal key — background enrichment uses the system key; you can't run manual {{ k.display_name }} lookups until you save one.</p>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 {# --- Stats row --- #}
 <div class="grid" style="grid-template-columns: repeat(5,1fr);">
   {% for cat, cnt in cat_counts[:5] %}

@@ -32,6 +32,7 @@ from scry.models.user import (
     RecoveryCode,
     SessionToken,
     User,
+    UserFeedKey,
 )
 from scry.models.workflow import (
     Alert,
@@ -81,4 +82,5 @@ __all__ = [
     "ThreatFeedItem",
     "ThreatIntelSource",
     "User",
+    "UserFeedKey",
 ]

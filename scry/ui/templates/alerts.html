@@ -68,12 +68,15 @@ document.getElementById("test-alerts-btn").addEventListener("click", async () =>
 </script>
 
 <div class="panel">
-  <h2>IOC enrichment providers</h2>
+  <h2>System keys (background jobs)</h2>
   <p>
-    External reputation lookups run from
-    <code>POST /enrichment/run</code> (optionally <code>?providers=…</code>).
-    Keys are stored encrypted in the <code>connector_settings</code> table and
-    override the <code>CTI_*_API_KEY</code> env vars when set.
+    These keys power <em>background/scheduled</em> enrichment
+    (<code>POST /enrichment/run</code> with no signed-in user, optionally
+    <code>?providers=…</code>). Keys are stored encrypted in the
+    <code>connector_settings</code> table and override the
+    <code>CTI_*_API_KEY</code> env vars when set. Your own manual runs,
+    live lookups and tests use your <a href="/ui/intel-feeds/threat-feeds">personal
+    keys</a> instead.
   </p>
   <table>
     <thead><tr><th>Provider</th><th>State</th><th>Enabled</th><th>API key</th><th></th></tr></thead>

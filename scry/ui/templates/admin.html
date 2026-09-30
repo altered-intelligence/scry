@@ -120,6 +120,26 @@
     <div class="card"><div class="num">{{ stats.open_reviews|format_number }}</div><div class="lbl">open reviews</div></div>
     <div class="card"><div class="num">{{ stats.failed_fetches_last_24h|format_number }}</div><div class="lbl">failed fetches 24h</div></div>
   </div>
+
+  <h3>Enrichment coverage</h3>
+  <table>
+    <thead><tr><th>Provider</th><th>Observables enriched</th><th>Malicious verdicts</th><th>Benign / clean</th></tr></thead>
+    <tbody>
+      {% for name, cov in enrichment_coverage.providers.items() %}
+      <tr>
+        <td><span class="chip">{{ name }}</span></td>
+        <td>{{ cov.checked|format_number }}</td>
+        <td>{% if cov.malicious %}<span class="badge bad">{{ cov.malicious|format_number }}</span>{% else %}<span class="muted">0</span>{% endif %}</td>
+        <td>{% if cov.benign %}<span class="badge dim">{{ cov.benign|format_number }}</span>{% else %}<span class="muted">0</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted">
+    VirusTotal daily quota (system key): <strong>{{ enrichment_coverage.vt_quota.remaining|format_number }}</strong>
+    / {{ enrichment_coverage.vt_quota.limit|format_number }} remaining
+    ({{ enrichment_coverage.vt_quota.used|format_number }} used today)
+  </p>
 </div>
 
 {# ------------------------- security ------------------------- #}

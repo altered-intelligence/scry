@@ -42,7 +42,16 @@
   </div>
   <button class="btn" type="submit">Filter</button>
   <a class="btn secondary" href="/ui/observables">Reset</a>
+  {% if personal_key_providers %}
+  <form method="post" action="/ui/observables/enrich-unenriched" style="display:inline; margin-left:12px">
+    <input type="hidden" name="csrf" value="{{ enrich_csrf }}">
+    <button class="btn" type="submit" title="Runs VT/OTX with your personal keys on observables not yet enriched (capped at 50/run)">Enrich unenriched (my keys)</button>
+  </form>
+  {% endif %}
 </form>
+{% if personal_key_providers %}
+<p class="muted">Personal keys active: {% for p in personal_key_providers %}<span class="chip">{{ p }}</span>{% endfor %} — manual enrichment uses your keys; background jobs use the system keys.</p>
+{% endif %}
 
 <div class="panel">
   <table>
@@ -59,18 +68,18 @@
         <td><span class="chip">{{ ob.status }}</span></td>
         <td>
           {% if vt.get('malicious') is not none %}
-            {% if vt.malicious > 0 %}<span class="badge bad">{{ vt.malicious }}</span>
-            {% elif vt.suspicious > 0 %}<span class="badge warn">{{ vt.suspicious }}</span>
-            {% else %}<span class="badge dim">0</span>{% endif %}
-          {% else %}<span class="muted">—</span>{% endif %}
+            {% if vt.malicious > 0 %}<span class="badge bad" title="VT: malicious">✓ {{ vt.malicious }}</span>
+            {% elif vt.suspicious > 0 %}<span class="badge warn" title="VT: suspicious">✓ {{ vt.suspicious }}</span>
+            {% else %}<span class="badge dim" title="VT: clean">✓ 0</span>{% endif %}
+          {% else %}<span class="muted" title="not enriched by VT">—</span>{% endif %}
         </td>
         <td>
           {% if otx.get('pulse_count') is not none %}
-            {% if otx.pulse_count >= 10 %}<span class="badge bad">{{ otx.pulse_count }}</span>
-            {% elif otx.pulse_count >= 3 %}<span class="badge warn">{{ otx.pulse_count }}</span>
-            {% elif otx.pulse_count > 0 %}<span class="badge mid">{{ otx.pulse_count }}</span>
-            {% else %}<span class="badge dim">0</span>{% endif %}
-          {% else %}<span class="muted">—</span>{% endif %}
+            {% if otx.pulse_count >= 10 %}<span class="badge bad" title="OTX pulses">✓ {{ otx.pulse_count }}</span>
+            {% elif otx.pulse_count >= 3 %}<span class="badge warn" title="OTX pulses">✓ {{ otx.pulse_count }}</span>
+            {% elif otx.pulse_count > 0 %}<span class="badge mid" title="OTX pulses">✓ {{ otx.pulse_count }}</span>
+            {% else %}<span class="badge dim" title="OTX: no pulses">✓ 0</span>{% endif %}
+          {% else %}<span class="muted" title="not enriched by OTX">—</span>{% endif %}
         </td>
         <td>{{ m.tag_list(ob.tags[:6]) }}{% if ob.tags and ob.tags|length > 6 %}<span class="muted">+{{ ob.tags|length - 6 }}</span>{% endif %}</td>
       </tr>

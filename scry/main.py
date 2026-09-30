@@ -42,8 +42,20 @@ from scry.auth.sessions import (
     users_exist,
 )
 from scry.config import get_settings
-from scry.crypto import decrypt, encrypt
+from scry.crypto import decrypt, encrypt, mask
 from scry.db import get_engine, session_scope
+from scry.enrichment.engine import EnrichmentEngine
+from scry.enrichment.otx import OTXEnricher
+from scry.enrichment.user_keys import (
+    delete_key,
+    get_decrypted_key,
+    get_key,
+    keys_for_user,
+    record_test_result,
+    set_key,
+    test_key,
+)
+from scry.enrichment.virustotal import VirusTotalEnricher
 from scry.logging import configure_logging, get_logger
 from scry.models import (
     CVE,
@@ -488,6 +500,51 @@ def _audit_admin(session: Session, actor: User, action: str, target: User | None
     )
 
 
+def _enrichment_coverage(session: Session) -> dict:
+    """Per-provider enrichment coverage + VT daily-quota snapshot (v0.5.0 step 6).
+
+    Counts observables carrying each provider's ``*_checked_at`` marker in the
+    shared enrichment JSON, with malicious/benign verdict tallies where
+    derivable. The VT daily quota reads the date-stamped snapshot the
+    enrichment batch records after every run (in-memory counters reset on
+    restart, so a missing/stale snapshot just shows a fresh day).
+    """
+    providers = ("virustotal", "otx", "abuseipdb", "greynoise")
+    coverage = {p: {"checked": 0, "malicious": 0, "benign": 0} for p in providers}
+    for ob in session.scalars(select(Observable)).all():
+        enrichment = ob.enrichment or {}
+        for name in providers:
+            if f"{name}_checked_at" in enrichment:
+                coverage[name]["checked"] += 1
+        vt = enrichment.get("virustotal") or {}
+        if vt and not vt.get("not_found"):
+            if (vt.get("malicious") or 0) > 0:
+                coverage["virustotal"]["malicious"] += 1
+            elif (vt.get("suspicious") or 0) == 0:
+                coverage["virustotal"]["benign"] += 1
+        otx = enrichment.get("otx") or {}
+        if otx and not otx.get("not_found"):
+            if (otx.get("pulse_count") or 0) >= 3:
+                coverage["otx"]["malicious"] += 1
+            else:
+                coverage["otx"]["benign"] += 1
+
+    quota_limit = get_settings().vt_daily_quota
+    used = 0
+    row = session.scalar(
+        select(SystemSetting).where(SystemSetting.key == "enrichment.vt_daily_quota")
+    )
+    if row and row.value:
+        try:
+            snap = json.loads(row.value)
+            if snap.get("date") == datetime.now(UTC).date().isoformat():
+                used = int(snap.get("used") or 0)
+        except (TypeError, ValueError):
+            pass
+    vt_quota = {"limit": quota_limit, "used": used, "remaining": max(0, quota_limit - used)}
+    return {"providers": coverage, "vt_quota": vt_quota}
+
+
 def _admin_user_counts(session: Session) -> dict[str, int]:
     now = datetime.now(UTC)
     return {
@@ -581,6 +638,7 @@ def admin_page(request: Request, session: Session = Depends(get_session)):
             "sessions": sessions_rows,
             "audit_entries": audit_entries,
             "smtp": _smtp_overview(session),
+            "enrichment_coverage": _enrichment_coverage(session),
         },
     )
 
@@ -1868,11 +1926,66 @@ def ui_observables(
         "offset": offset,
         "qs": _qs_extra(q=q, type=type, tag=tag, min_risk=min_risk, status=status),
     }
+    user = _signed_in_user(request, session)
+    personal_keys = keys_for_user(session, user.id) if user else {}
+    raw_cookie = request.cookies.get(SESSION_COOKIE)
     return templates.TemplateResponse(
         request,
         "observables.html",
-        {"observables": obs, "total": total, "filters": filters, "available_types": available_types},
+        {
+            "observables": obs,
+            "total": total,
+            "filters": filters,
+            "available_types": available_types,
+            "personal_key_providers": sorted(personal_keys),
+            "enrich_csrf": _admin_csrf_token(raw_cookie) if raw_cookie else "",
+        },
     )
+
+
+@app.post("/ui/observables/enrich-unenriched")
+def ui_enrich_unenriched(
+    request: Request,
+    session: Session = Depends(get_session),
+    csrf: str = Form(""),
+):
+    """Bulk-enrich observables not yet checked, using the ACTING USER's
+    personal VT/OTX keys (capped per run; VT daily-quota guard applies)."""
+    user = _signed_in_user(request, session)
+    if user is None:
+        return RedirectResponse(url="/login", status_code=303)
+    back = "/ui/observables"
+    if not _check_admin_csrf(request, csrf):
+        return _redirect_flash(back, "Bad CSRF token — action rejected.", "error")
+    keys = keys_for_user(session, user.id)
+    if not keys:
+        return _redirect_flash(
+            back,
+            "No personal VT/OTX keys — save one on the Threat Feeds page first "
+            "(background jobs use the system keys).",
+            "error",
+        )
+    engine = EnrichmentEngine(session, user_api_keys=keys)
+    result = engine.run_external_enrichment_batch(limit=_ENRICH_UNENRICHED_CAP)
+
+    parts = [f"checked {result['total_candidates']}"]
+    for provider in _PERSONAL_KEY_PROVIDERS:
+        if provider in result["providers"]:
+            count_key = _PROVIDER_COUNT_KEYS[provider]
+            parts.append(f"{provider} enriched {result.get(count_key, 0)}")
+    if result.get("quota_skipped"):
+        parts.append(
+            "skipped per quota: "
+            + ", ".join(f"{k} {v}" for k, v in sorted(result["quota_skipped"].items()))
+        )
+    if result["skipped"]:
+        parts.append(
+            "skipped: " + ", ".join(f"{k} ({v})" for k, v in sorted(result["skipped"].items()))
+        )
+    if result.get("errors"):
+        parts.append(f"errors {result['errors']}")
+    _feed_key_audit(session, user, "observables.enrich_unenriched", "+".join(sorted(keys)))
+    return _redirect_flash(back, "Enrich unenriched (my keys) — " + "; ".join(parts) + ".")
 
 
 @app.get("/ui/observables/{ob_id}", response_class=HTMLResponse)
@@ -1913,6 +2026,36 @@ def ui_observable_detail(ob_id: int, request: Request, session: Session = Depend
     enrichment_json = json.dumps(ob.enrichment or {}, indent=2, default=str)
     vt_status = (ob.enrichment or {}).get("virustotal_checked_at")
     otx_status = (ob.enrichment or {}).get("otx_checked_at")
+
+    # v0.5.0 step 6 — live lookup is only offered for providers the acting
+    # user has a personal key for (user-triggered actions use personal keys).
+    user = _signed_in_user(request, session)
+    personal_keys = keys_for_user(session, user.id) if user else {}
+    raw_cookie = request.cookies.get(SESSION_COOKIE)
+
+    vt_data = (ob.enrichment or {}).get("virustotal") or {}
+    vt_verdict = None
+    if vt_data and not vt_data.get("not_found"):
+        ts = vt_data.get("last_analysis_date")
+        vt_verdict = {
+            "malicious": vt_data.get("malicious") or 0,
+            "suspicious": vt_data.get("suspicious") or 0,
+            "undetected": vt_data.get("undetected") or 0,
+            "tags": vt_data.get("tags") or [],
+            "last_analysis": (
+                datetime.fromtimestamp(ts, UTC).strftime("%Y-%m-%d %H:%M UTC")
+                if isinstance(ts, (int, float))
+                else None
+            ),
+        }
+    otx_data = (ob.enrichment or {}).get("otx") or {}
+    otx_verdict = None
+    if otx_data and not otx_data.get("not_found"):
+        otx_verdict = {
+            "pulse_count": otx_data.get("pulse_count"),
+            "reputation": otx_data.get("reputation"),
+        }
+
     return templates.TemplateResponse(
         request,
         "observable_detail.html",
@@ -1923,7 +2066,66 @@ def ui_observable_detail(ob_id: int, request: Request, session: Session = Depend
             "enrichment_json": enrichment_json,
             "vt_provider_status": vt_status,
             "otx_provider_status": otx_status,
+            "can_lookup_vt": "virustotal" in personal_keys,
+            "can_lookup_otx": "otx" in personal_keys,
+            "lookup_csrf": _admin_csrf_token(raw_cookie) if raw_cookie else "",
+            "vt_verdict": vt_verdict,
+            "otx_verdict": otx_verdict,
         },
+    )
+
+
+@app.post("/ui/observables/{ob_id}/lookup/{provider}")
+def ui_observable_lookup(
+    ob_id: int,
+    provider: str,
+    request: Request,
+    session: Session = Depends(get_session),
+    csrf: str = Form(""),
+):
+    """Single live enrichment with the ACTING USER's personal key (fresh —
+    bypasses the disk cache so the verdict reflects the provider right now)."""
+    user = _signed_in_user(request, session)
+    if user is None:
+        return RedirectResponse(url="/login", status_code=303)
+    ob = session.get(Observable, ob_id)
+    if not ob:
+        raise HTTPException(404)
+    back = f"/ui/observables/{ob_id}"
+    if not _check_admin_csrf(request, csrf):
+        return _redirect_flash(back, "Bad CSRF token — action rejected.", "error")
+    if provider not in _PERSONAL_KEY_PROVIDERS:
+        return _redirect_flash(back, f"Unknown provider {provider!r}.", "error")
+    key = get_decrypted_key(session, user.id, provider)
+    if not key:
+        return _redirect_flash(
+            back,
+            f"No personal {_FEED_DISPLAY_NAMES[provider]} key — save one on the "
+            "Threat Feeds page to run live lookups.",
+            "error",
+        )
+    if provider == "virustotal":
+        enricher: VirusTotalEnricher | OTXEnricher = VirusTotalEnricher(api_key=key)
+    else:
+        enricher = OTXEnricher(api_key=key)
+    try:
+        result = enricher.lookup(ob.normalized_value, ob.type, bypass_cache=True)
+    finally:
+        enricher.close()
+
+    if result.ok:
+        merged = dict(ob.enrichment or {})
+        merged[provider] = result.fields
+        merged[f"_{'vt' if provider == 'virustotal' else 'otx'}_status"] = "ok"
+        merged[f"{provider}_checked_at"] = datetime.now(UTC).isoformat()
+        ob.enrichment = merged
+        session.commit()
+        _feed_key_audit(session, user, f"observable.lookup.{provider}", provider)
+        return _redirect_flash(back, f"{_FEED_DISPLAY_NAMES[provider]} live lookup complete.")
+    error = result.error or "unknown error"
+    quota_kind = "quota/rate limit" if (result.http_status == 429 or "quota" in error.lower()) else "error"
+    return _redirect_flash(
+        back, f"{_FEED_DISPLAY_NAMES[provider]} live lookup failed ({quota_kind}): {error}", "error"
     )
 
 
@@ -2377,6 +2579,146 @@ def ui_search(request: Request, q: str = "", session: Session = Depends(get_sess
 
 # ========================= Intel Feeds — Threat Feeds =========================
 
+# ------------------------- per-user feed keys (v0.5.0 step 6) -------------------------
+
+# Key-resolution rule (FEATURES.md): user-triggered enrichment uses the ACTING
+# USER's personal VT/OTX keys; background/scheduled jobs keep the SYSTEM keys
+# (env/DB chain, managed on the Alerts page). A user without a personal key
+# cannot run that provider but sees all shared enriched data.
+
+_PERSONAL_KEY_PROVIDERS = ("virustotal", "otx")
+_FEED_DISPLAY_NAMES = {"virustotal": "VirusTotal", "otx": "AlienVault OTX"}
+# Result-count keys used by EnrichmentEngine.run_external_enrichment_batch.
+_PROVIDER_COUNT_KEYS = {"virustotal": "vt_enriched", "otx": "otx_enriched"}
+_ENRICH_UNENRICHED_CAP = 50
+
+
+def _feed_key_audit(session: Session, actor: User, action: str, provider: str) -> None:
+    from scry.audit import record
+
+    record(
+        session,
+        action=action,
+        actor=actor.username,
+        target_type="user",
+        target_id=actor.id,
+        detail={"provider": provider},
+    )
+
+
+def _my_keys_context(request: Request, session: Session) -> dict | None:
+    """'My API keys' card data for the signed-in user; None when anonymous."""
+    state_user = getattr(request.state, "user", None)
+    if state_user is None:
+        return None
+    user = session.get(User, state_user.id)
+    if user is None:
+        return None
+    raw = request.cookies.get(SESSION_COOKIE)
+    cards = []
+    for provider in _PERSONAL_KEY_PROVIDERS:
+        row = get_key(session, user.id, provider)
+        cards.append(
+            {
+                "provider": provider,
+                "display_name": _FEED_DISPLAY_NAMES[provider],
+                "has_key": row is not None,
+                "masked": mask(get_decrypted_key(session, user.id, provider)) if row else "",
+                "last_test_at": row.last_test_at if row else None,
+                "last_test_ok": row.last_test_ok if row else None,
+                "last_test_error": row.last_test_error if row else None,
+            }
+        )
+    return {"cards": cards, "csrf": _admin_csrf_token(raw) if raw else ""}
+
+
+def _signed_in_user(request: Request, session: Session) -> User | None:
+    """The acting user for a UI POST, or None → caller redirects to /login."""
+    state_user = getattr(request.state, "user", None)
+    if state_user is None:
+        return None
+    return session.get(User, state_user.id)
+
+
+@app.post("/ui/intel-feeds/my-keys/{provider}/save")
+def ui_my_key_save(
+    provider: str,
+    request: Request,
+    session: Session = Depends(get_session),
+    csrf: str = Form(""),
+    api_key: str = Form(""),
+):
+    user = _signed_in_user(request, session)
+    if user is None:
+        return RedirectResponse(url="/login", status_code=303)
+    back = "/ui/intel-feeds/threat-feeds"
+    if not _check_admin_csrf(request, csrf):
+        return _redirect_flash(back, "Bad CSRF token — action rejected.", "error")
+    if provider not in _PERSONAL_KEY_PROVIDERS:
+        return _redirect_flash(back, f"Unknown provider {provider!r}.", "error")
+    api_key = api_key.strip()
+    if not api_key:
+        return _redirect_flash(back, "API key must not be empty.", "error")
+    set_key(session, user.id, provider, api_key)
+    session.commit()
+    _feed_key_audit(session, user, "feed_key.save", provider)
+    return _redirect_flash(back, f"{_FEED_DISPLAY_NAMES[provider]} key saved ({mask(api_key)}).")
+
+
+@app.post("/ui/intel-feeds/my-keys/{provider}/test")
+def ui_my_key_test(
+    provider: str,
+    request: Request,
+    session: Session = Depends(get_session),
+    csrf: str = Form(""),
+):
+    user = _signed_in_user(request, session)
+    if user is None:
+        return RedirectResponse(url="/login", status_code=303)
+    back = "/ui/intel-feeds/threat-feeds"
+    if not _check_admin_csrf(request, csrf):
+        return _redirect_flash(back, "Bad CSRF token — action rejected.", "error")
+    if provider not in _PERSONAL_KEY_PROVIDERS:
+        return _redirect_flash(back, f"Unknown provider {provider!r}.", "error")
+    row = get_key(session, user.id, provider)
+    if row is None:
+        return _redirect_flash(
+            back, f"No personal {_FEED_DISPLAY_NAMES[provider]} key saved yet.", "error"
+        )
+    key = get_decrypted_key(session, user.id, provider)
+    ok, error = test_key(provider, key)
+    record_test_result(session, row, ok, error)
+    session.commit()
+    _feed_key_audit(session, user, "feed_key.test", provider)
+    if ok:
+        return _redirect_flash(back, f"{_FEED_DISPLAY_NAMES[provider]} key: Connected.")
+    return _redirect_flash(
+        back, f"{_FEED_DISPLAY_NAMES[provider]} key test failed ({error or 'unknown error'}).", "error"
+    )
+
+
+@app.post("/ui/intel-feeds/my-keys/{provider}/remove")
+def ui_my_key_remove(
+    provider: str,
+    request: Request,
+    session: Session = Depends(get_session),
+    csrf: str = Form(""),
+):
+    user = _signed_in_user(request, session)
+    if user is None:
+        return RedirectResponse(url="/login", status_code=303)
+    back = "/ui/intel-feeds/threat-feeds"
+    if not _check_admin_csrf(request, csrf):
+        return _redirect_flash(back, "Bad CSRF token — action rejected.", "error")
+    if provider not in _PERSONAL_KEY_PROVIDERS:
+        return _redirect_flash(back, f"Unknown provider {provider!r}.", "error")
+    removed = delete_key(session, user.id, provider)
+    session.commit()
+    if removed:
+        _feed_key_audit(session, user, "feed_key.remove", provider)
+        return _redirect_flash(back, f"{_FEED_DISPLAY_NAMES[provider]} key removed.")
+    return _redirect_flash(back, f"No personal {_FEED_DISPLAY_NAMES[provider]} key to remove.", "error")
+
 
 @app.get("/ui/intel-feeds/threat-feeds", response_class=HTMLResponse)
 def ui_threat_feeds(
@@ -2467,6 +2809,7 @@ def ui_threat_feeds(
             "countries": countries,
             "categories": [c for c, _ in cat_counts],
             "filters": filters,
+            "my_keys": _my_keys_context(request, session),
         },
     )
 
