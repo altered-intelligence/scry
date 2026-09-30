@@ -279,7 +279,7 @@ class TestPullSubscription:
         # pulse detail to evaluate a tag filter (same live incident).
         from scry.ingestion.otx_pulses import PULSE_DETAIL_URL, OTXPulseClient, pull_subscription
 
-        mock_search([pulse("t1"), pulse("t2")])
+        mock_search([pulse("t1", tags=[]), pulse("t2", tags=[])])
         respx.get(PULSE_DETAIL_URL.format(pulse_id="t1")).mock(
             return_value=httpx.Response(200, json=pulse("t1", tags=["Ransomware"]))
         )
