@@ -70,6 +70,9 @@ def init_db() -> None:
     """Create schema and load sources.yaml into the DB."""
     configure_logging()
     Base.metadata.create_all(bind=get_engine())
+    from scry.migrations import run_migrations
+
+    run_migrations()
     with session_scope() as session:
         SourceRegistry(session).sync_from_yaml()
     console.print("[green]DB initialized and sources synced[/green]")
@@ -462,9 +465,22 @@ def users_create(
             console.print(f"[red]Username {username!r} already exists[/red]")
             raise typer.Exit(1)
         user = User(username=username, email=email, role=role, password_hash=hash_password(password))
+        # Same rule as the /admin create form (v0.5.0 step 3): no mailer →
+        # email trusted outright; SMTP up → unverified until the PIN is used.
+        from scry import mail as _mail
+        from scry.auth import verification as _verification
+
+        user.email_verified = not _mail.smtp_configured(session)
         session.add(user)
         session.flush()
         _audit_user(session, "user.create", user, {"role": role})
+        if _mail.smtp_configured(session):
+            if _verification.issue_pin(session, user):
+                console.print(f"[green]Verification code sent to {email}[/green]")
+            else:
+                console.print("[yellow]Could not send the verification email[/yellow]")
+        else:
+            console.print("[dim]SMTP not configured — email marked verified[/dim]")
     console.print(f"[green]Created user {username!r} ({role})[/green]")
 
 
@@ -563,6 +579,8 @@ def users_seed(
     password = os.environ.get(SEED_INITIAL_PASSWORD_ENV, SEED_INITIAL_PASSWORD_DEFAULT)
     seeded: list[str] = []
     with session_scope() as session:
+        from scry import mail as _mail
+
         for username, email in (("alakhani", "alakhani@example.com"), ("admin", "admin@example.com")):
             if _find_user(session, username) is not None:
                 continue
@@ -572,6 +590,9 @@ def users_seed(
                 role="admin",
                 password_hash=hash_password(password),
                 must_change_password=True,
+                # No mailer → nothing can verify the address; trust it (locked
+                # bypass). With SMTP up the admin verifies via PIN later.
+                email_verified=not _mail.smtp_configured(session),
             )
             session.add(user)
             session.flush()

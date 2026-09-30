@@ -57,3 +57,46 @@ class SessionToken(Base, IdMixin):
     user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
     user: Mapped[User] = relationship(back_populates="sessions")
+
+
+class ApiKey(Base, IdMixin):
+    """Per-user scry API key (v0.5.0 step 3).
+
+    Only the sha256 of the random token is persisted; ``prefix`` (first 8
+    chars) is enough for display ("sk-ab12cd…"). The full key is shown once
+    at creation.
+    """
+
+    __tablename__ = "api_keys"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    key_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    prefix: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    user: Mapped[User] = relationship()
+
+
+class EmailVerification(Base, IdMixin):
+    """One email-verification PIN (v0.5.0 step 3).
+
+    Stores only the sha256 of the 6-digit code; codes expire after 30 minutes
+    and are consumed on use or after ``MAX_ATTEMPTS`` wrong tries.
+    """
+
+    __tablename__ = "email_verifications"
+
+    MAX_ATTEMPTS = 3
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    code_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    user: Mapped[User] = relationship()

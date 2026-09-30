@@ -183,7 +183,7 @@
       flex-wrap: wrap;
     }
     .filters label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; display: block; }
-    .filters input, .filters select, input[type=text], select, textarea {
+    .filters input, .filters select, input[type=text], input[type=password], input[type=number], select, textarea {
       background: var(--bg);
       border: 1px solid var(--border);
       color: var(--text);
@@ -423,7 +423,7 @@
     <a href="/docs" target="_blank" rel="noopener">API</a>
     <span class="spacer"></span>
     {% if request.state.user %}
-      <span class="meta">{{ request.state.user.username }}</span>
+      <a href="/profile">{{ request.state.user.display_name or request.state.user.username }}</a>
       <form method="post" action="/logout" style="display: inline; margin: 0;">
         <button type="submit" class="theme-toggle" title="Sign out">Logout</button>
       </form>

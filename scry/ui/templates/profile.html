@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}Profile · Scry{% endblock %}
+{% block content %}
+<h1>Your profile</h1>
+
+{% if user.must_change_password %}
+<div class="flash error" role="alert">
+  <span>You must change your password before continuing.</span>
+</div>
+{% endif %}
+
+{# ------------------------- identity ------------------------- #}
+<div class="panel" id="identity">
+  <h2 style="margin-top: 0;">Identity</h2>
+  <dl class="kv">
+    <dt>Username</dt>
+    <dd><b>{{ user.username }}</b>
+      {% if user.role == 'admin' %}<span class="badge purple">admin</span>{% endif %}
+      {% if user.must_change_password %}<span class="badge warn" title="Must change password">pw</span>{% endif %}
+    </dd>
+    <dt>Email</dt>
+    <dd>{{ user.email }}
+      {% if user.email_verified %}
+        <span class="badge good">verified</span>
+      {% else %}
+        <span class="badge warn">unverified</span>
+      {% endif %}
+    </dd>
+  </dl>
+  <form method="post" action="/profile/display-name" class="filters" style="align-items: end;">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>Display name <input type="text" name="display_name" value="{{ user.display_name or '' }}"
+                               placeholder="How your name appears in scry"></label>
+    <button type="submit" class="btn">Save</button>
+  </form>
+</div>
+
+{# ------------------------- security ------------------------- #}
+<div class="panel" id="security">
+  <h2 style="margin-top: 0;">Change password</h2>
+  <form method="post" action="/profile/password" class="filters" style="align-items: end;">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>Current password <input type="password" name="current_password" required></label>
+    <label>New password <input type="password" name="new_password" required minlength="10"></label>
+    <label>Confirm new password <input type="password" name="confirm_password" required></label>
+    <button type="submit" class="btn">Change password</button>
+  </form>
+  <p class="muted">Minimum 10 characters. Changing your password signs out every other session.</p>
+</div>
+
+{# ------------------------- email verification ------------------------- #}
+<div class="panel" id="email-verification">
+  <h2 style="margin-top: 0;">Email verification</h2>
+  {% if user.email_verified %}
+    <p><span class="badge good">verified</span> {{ user.email }} is verified.</p>
+  {% else %}
+    <p><span class="badge warn">unverified</span> {{ user.email }} has not been verified yet.</p>
+    {% if smtp_configured %}
+      {% if pending_verification %}
+        <p class="muted">A 6-digit code was emailed to you; it expires
+          {{ pending_verification.expires_at|timeago }} (hover for the exact time).</p>
+        <form method="post" action="/profile/verify-email/confirm" class="filters" style="align-items: end;">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <label>Verification code <input type="text" name="code" required
+                   inputmode="numeric" pattern="\d{6}" maxlength="6" placeholder="123456"
+                   style="min-width: 100px; letter-spacing: 0.2em;"></label>
+          <button type="submit" class="btn">Confirm code</button>
+        </form>
+        <form method="post" action="/profile/verify-email" style="margin-top: 8px;">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <button type="submit" class="btn secondary">Resend code</button>
+        </form>
+      {% else %}
+        <form method="post" action="/profile/verify-email" class="filters" style="align-items: end;">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <button type="submit" class="btn">Email me a verification code</button>
+        </form>
+      {% endif %}
+    {% else %}
+      <p class="muted">SMTP is not configured, so scry cannot send a verification email.
+        You can mark the address as verified directly instead.</p>
+      <form method="post" action="/profile/verify-email">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button type="submit" class="btn secondary">Verify my email</button>
+      </form>
+    {% endif %}
+  {% endif %}
+</div>
+
+{# ------------------------- API keys ------------------------- #}
+<div class="panel" id="api-keys">
+  <h2 style="margin-top: 0;">API keys</h2>
+  {% if api_keys %}
+    <table>
+      <thead>
+        <tr><th>Name</th><th>Key</th><th>Created</th><th>Last used</th><th>Expires</th><th>Status</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for k in api_keys %}
+        <tr>
+          <td><b>{{ k.name }}</b></td>
+          <td><code>{{ k.prefix }}…</code></td>
+          <td>{{ k.created_at|timeago }}</td>
+          <td>{{ k.last_used_at|timeago }}</td>
+          <td>{{ k.expires_at|timeago }}</td>
+          <td>
+            {% if k.display_status == 'revoked' %}
+              <span class="badge bad">revoked</span>
+            {% elif k.display_status == 'expired' %}
+              <span class="badge bad">expired</span>
+            {% else %}
+              <span class="badge good">active</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if k.revoked_at is none %}
+            <form method="post" action="/profile/api-keys/{{ k.id }}/revoke" style="display: inline;"
+                  onsubmit="return confirm('Revoke API key {{ k.name }}? Clients using it lose access.');">
+              <input type="hidden" name="csrf" value="{{ csrf }}">
+              <button type="submit" class="btn danger" style="font-size: 12px; padding: 4px 10px;">Revoke</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">No API keys yet.</p>
+  {% endif %}
+  <h3>Create API key</h3>
+  <form method="post" action="/profile/api-keys" class="filters" style="align-items: end;">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>Name <input type="text" name="name" required placeholder="e.g. dashboard widget"></label>
+    <label>Expiry (days, optional) <input type="number" name="expiry_days" min="1" max="3650"
+                                          placeholder="never"></label>
+    <button type="submit" class="btn">Create key</button>
+  </form>
+  <p class="muted">The full key is shown <b>once</b> at creation — store it somewhere safe.
+    Authenticate API calls with an <code>X-API-Key</code> header or
+    <code>Authorization: Bearer</code>.</p>
+</div>
+{% endblock %}

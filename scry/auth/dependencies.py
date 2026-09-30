@@ -20,7 +20,7 @@ from scry.models import User
 # Browser paths gated behind a session once any user exists. ``/admin`` has
 # no routes yet (step 2) — the prefix is registered now so nothing leaks
 # when it appears. ``/`` is the dashboard.
-_PROTECTED_UI_PREFIXES = ("/ui", "/admin")
+_PROTECTED_UI_PREFIXES = ("/ui", "/admin", "/profile")
 
 
 def path_requires_ui_auth(path: str) -> bool:
@@ -42,9 +42,55 @@ def current_user(request: Request) -> User | None:
 
 
 def validate_user_api_key(request: Request) -> User | None:
-    """Per-user API key hook — implemented in v0.5.0 step 3.
+    """Per-user API key hook (v0.5.0 step 3).
 
-    Accepts the request and returns the owning User when a valid per-user
-    key is presented; returns None otherwise. Always None this step.
+    Accepts ``X-API-Key: sk-…`` or ``Authorization: Bearer sk-…``, looks the
+    key up by sha256, and returns the owning user when the key is active (not
+    revoked, not expired, active user). ``last_used_at`` is touched at most
+    once a minute so authenticated polling doesn't write on every request.
+    Returns None when no valid key is presented.
     """
-    return None
+    provided = request.headers.get("x-api-key")
+    if not provided:
+        auth_header = request.headers.get("authorization")
+        if auth_header:
+            scheme, _, token = auth_header.partition(" ")
+            if scheme.lower() == "bearer" and token.strip():
+                provided = token.strip()
+    if not provided:
+        return None
+
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import select
+
+    from scry.auth.sessions import hash_token
+    from scry.models import ApiKey
+
+    digest = hash_token(provided)
+    with session_scope() as session:
+        api_key = session.scalar(select(ApiKey).where(ApiKey.key_hash == digest))
+        if api_key is None:
+            return None
+        now = datetime.now(UTC)
+        expired = False
+        if api_key.expires_at is not None:
+            exp = (
+                api_key.expires_at
+                if api_key.expires_at.tzinfo is not None
+                else api_key.expires_at.replace(tzinfo=UTC)
+            )
+            expired = exp <= now
+        if api_key.revoked_at is not None or expired:
+            return None
+        user = session.get(User, api_key.user_id)
+        if user is None or user.status != "active":
+            return None
+        # Throttled last-used touch: skip the write when touched < 1 min ago.
+        last_used = api_key.last_used_at
+        if last_used is not None and last_used.tzinfo is None:
+            last_used = last_used.replace(tzinfo=UTC)
+        if last_used is None or now - last_used >= timedelta(minutes=1):
+            api_key.last_used_at = now
+            session.flush()
+        return user

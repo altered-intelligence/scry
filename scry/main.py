@@ -49,10 +49,12 @@ from scry.models import (
     CVE,
     Alert,
     AnalystReview,
+    ApiKey,
     Article,
     AuditLog,
     Base,
     Claim,
+    EmailVerification,
     Entity,
     EntityMention,
     Observable,
@@ -77,6 +79,10 @@ _log = get_logger("startup")
 
 def _ensure_db_ready() -> None:
     Base.metadata.create_all(bind=get_engine())
+    # Column additions to EXISTING tables (create_all can't do those).
+    from scry.migrations import run_migrations
+
+    run_migrations()
     try:
         from scry.ingestion.source_registry import SourceRegistry
 
@@ -174,7 +180,20 @@ async def ui_auth_middleware(request: Request, call_next):
     request.state.user = user
     if has_users and user is None:
         return RedirectResponse(url="/login", status_code=303)
+    if user is not None and user.must_change_password and not _password_change_exempt(
+        request.url.path
+    ):
+        # Forced password change (first login / admin reset): everything
+        # except the profile routes themselves, login/logout, and static
+        # assets redirects back to /profile with the banner.
+        return _redirect_flash(
+            "/profile", "You must change your password before continuing.", "error"
+        )
     return await call_next(request)
+
+
+def _password_change_exempt(path: str) -> bool:
+    return path.startswith(("/profile", "/login", "/logout", "/static"))
 
 
 def _safe_next(next_url: str | None) -> str:
@@ -450,6 +469,9 @@ def admin_create_user(
     generated = not password
     if generated:
         password = secrets.token_urlsafe(9)
+    from scry import mail as _mail
+    from scry.auth import verification as _verification
+
     user = User(
         username=username,
         email=email,
@@ -457,15 +479,28 @@ def admin_create_user(
         role=role,
         password_hash=hash_password(password),
         must_change_password=generated,
+        # No mailer → nothing can verify the address; per the locked bypass
+        # the email is trusted outright. With SMTP up, a PIN is emailed.
+        email_verified=not _mail.smtp_configured(session),
     )
     session.add(user)
     session.flush()
-    _audit_admin(session, admin, "user.create", user, {"role": role})
+    pin_note = ""
+    if _mail.smtp_configured(session):
+        pin_note = (
+            " Verification code sent to their email."
+            if _verification.issue_pin(session, user)
+            else " Verification email could not be sent."
+        )
+    _audit_admin(
+        session, admin, "user.create", user, {"role": role, "email_verified": user.email_verified}
+    )
     if generated:
         return _redirect_flash(
-            "/admin", f"Created user {username!r} — temporary password (shown once): {password}"
+            "/admin",
+            f"Created user {username!r} — temporary password (shown once): {password}{pin_note}",
         )
-    return _redirect_flash("/admin", f"Created user {username!r} ({role}).")
+    return _redirect_flash("/admin", f"Created user {username!r} ({role}).{pin_note}")
 
 
 def _get_target(session: Session, user_id: int) -> User | None:
@@ -723,6 +758,274 @@ def admin_smtp_test(
         target = f" to {to}" if to else ""
         return _redirect_flash("/admin", f"SMTP test OK{target}.")
     return _redirect_flash("/admin", f"SMTP test failed: {error}", "error")
+
+
+# ------------------------- profile (v0.5.0 step 3) -------------------------
+
+# CSRF on profile POST forms: same scheme as the admin panel — the
+# Fernet-encrypted sha256 of the session cookie (see _admin_csrf_token).
+_MIN_PASSWORD_LEN = 10
+_API_KEY_PREFIX_LEN = 8  # "sk-" + 5 chars, e.g. "sk-x7Kq2…"
+_MAX_KEY_EXPIRY_DAYS = 3650
+
+
+def _profile_or_redirect(request: Request, session: Session) -> User | None:
+    """Fresh ORM row for the signed-in user (middleware-set state is detached)."""
+    state_user = getattr(request.state, "user", None)
+    if state_user is None:
+        return None
+    return session.get(User, state_user.id)
+
+
+def _audit_profile(session: Session, actor: User, action: str, detail: dict | None = None) -> None:
+    from scry.audit import record
+
+    record(
+        session,
+        action=action,
+        actor=actor.username,
+        target_type="user",
+        target_id=actor.id,
+        detail=detail or {},
+    )
+
+
+@app.get("/profile", response_class=HTMLResponse)
+def profile_page(request: Request, session: Session = Depends(get_session)):
+    user = _profile_or_redirect(request, session)
+    if user is None:
+        return RedirectResponse(url="/login", status_code=303)
+    from scry import mail as _mail
+
+    api_keys = list(
+        session.scalars(select(ApiKey).where(ApiKey.user_id == user.id).order_by(ApiKey.id.desc()))
+    )
+    now = datetime.now(UTC)
+    for key in api_keys:
+        if key.revoked_at is not None:
+            key.display_status = "revoked"
+        elif key.expires_at is not None:
+            exp = key.expires_at if key.expires_at.tzinfo else key.expires_at.replace(tzinfo=UTC)
+            key.display_status = "expired" if exp <= now else "active"
+        else:
+            key.display_status = "active"
+    pending_verification = session.scalar(
+        select(EmailVerification)
+        .where(
+            EmailVerification.user_id == user.id,
+            EmailVerification.consumed_at.is_(None),
+        )
+        .order_by(EmailVerification.id.desc())
+    )
+    return templates.TemplateResponse(
+        request,
+        "profile.html",
+        {
+            "user": user,
+            "csrf": _admin_csrf_token(request.cookies[SESSION_COOKIE]),
+            "api_keys": api_keys,
+            "smtp_configured": _mail.smtp_configured(session),
+            "pending_verification": pending_verification,
+        },
+    )
+
+
+@app.post("/profile/display-name")
+def profile_display_name(
+    request: Request,
+    session: Session = Depends(get_session),
+    csrf: str = Form(""),
+    display_name: str = Form(""),
+):
+    user = _profile_or_redirect(request, session)
+    if user is None:
+        raise HTTPException(403)
+    if not _check_admin_csrf(request, csrf):
+        return _redirect_flash("/profile", "Bad CSRF token — action rejected.", "error")
+    user.display_name = display_name.strip() or None
+    session.flush()
+    _audit_profile(session, user, "user.update", {"field": "display_name"})
+    return _redirect_flash("/profile", "Display name updated.")
+
+
+@app.post("/profile/password")
+def profile_change_password(
+    request: Request,
+    session: Session = Depends(get_session),
+    csrf: str = Form(""),
+    current_password: str = Form(...),
+    new_password: str = Form(...),
+    confirm_password: str = Form(...),
+):
+    user = _profile_or_redirect(request, session)
+    if user is None:
+        raise HTTPException(403)
+    if not _check_admin_csrf(request, csrf):
+        return _redirect_flash("/profile", "Bad CSRF token — action rejected.", "error")
+    if not verify_password(current_password, user.password_hash):
+        return _redirect_flash("/profile", "Current password is incorrect.", "error")
+    if new_password != confirm_password:
+        return _redirect_flash("/profile", "New passwords do not match.", "error")
+    if len(new_password) < _MIN_PASSWORD_LEN:
+        return _redirect_flash(
+            "/profile", f"New password must be at least {_MIN_PASSWORD_LEN} characters.", "error"
+        )
+    user.password_hash = hash_password(new_password)
+    user.must_change_password = False
+    user.failed_login_count = 0
+    user.locked_until = None
+    # Sign out every other session; keep the one driving this request.
+    keep = hash_token(request.cookies.get(SESSION_COOKIE) or "")
+    revoked = session.execute(
+        delete(SessionToken).where(
+            SessionToken.user_id == user.id, SessionToken.token_hash != keep
+        )
+    ).rowcount
+    session.flush()
+    _audit_profile(session, user, "user.change_password", {"revoked_sessions": int(revoked or 0)})
+    return _redirect_flash(
+        "/profile",
+        f"Password changed. {int(revoked or 0)} other session(s) were signed out.",
+    )
+
+
+@app.post("/profile/verify-email")
+def profile_verify_email(
+    request: Request,
+    session: Session = Depends(get_session),
+    csrf: str = Form(""),
+):
+    user = _profile_or_redirect(request, session)
+    if user is None:
+        raise HTTPException(403)
+    if not _check_admin_csrf(request, csrf):
+        return _redirect_flash("/profile", "Bad CSRF token — action rejected.", "error")
+    if user.email_verified:
+        return _redirect_flash("/profile", "Your email is already verified.")
+    from scry import mail as _mail
+    from scry.auth import verification as _verification
+
+    if not _mail.smtp_configured(session):
+        # Locked decision: no mailer → verification auto-bypassed.
+        user.email_verified = True
+        session.flush()
+        _audit_profile(session, user, "email.verify.bypass")
+        return _redirect_flash(
+            "/profile", "SMTP not configured — email auto-verified.", "error"
+        )
+    if _verification.issue_pin(session, user) is None:
+        _audit_profile(session, user, "email.verify.send_failed")
+        return _redirect_flash(
+            "/profile",
+            "Could not send the verification email — check the SMTP settings.",
+            "error",
+        )
+    _audit_profile(session, user, "email.verify.send")
+    return _redirect_flash("/profile", f"Verification code sent to {user.email}.")
+
+
+@app.post("/profile/verify-email/confirm")
+def profile_verify_email_confirm(
+    request: Request,
+    session: Session = Depends(get_session),
+    csrf: str = Form(""),
+    code: str = Form(...),
+):
+    user = _profile_or_redirect(request, session)
+    if user is None:
+        raise HTTPException(403)
+    if not _check_admin_csrf(request, csrf):
+        return _redirect_flash("/profile", "Bad CSRF token — action rejected.", "error")
+    from scry.auth import verification as _verification
+
+    result = _verification.confirm_pin(session, user, code)
+    if result == "ok":
+        _audit_profile(session, user, "email.verify.confirm")
+        return _redirect_flash("/profile", "Email verified.")
+    if result == "expired":
+        return _redirect_flash("/profile", "That code has expired — request a new one.", "error")
+    if result == "invalidated":
+        return _redirect_flash(
+            "/profile",
+            "Too many wrong attempts — the code was invalidated. Request a new one.",
+            "error",
+        )
+    if result == "mismatch":
+        return _redirect_flash("/profile", "Incorrect code — try again.", "error")
+    return _redirect_flash(
+        "/profile", "No pending verification code — request one first.", "error"
+    )
+
+
+@app.post("/profile/api-keys")
+def profile_create_api_key(
+    request: Request,
+    session: Session = Depends(get_session),
+    csrf: str = Form(""),
+    name: str = Form(...),
+    expiry_days: str = Form(""),
+):
+    user = _profile_or_redirect(request, session)
+    if user is None:
+        raise HTTPException(403)
+    if not _check_admin_csrf(request, csrf):
+        return _redirect_flash("/profile", "Bad CSRF token — action rejected.", "error")
+    name = name.strip()
+    if not name:
+        return _redirect_flash("/profile", "A name/label is required for the API key.", "error")
+    expires_at = None
+    if expiry_days.strip():
+        try:
+            days = int(expiry_days)
+        except ValueError:
+            return _redirect_flash("/profile", f"Invalid expiry: {expiry_days!r}", "error")
+        if not 1 <= days <= _MAX_KEY_EXPIRY_DAYS:
+            return _redirect_flash(
+                "/profile", f"Expiry must be 1-{_MAX_KEY_EXPIRY_DAYS} days.", "error"
+            )
+        expires_at = datetime.now(UTC) + timedelta(days=days)
+    raw_key = "sk-" + secrets.token_urlsafe(32)
+    session.add(
+        ApiKey(
+            user_id=user.id,
+            name=name[:128],
+            key_hash=hash_token(raw_key),
+            prefix=raw_key[:_API_KEY_PREFIX_LEN],
+            expires_at=expires_at,
+        )
+    )
+    session.flush()
+    _audit_profile(
+        session, user, "api_key.create", {"name": name[:128], "expires_days": expiry_days or None}
+    )
+    # The full key is shown exactly once; afterwards only the prefix survives.
+    return _redirect_flash(
+        "/profile",
+        f"API key '{name[:128]}' created — copy it now, it is shown only once: {raw_key}",
+    )
+
+
+@app.post("/profile/api-keys/{key_id}/revoke")
+def profile_revoke_api_key(
+    key_id: int,
+    request: Request,
+    session: Session = Depends(get_session),
+    csrf: str = Form(""),
+):
+    user = _profile_or_redirect(request, session)
+    if user is None:
+        raise HTTPException(403)
+    if not _check_admin_csrf(request, csrf):
+        return _redirect_flash("/profile", "Bad CSRF token — action rejected.", "error")
+    api_key = session.scalar(select(ApiKey).where(ApiKey.id == key_id, ApiKey.user_id == user.id))
+    if api_key is None:
+        return _redirect_flash("/profile", "API key not found.", "error")
+    if api_key.revoked_at is not None:
+        return _redirect_flash("/profile", "That API key is already revoked.")
+    api_key.revoked_at = datetime.now(UTC)
+    session.flush()
+    _audit_profile(session, user, "api_key.revoke", {"name": api_key.name, "prefix": api_key.prefix})
+    return _redirect_flash("/profile", f"Revoked API key '{api_key.name}'.")
 
 
 # ------------------------- helpers -------------------------
@@ -1205,13 +1508,32 @@ def ui_reviews_bulk(
         )
     )
     now = datetime.now(UTC)
+    # Attribute the dispositions to the acting user (column already exists).
+    actor = _acting_username(request)
     for row in rows:
         row.status = "closed"
         row.disposition = disposition
         row.reviewed_at = now
+        if not row.analyst:
+            row.analyst = actor
     session.commit()
+    from scry.audit import record
+
+    record(
+        session,
+        action="review.bulk",
+        actor=actor,
+        target_type="analyst_review",
+        detail={"action": action, "count": len(rows)},
+    )
     verb = "approved" if action == "approve" else "rejected"
     return _redirect_flash("/ui/reviews", f"{len(rows)} reviews {verb}")
+
+
+def _acting_username(request: Request) -> str:
+    """The signed-in user behind a /ui/* POST ('system' in legacy open mode)."""
+    user = getattr(request.state, "user", None)
+    return user.username if user is not None else "system"
 
 
 @app.get("/ui/reviews", response_class=HTMLResponse)
@@ -1276,14 +1598,26 @@ def ui_review_patch(
 ):
     from scry.review import ReviewQueue
 
+    actor = _acting_username(request)
     queue = ReviewQueue(session)
     queue.update(
         review_id,
         status=status or None,
         disposition=disposition or None,
-        analyst=analyst or None,
+        # Attribute to the acting user unless the form names an analyst.
+        analyst=analyst or actor,
         comments=comments or None,
         correction=None,
+    )
+    from scry.audit import record
+
+    record(
+        session,
+        action="review.update",
+        actor=actor,
+        target_type="analyst_review",
+        target_id=review_id,
+        detail={"status": status, "disposition": disposition},
     )
     return _redirect_flash(f"/ui/reviews/{review_id}", f"Review #{review_id} updated")
 

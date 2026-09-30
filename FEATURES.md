@@ -124,7 +124,7 @@ prefix `v0.5.0 step N:`. Owner decisions locked 2026-09-29:
   Plus SMTP config (locked decision 4b): DB-stored admin SMTP server
   (scry/models/system.py + scry/mail.py) overriding env fallback, password
   encrypted, /admin test button, clean bypass when unconfigured.
-- [ ] **Step 3 — /profile + per-user scry API keys + email verification.**
+- [x] **Step 3 — /profile + per-user scry API keys + email verification.**
   /profile page: display name, change password (enforces must_change_password),
   email verification status + PIN entry UI; per-user API keys (create/revoke,
   masked after creation, last-used tracking); SMTP mailer module (scry/mail.py)

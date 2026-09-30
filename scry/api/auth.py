@@ -69,10 +69,16 @@ def require_api_key(request: Request) -> None:
 
     if has_users:
         # Browser/UI fetch calls carry the session cookie; per-user API keys
-        # plug in via validate_user_api_key (step 3).
-        if current_user(request) is not None:
+        # plug in via validate_user_api_key (step 3). The resolved user is
+        # stashed on request.state so endpoints (chat privacy) can apply
+        # per-user rules without re-validating.
+        user = current_user(request)
+        if user is not None:
+            request.state.api_user = user
             return
-        if validate_user_api_key(request) is not None:
+        user = validate_user_api_key(request)
+        if user is not None:
+            request.state.api_user = user
             return
 
     from scry.config import get_settings

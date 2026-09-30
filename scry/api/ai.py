@@ -18,7 +18,7 @@ import time
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -480,11 +480,16 @@ async def answer_question(
 
 
 @ai_router.post("/ask")
-async def ai_ask(payload: AskRequest, session: Session = Depends(get_session)) -> dict[str, Any]:
+async def ai_ask(
+    request: Request, payload: AskRequest, session: Session = Depends(get_session)
+) -> dict[str, Any]:
     chat = None
     history = None
     if payload.session_id is not None:
-        chat = load_chat_session(session, payload.session_id)
+        # Per-user privacy (v0.5.0 step 3): a session_id owned by someone
+        # else 404s, so neither history nor the exchange leaks across users.
+        user = getattr(request.state, "api_user", None)
+        chat = load_chat_session(session, payload.session_id, user=user)
         history = recent_turns(session, chat)
     try:
         result = await answer_question(session, payload.question, history=history)
