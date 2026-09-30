@@ -149,6 +149,6 @@ prefix `v0.5.0 step N:`. Owner decisions locked 2026-09-29:
   CTI_API_KEY into .env; add X-API-Key header to the three Dashboard widget
   automation scripts under the kimi-desktop blueprint dir (ask scry, AI
   provider, server status); verify each widget still works end-to-end.
-- [ ] **Step 8 — Release.** Bump 0.4.0 → 0.5.0 (pyproject, main.py app
+- [x] **Step 8 — Release.** Bump 0.4.0 → 0.5.0 (pyproject, main.py app
   version, CHANGELOG, README), tag v0.5.0, push, GitHub release via
   /opt/homebrew/bin/gh.

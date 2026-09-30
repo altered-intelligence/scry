@@ -4,6 +4,48 @@ All notable changes to Scry are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 semantic versioning.
 
+## [0.5.0] — 2026-09-30
+
+### Added
+
+- **User accounts** — bcrypt password hashes, DB-backed sessions (HttpOnly
+  cookie, sliding 7-day expiry, revoke-anywhere "log out everywhere"), login
+  throttling (5 failed attempts → 15-minute lockout), and a `scry users` CLI
+  (create / list / promote / demote / reset-password / disable / seed).
+  Email is required for all users.
+- **Full auth options per user** — each account can authenticate with its
+  password, **TOTP MFA** (Google Authenticator QR setup, verify-before-enable,
+  10 one-time recovery codes shown once), or **WebAuthn passkeys** (register
+  and rename on /profile, username-first login, satisfies MFA). The WebAuthn
+  relying party is derived per-request from the Host header, so passkeys work
+  on localhost today and on LAN/HTTPS later. Admins can force-disable a user's
+  MFA.
+- **Admin panel at /admin** — user management (create, edit role, disable,
+  reset password, delete), application stats, a failed-login / lockout panel,
+  session revocation, and an admin audit log.
+- **/profile page** — display name, password change (with must-change
+  enforcement at first login), email verification (6-digit PIN delivered via
+  SMTP when configured, auto-verified otherwise), and **per-user scry API
+  keys** (masked after creation, revocable, optional expiry, last-used
+  tracking).
+- **Admin SMTP configuration** — DB-stored SMTP server settings (password
+  Fernet-encrypted) with a test button and env fallback, powering all email
+  features; email verification and notifications bypass cleanly when unset.
+- **Per-user privacy** — AI chat sessions are owner-scoped (visible only to
+  their owner), and review/alert-ack actions are attributed to the acting
+  user. Intel data itself stays shared.
+- **API authentication** — once any user exists, `/api/*` and `/taxii2`
+  require a session cookie, a per-user API key, or the master `CTI_API_KEY`;
+  when no users exist the API stays legacy-open. Health and AI status/provider
+  endpoints stay exempt.
+- **Per-user VirusTotal/OTX keys on Threat Feeds** — personal feed keys with a
+  visible-while-typing, masked-after-save input and a Test button
+  (Connected/Failed badge); live verdict lookup on observable detail pages;
+  bulk "enrich unenriched" using personal keys with quota awareness; enrichment
+  coverage stats on /admin; and `scry feeds migrate-env-keys` to move existing
+  env keys into user profiles. User-triggered lookups use the acting user's
+  keys; background ingest/enrichment keeps using the system key.
+
 ## [0.4.0] — 2026-09-29
 
 ### Added

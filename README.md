@@ -18,6 +18,17 @@ A defensive cyber threat intelligence platform that ingests public sources, extr
 
 ---
 
+## What's new in 0.5.0
+
+- **User accounts** — bcrypt passwords, DB-backed sessions (sliding 7-day, revoke-anywhere), login throttling (5 fails → 15-min lockout), `scry users` CLI (create/list/promote/reset/disable/seed).
+- **MFA & passkeys** — TOTP (Google Authenticator QR, verify-before-enable, 10 one-time recovery codes) and WebAuthn passkeys (register on /profile, username-first login, satisfies MFA; works on localhost and LAN/HTTPS).
+- **Admin panel** — /admin user management, stats, failed-login/lockout panel, session revocation, audit log, and DB-stored SMTP config with test button.
+- **/profile** — display name, password change with must-change enforcement, email verification (6-digit PIN via SMTP when configured), per-user scry API keys (masked, revocable, expiry, last-used).
+- **API auth** — once any user exists, `/api/*` + `/taxii2` require a session cookie, per-user API key, or master `CTI_API_KEY`; legacy-open when no users.
+- **Per-user feed keys** — personal VirusTotal/OTX keys on Threat Feeds (Test → Connected/Failed), live verdict lookup on observables, bulk enrich-unenriched, coverage stats on /admin.
+
+See [CHANGELOG.md](./CHANGELOG.md) for details.
+
 ## What's new in 0.4.0
 
 - **Optional API token auth** — set `CTI_API_KEY` to require `X-API-Key` / `Bearer` on all `/api` + `/taxii2` routes (health & AI-status stay open).
@@ -32,6 +43,7 @@ See [CHANGELOG.md](./CHANGELOG.md) for details.
 
 ## What it does
 
+- **Authenticates** every user and API call — accounts with bcrypt passwords, TOTP MFA and WebAuthn passkeys, DB-backed sessions with sliding expiry, an admin panel, and per-user scry API keys. Once any user exists, `/api/*` and `/taxii2` require a session cookie, per-user key, or the master `CTI_API_KEY`.
 - **Ingests** public RSS / blogs / vendor research / CISA KEV / Reddit (and any source you add to `config/sources.yaml`) under per-source collection policies.
 - **Parses** articles (trafilatura → readability → bs4 fallback), normalizes Unicode, redacts credentials / API keys / private keys before indexing.
 - **Extracts** IPv4/IPv6, domains, URLs, defanged variants, emails, hashes (MD5/SHA1/SHA256/SHA512/SSDEEP/TLSH), CVEs, ATT&CK techniques, ASNs, onion, wallets, registry keys, named pipes, Telegram/Discord handles — with evidence text and confidence scores.
@@ -164,6 +176,23 @@ scry decay run
 scry stats
 ```
 
+## Users & authentication
+
+- **First run is open.** With no users in the database, the UI and API behave as before — everything is accessible. Create the first accounts with the CLI:
+
+  ```bash
+  scry users seed                # seeded admins: alakhani + admin (password "Batman911!#", must change at first login)
+  scry users create --username alice --email alice@example.com
+  scry users list | promote | reset-password | disable
+  ```
+
+  Once **any** user exists, authentication turns on automatically.
+- **Login** — `/login` takes username + password; 5 failed attempts lock the account for 15 minutes. Sessions are DB-backed HttpOnly cookies with a sliding 7-day expiry; "log out everywhere" revokes all sessions from /profile or /admin.
+- **MFA (TOTP)** — on /profile, scan the QR code with Google Authenticator, confirm one code, and MFA is enabled; 10 one-time recovery codes are shown once at setup. MFA is challenged at login when enabled; a recovery code works as a fallback.
+- **Passkeys (WebAuthn)** — register a passkey on /profile, then log in with username + passkey (no password). Passkey login satisfies MFA. The relying party is derived per-request from the Host header, so passkeys work on `localhost` now and on LAN/HTTPS hosts as-is.
+- **Master API key (`CTI_API_KEY`)** — a static key accepted on all `/api/*` and `/taxii2` routes via `X-API-Key` or `Authorization: Bearer`, constant-time compared. Useful for automation/Dashboard widgets.
+- **Per-user API keys** — created on /profile (masked after creation, revocable, optional expiry, last-used tracking). Once users exist, `/api/*` and `/taxii2` accept any of: session cookie, per-user API key, or master `CTI_API_KEY`. Exemptions that stay open: `/health`, `/api/ai/status`, `/api/ai/provider` GET, and `/login` + `/static`.
+
 ## Configuration
 
 | Knob | File | Default | Purpose |
@@ -174,23 +203,6 @@ scry stats
 | Collection policies | `config/policies.yaml` | `safe_public_web`, `public_social_metadata`, `metadata_only`, `passive_metadata_only`, `high_risk_disabled` | What kinds of fetching are allowed for each source |
 | Aliases | `config/aliases.yaml` | Conservative APT / ransomware / malware aliases | Canonical-name resolution |
 | Env vars | `.env` (see `.env.example`) | All risky knobs default to false | Toggle dark web, file downloads, outbound alerts, LLM provider |
-
-### API authentication
-
-All REST endpoints (`/api/*`, plus the api_router routes such as `/health`, `/articles`, `/stats`) accept an optional static API token. Set it in `.env`:
-
-```bash
-CTI_API_KEY=change-me-long-random-string
-```
-
-When `CTI_API_KEY` is empty (the default), every endpoint stays open — behavior is unchanged. When set, clients must pass the key on every request via either header:
-
-```bash
-curl -H "X-API-Key: change-me-long-random-string" http://localhost:8000/articles
-curl -H "Authorization: Bearer change-me-long-random-string" http://localhost:8000/articles
-```
-
-The key is compared in constant time; wrong or missing keys get `401` with a `WWW-Authenticate: Bearer` challenge. Exemptions that stay unauthenticated even with a key set: `/health` (monitoring) and `/api/ai/status` + `/api/ai/provider` (the Search-page provider picker). The HTML UI routes (`/ui/*`, dashboard) are never authenticated — if you expose Scry on a network, put the UI behind a reverse proxy or SSO instead.
 
 ### MCP server (AI clients)
 

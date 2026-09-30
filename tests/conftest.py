@@ -18,6 +18,9 @@ def _isolated_db(monkeypatch, tmp_path: Path):
     monkeypatch.setenv("CTI_ENV", "test")
     monkeypatch.setenv("CTI_ENABLE_DARK_WEB", "false")
     monkeypatch.setenv("CTI_ENABLE_FILE_DOWNLOADS", "false")
+    # Neutralize any real master key from .env so "no key = open" tests stay
+    # hermetic; tests that need a key set CTI_API_KEY explicitly.
+    monkeypatch.setenv("CTI_API_KEY", "")
 
     # Reset cached singletons
     from scry import config as _config
