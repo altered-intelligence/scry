@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+{% block title %}Admin · Scry{% endblock %}
+{% block content %}
+<h1>Admin control panel</h1>
+<div class="row" style="flex-wrap: wrap; margin-bottom: 18px;">
+  <a class="btn secondary" href="#users">Users</a>
+  <a class="btn secondary" href="#create-user">Create user</a>
+  <a class="btn secondary" href="#stats">Stats</a>
+  <a class="btn secondary" href="#security">Security</a>
+  <a class="btn secondary" href="#sessions">Sessions</a>
+  <a class="btn secondary" href="#smtp">SMTP</a>
+  <a class="btn secondary" href="#audit">Audit log</a>
+</div>
+
+{# ------------------------- users ------------------------- #}
+<div class="panel" id="users">
+  <h2 style="margin-top: 0;">Users</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Username</th><th>Display name</th><th>Email</th><th>Role</th><th>Status</th>
+        <th>Last login</th><th>Failed logins</th><th>Locked until</th><th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td><b>{{ u.username }}</b>{% if u.must_change_password %}
+          <span class="badge warn" title="Must change password at next login">pw</span>{% endif %}</td>
+        <td>{{ u.display_name or '—' }}</td>
+        <td>{{ u.email }}</td>
+        <td><span class="badge {{ 'purple' if u.role == 'admin' else 'gray' }}">{{ u.role }}</span></td>
+        <td><span class="badge {{ 'good' if u.status == 'active' else 'bad' }}">{{ u.status }}</span></td>
+        <td>{{ u.last_login_at|timeago }}</td>
+        <td>{{ u.failed_login_count }}</td>
+        <td>{{ u.locked_until|timeago }}</td>
+        <td>
+          <details class="reason-expand">
+            <summary class="btn secondary" style="font-size: 12px; padding: 4px 10px;">edit</summary>
+            <form method="post" action="/admin/users/{{ u.id }}/edit"
+                  style="display: grid; gap: 6px; margin-top: 8px; min-width: 220px;">
+              <input type="hidden" name="csrf" value="{{ csrf }}">
+              <input type="text" name="display_name" value="{{ u.display_name or '' }}" placeholder="Display name">
+              <input type="text" name="email" value="{{ u.email }}" required>
+              <select name="role">
+                <option value="user" {% if u.role == 'user' %}selected{% endif %}>user</option>
+                <option value="admin" {% if u.role == 'admin' %}selected{% endif %}>admin</option>
+              </select>
+              <button type="submit" class="btn" style="justify-self: start;">Save</button>
+            </form>
+          </details>
+          <form method="post" action="/admin/users/{{ u.id }}/toggle" style="display: inline;">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <button type="submit" class="btn secondary" style="font-size: 12px; padding: 4px 10px;">
+              {{ 'Disable' if u.status == 'active' else 'Enable' }}</button>
+          </form>
+          <form method="post" action="/admin/users/{{ u.id }}/reset-password" style="display: inline;">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <button type="submit" class="btn secondary" style="font-size: 12px; padding: 4px 10px;">Reset password</button>
+          </form>
+          <form method="post" action="/admin/users/{{ u.id }}/revoke-sessions" style="display: inline;">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <button type="submit" class="btn secondary" style="font-size: 12px; padding: 4px 10px;">Revoke sessions</button>
+          </form>
+          <form method="post" action="/admin/users/{{ u.id }}/delete" style="display: inline;"
+                onsubmit="return confirm('Delete user {{ u.username }}? This cannot be undone.');">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input type="hidden" name="confirm" value="{{ u.username }}">
+            <button type="submit" class="btn danger" style="font-size: 12px; padding: 4px 10px;">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{# ------------------------- create user ------------------------- #}
+<div class="panel" id="create-user">
+  <h2 style="margin-top: 0;">Create user</h2>
+  <form method="post" action="/admin/users/create" class="filters" style="align-items: end;">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>Username <input type="text" name="username" required></label>
+    <label>Email <input type="text" name="email" required placeholder="user@example.com"></label>
+    <label>Display name <input type="text" name="display_name"></label>
+    <label>Role
+      <select name="role"><option value="user">user</option><option value="admin">admin</option></select>
+    </label>
+    <label>Initial password <input type="text" name="password" placeholder="blank = auto-generate"></label>
+    <button type="submit" class="btn">Create</button>
+  </form>
+  <p class="muted">When the initial password is left blank, a temporary password is generated and
+  shown once; the user must change it at first login.</p>
+</div>
+
+{# ------------------------- stats ------------------------- #}
+<div class="panel" id="stats">
+  <h2 style="margin-top: 0;">Stats</h2>
+  <div class="grid">
+    <div class="card"><div class="num">{{ user_counts.users|format_number }}</div><div class="lbl">users</div></div>
+    <div class="card"><div class="num">{{ user_counts.admins|format_number }}</div><div class="lbl">admins</div></div>
+    <div class="card"><div class="num">{{ user_counts.active_sessions|format_number }}</div><div class="lbl">active sessions</div></div>
+    <div class="card"><div class="num">{{ user_counts.active_last_7d|format_number }}</div><div class="lbl">active last 7d</div></div>
+    <div class="card"><div class="num">{{ stats.articles|format_number }}</div><div class="lbl">articles</div></div>
+    <div class="card"><div class="num">{{ stats.observables|format_number }}</div><div class="lbl">observables</div></div>
+    <div class="card"><div class="num">{{ stats.cves|format_number }}</div><div class="lbl">CVEs</div></div>
+    <div class="card"><div class="num">{{ stats.alerts|format_number }}</div><div class="lbl">alerts</div></div>
+    <div class="card"><div class="num">{{ stats.threat_feed_items|format_number }}</div><div class="lbl">threat feed items</div></div>
+    <div class="card"><div class="num">{{ stats.ransomware_feed_items|format_number }}</div><div class="lbl">ransomware feed items</div></div>
+    <div class="card"><div class="num">{{ stats.open_reviews|format_number }}</div><div class="lbl">open reviews</div></div>
+    <div class="card"><div class="num">{{ stats.failed_fetches_last_24h|format_number }}</div><div class="lbl">failed fetches 24h</div></div>
+  </div>
+</div>
+
+{# ------------------------- security ------------------------- #}
+<div class="panel" id="security">
+  <h2 style="margin-top: 0;">Security</h2>
+  <h3>Currently locked accounts</h3>
+  {% if locked_users %}
+    <table>
+      <thead><tr><th>Username</th><th>Locked until</th><th>Failed logins</th></tr></thead>
+      <tbody>
+        {% for u in locked_users %}
+        <tr><td><b>{{ u.username }}</b></td><td>{{ u.locked_until|timeago }}</td><td>{{ u.failed_login_count }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">No locked accounts.</p>
+  {% endif %}
+  <h3>Recent failed logins</h3>
+  {% if failed_logins %}
+    <table>
+      <thead><tr><th>When</th><th>Username</th><th>Reason</th></tr></thead>
+      <tbody>
+        {% for entry in failed_logins %}
+        <tr>
+          <td>{{ entry.created_at|timeago }}</td>
+          <td>{{ entry.actor }}</td>
+          <td>{{ (entry.detail or {}).get('reason', 'bad credentials') }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">No failed logins recorded.</p>
+  {% endif %}
+</div>
+
+{# ------------------------- sessions ------------------------- #}
+<div class="panel" id="sessions">
+  <h2 style="margin-top: 0;">Active sessions</h2>
+  {% if sessions %}
+    <table>
+      <thead><tr><th>User</th><th>IP</th><th>User agent</th><th>Created</th><th>Last seen</th><th></th></tr></thead>
+      <tbody>
+        {% for token, u in sessions %}
+        <tr>
+          <td><b>{{ u.username }}</b></td>
+          <td>{{ token.ip or '—' }}</td>
+          <td class="truncate" style="max-width: 280px;">{{ token.user_agent or '—' }}</td>
+          <td>{{ token.created_at|timeago }}</td>
+          <td>{{ token.last_seen_at|timeago }}</td>
+          <td>
+            <form method="post" action="/admin/sessions/{{ token.id }}/revoke" style="display: inline;">
+              <input type="hidden" name="csrf" value="{{ csrf }}">
+              <button type="submit" class="btn danger" style="font-size: 12px; padding: 4px 10px;">Revoke</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">No active sessions.</p>
+  {% endif %}
+</div>
+
+{# ------------------------- smtp ------------------------- #}
+<div class="panel" id="smtp">
+  <h2 style="margin-top: 0;">SMTP configuration</h2>
+  <p>
+    Status:
+    {% if smtp.configured %}
+      <span class="badge good">configured</span>
+      <span class="muted">{{ smtp.config.host }}:{{ smtp.config.port }}
+        {% if 'host' in smtp.db_fields %}(DB){% else %}(env fallback){% endif %}</span>
+    {% else %}
+      <span class="badge gray">not configured</span>
+      <span class="muted">Email features (verification, password reset) are bypassed until an SMTP
+      server is set here or via the environment.</span>
+    {% endif %}
+  </p>
+  <form method="post" action="/admin/smtp/save" class="filters" style="align-items: end;">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>Host <input type="text" name="host" value="{{ smtp.config.host if 'host' in smtp.db_fields else '' }}"
+                       placeholder="{{ smtp.config.host if smtp.configured else 'smtp.example.com' }}"></label>
+    <label>Port <input type="text" name="port" value="{{ smtp.config.port if 'port' in smtp.db_fields else '465' }}" style="min-width: 80px;"></label>
+    <label>Username <input type="text" name="user" value="{{ smtp.config.user if 'user' in smtp.db_fields else '' }}"></label>
+    <label>Password <input type="password" name="password" placeholder="{{ '•••••• (set)' if smtp.db_password_set else 'optional' }}"></label>
+    <label>StartTLS
+      <select name="starttls">
+        <option value="off" {% if not smtp.config or not smtp.config.starttls %}selected{% endif %}>off</option>
+        <option value="on" {% if smtp.config and smtp.config.starttls %}selected{% endif %}>on</option>
+      </select>
+    </label>
+    <label>From address <input type="text" name="from_address"
+        value="{{ smtp.config.from_address if 'from_address' in smtp.db_fields else '' }}"
+        placeholder="{{ smtp.config.from_address if smtp.configured and smtp.config.from_address else 'scry@example.com' }}"></label>
+    <button type="submit" class="btn">Save</button>
+  </form>
+  <form method="post" action="/admin/smtp/test" class="filters" style="align-items: end;">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>Send test email to <input type="text" name="test_to" placeholder="leave blank to only check the connection"></label>
+    <button type="submit" class="btn secondary">Send test email</button>
+  </form>
+  <p class="muted">DB-stored values override the environment config
+  (<code>SMTP_HOST</code>, <code>SMTP_PORT</code>, …). Clearing the host removes the DB overrides.
+  The password is stored encrypted and never displayed.</p>
+</div>
+
+{# ------------------------- audit log ------------------------- #}
+<div class="panel" id="audit">
+  <h2 style="margin-top: 0;">Audit log <span class="muted">(last 100 entries)</span></h2>
+  {% if audit_entries %}
+    <table>
+      <thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Target</th><th>Detail</th></tr></thead>
+      <tbody>
+        {% for entry in audit_entries %}
+        <tr>
+          <td>{{ entry.created_at|timeago }}</td>
+          <td>{{ entry.actor }}</td>
+          <td><code>{{ entry.action }}</code></td>
+          <td>{{ entry.target_type or '—' }}{{ '#' ~ entry.target_id if entry.target_id is not none }}</td>
+          <td class="truncate" style="max-width: 360px;"><code>{{ entry.detail|tojson }}</code></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">No audit entries yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

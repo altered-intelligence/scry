@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import hmac
 import json
 import re
+import secrets
 from collections import Counter
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -15,7 +17,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
-from sqlalchemy import String, cast, func, or_, select
+from sqlalchemy import String, cast, delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from scry.api import api_router
@@ -23,20 +25,24 @@ from scry.api.ai import ai_router
 from scry.api.auth import require_api_key
 from scry.api.chat import chat_router
 from scry.api.deps import get_session
+from scry.api.router import compute_stats
 from scry.api.taxii import taxii_router
 from scry.auth.dependencies import current_user, path_requires_ui_auth
-from scry.auth.passwords import verify_password
+from scry.auth.passwords import hash_password, verify_password
 from scry.auth.sessions import (
     SESSION_COOKIE,
     SESSION_TTL,
     create_session,
+    hash_token,
     lockout_remaining,
     record_login_failure,
     record_login_success,
+    revoke_all_sessions,
     revoke_session,
     users_exist,
 )
 from scry.config import get_settings
+from scry.crypto import decrypt, encrypt
 from scry.db import get_engine, session_scope
 from scry.logging import configure_logging, get_logger
 from scry.models import (
@@ -44,6 +50,7 @@ from scry.models import (
     Alert,
     AnalystReview,
     Article,
+    AuditLog,
     Base,
     Claim,
     Entity,
@@ -52,8 +59,10 @@ from scry.models import (
     ObservableMention,
     RansomwareFeedItem,
     Relationship,
+    SessionToken,
     Source,
     SourceFetch,
+    SystemSetting,
     ThreatFeedItem,
     User,
 )
@@ -279,6 +288,441 @@ def logout(request: Request):
     response = RedirectResponse(url="/login", status_code=303)
     response.delete_cookie(SESSION_COOKIE, path="/")
     return response
+
+
+# ------------------------- admin (v0.5.0 step 2) -------------------------
+
+# The app otherwise uses plain POST forms without CSRF tokens (same-site
+# "lax" cookies already block cross-site posts). Admin actions additionally
+# carry a session-scoped CSRF token: the Fernet-encrypted sha256 of the
+# session cookie. It is derived from the HttpOnly cookie server-side, so an
+# attacker page cannot read or forge it, and it rotates with the session.
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_SMTP_KEY_PREFIX = "smtp."
+
+
+def _admin_csrf_token(raw_session: str) -> str:
+    return encrypt(hash_token(raw_session))
+
+
+def _check_admin_csrf(request: Request, form_token: str | None) -> bool:
+    raw = request.cookies.get(SESSION_COOKIE)
+    if not raw or not form_token:
+        return False
+    return hmac.compare_digest(decrypt(form_token), hash_token(raw))
+
+
+def _admin_or_none(request: Request) -> User | None:
+    """The acting admin (middleware already resolved request.state.user)."""
+    user = getattr(request.state, "user", None)
+    if user is None or user.role != "admin":
+        return None
+    return user
+
+
+def _audit_admin(session: Session, actor: User, action: str, target: User | None = None, detail: dict | None = None) -> None:
+    from scry.audit import record
+
+    record(
+        session,
+        action=action,
+        actor=actor.username,
+        target_type="user" if target is not None else None,
+        target_id=target.id if target is not None else None,
+        detail={"target": target.username, **(detail or {})} if target is not None else (detail or {}),
+    )
+
+
+def _admin_user_counts(session: Session) -> dict[str, int]:
+    now = datetime.now(UTC)
+    return {
+        "users": session.scalar(select(func.count(User.id))) or 0,
+        "admins": session.scalar(select(func.count(User.id)).where(User.role == "admin")) or 0,
+        "active_sessions": session.scalar(
+            select(func.count(SessionToken.id)).where(SessionToken.expires_at > now)
+        )
+        or 0,
+        "active_last_7d": session.scalar(
+            select(func.count(User.id)).where(User.last_login_at >= now - timedelta(days=7))
+        )
+        or 0,
+    }
+
+
+def _last_admin(session: Session, user: User) -> bool:
+    """True when ``user`` is the only admin account (protects against lockout)."""
+    if user.role != "admin":
+        return False
+    admins = session.scalar(select(func.count(User.id)).where(User.role == "admin")) or 0
+    return admins <= 1
+
+
+def _smtp_overview(session: Session) -> dict:
+    """Effective SMTP config + which fields come from the DB vs the env fallback."""
+    from scry.mail import SMTP_KEYS, get_smtp_config
+
+    db_keys = {
+        row.key.removeprefix(_SMTP_KEY_PREFIX): row.value
+        for row in session.scalars(select(SystemSetting).where(SystemSetting.key.like("smtp.%")))
+    }
+    config = get_smtp_config(session)
+    return {
+        "config": config,
+        "configured": config is not None,
+        "db_fields": {k for k in SMTP_KEYS if db_keys.get(k)},
+        "db_password_set": bool(db_keys.get("password")),
+    }
+
+
+@app.get("/admin", response_class=HTMLResponse)
+def admin_page(request: Request, session: Session = Depends(get_session)):
+    admin = _admin_or_none(request)
+    if request.state.user is None:
+        # Zero users → /login shows the setup note; otherwise middleware
+        # already redirected anonymous users here.
+        return RedirectResponse(url="/login", status_code=303)
+    if admin is None:
+        return templates.TemplateResponse(request, "403.html", {}, status_code=403)
+
+    users = list(session.scalars(select(User).order_by(User.id)))
+    now = datetime.now(UTC)
+    sessions_rows = list(
+        session.execute(
+            select(SessionToken, User)
+            .join(User, User.id == SessionToken.user_id)
+            .where(SessionToken.expires_at > now)
+            .order_by(SessionToken.last_seen_at.desc().nullslast(), SessionToken.id.desc())
+            .limit(100)
+        )
+    )
+    failed_logins = list(
+        session.scalars(
+            select(AuditLog).where(AuditLog.action == "login.failure").order_by(AuditLog.id.desc()).limit(50)
+        )
+    )
+    audit_entries = list(
+        session.scalars(select(AuditLog).order_by(AuditLog.id.desc()).limit(100))
+    )
+    return templates.TemplateResponse(
+        request,
+        "admin.html",
+        {
+            "admin": admin,
+            "csrf": _admin_csrf_token(request.cookies[SESSION_COOKIE]),
+            "users": users,
+            "user_counts": _admin_user_counts(session),
+            "stats": compute_stats(session),
+            "failed_logins": failed_logins,
+            "locked_users": [u for u in users if lockout_remaining(u) is not None],
+            "sessions": sessions_rows,
+            "audit_entries": audit_entries,
+            "smtp": _smtp_overview(session),
+        },
+    )
+
+
+@app.post("/admin/users/create")
+def admin_create_user(
+    request: Request,
+    session: Session = Depends(get_session),
+    csrf: str = Form(""),
+    username: str = Form(...),
+    email: str = Form(...),
+    display_name: str = Form(""),
+    role: str = Form("user"),
+    password: str = Form(""),
+):
+    admin = _admin_or_none(request)
+    if admin is None:
+        raise HTTPException(403)
+    if not _check_admin_csrf(request, csrf):
+        return _redirect_flash("/admin", "Bad CSRF token — action rejected.", "error")
+    if role not in ("user", "admin"):
+        return _redirect_flash("/admin", "Role must be 'user' or 'admin'.", "error")
+    email = email.strip()
+    if not _EMAIL_RE.match(email):
+        return _redirect_flash("/admin", f"Invalid email address: {email!r}", "error")
+    username = username.strip()
+    if not username:
+        return _redirect_flash("/admin", "Username is required.", "error")
+    if session.scalar(select(User).where(func.lower(User.username) == username.lower())):
+        return _redirect_flash("/admin", f"Username {username!r} already exists.", "error")
+    generated = not password
+    if generated:
+        password = secrets.token_urlsafe(9)
+    user = User(
+        username=username,
+        email=email,
+        display_name=display_name.strip() or None,
+        role=role,
+        password_hash=hash_password(password),
+        must_change_password=generated,
+    )
+    session.add(user)
+    session.flush()
+    _audit_admin(session, admin, "user.create", user, {"role": role})
+    if generated:
+        return _redirect_flash(
+            "/admin", f"Created user {username!r} — temporary password (shown once): {password}"
+        )
+    return _redirect_flash("/admin", f"Created user {username!r} ({role}).")
+
+
+def _get_target(session: Session, user_id: int) -> User | None:
+    return session.get(User, user_id)
+
+
+@app.post("/admin/users/{user_id}/edit")
+def admin_edit_user(
+    user_id: int,
+    request: Request,
+    session: Session = Depends(get_session),
+    csrf: str = Form(""),
+    email: str = Form(...),
+    display_name: str = Form(""),
+    role: str = Form("user"),
+):
+    admin = _admin_or_none(request)
+    if admin is None:
+        raise HTTPException(403)
+    if not _check_admin_csrf(request, csrf):
+        return _redirect_flash("/admin", "Bad CSRF token — action rejected.", "error")
+    user = _get_target(session, user_id)
+    if user is None:
+        return _redirect_flash("/admin", "User not found.", "error")
+    if role not in ("user", "admin"):
+        return _redirect_flash("/admin", "Role must be 'user' or 'admin'.", "error")
+    if role != user.role and _last_admin(session, user):
+        return _redirect_flash("/admin", f"{user.username} is the last admin — role change blocked.", "error")
+    if user.id == admin.id and role != admin.role:
+        return _redirect_flash("/admin", "You cannot change your own role.", "error")
+    email = email.strip()
+    if not _EMAIL_RE.match(email):
+        return _redirect_flash("/admin", f"Invalid email address: {email!r}", "error")
+    user.email = email
+    user.display_name = display_name.strip() or None
+    user.role = role
+    session.flush()
+    _audit_admin(session, admin, "user.update", user, {"role": role})
+    return _redirect_flash("/admin", f"Updated {user.username!r}.")
+
+
+@app.post("/admin/users/{user_id}/toggle")
+def admin_toggle_user(
+    user_id: int,
+    request: Request,
+    session: Session = Depends(get_session),
+    csrf: str = Form(""),
+):
+    admin = _admin_or_none(request)
+    if admin is None:
+        raise HTTPException(403)
+    if not _check_admin_csrf(request, csrf):
+        return _redirect_flash("/admin", "Bad CSRF token — action rejected.", "error")
+    user = _get_target(session, user_id)
+    if user is None:
+        return _redirect_flash("/admin", "User not found.", "error")
+    if user.id == admin.id:
+        return _redirect_flash("/admin", "You cannot disable your own account.", "error")
+    if user.status == "active":
+        user.status = "disabled"
+        revoked = revoke_all_sessions(session, user.id)
+        session.flush()
+        _audit_admin(session, admin, "user.disable", user, {"revoked_sessions": revoked})
+        return _redirect_flash("/admin", f"Disabled {user.username!r} ({revoked} session(s) revoked).")
+    user.status = "active"
+    session.flush()
+    _audit_admin(session, admin, "user.enable", user)
+    return _redirect_flash("/admin", f"Enabled {user.username!r}.")
+
+
+@app.post("/admin/users/{user_id}/reset-password")
+def admin_reset_password(
+    user_id: int,
+    request: Request,
+    session: Session = Depends(get_session),
+    csrf: str = Form(""),
+):
+    admin = _admin_or_none(request)
+    if admin is None:
+        raise HTTPException(403)
+    if not _check_admin_csrf(request, csrf):
+        return _redirect_flash("/admin", "Bad CSRF token — action rejected.", "error")
+    user = _get_target(session, user_id)
+    if user is None:
+        return _redirect_flash("/admin", "User not found.", "error")
+    temp = secrets.token_urlsafe(9)
+    user.password_hash = hash_password(temp)
+    user.must_change_password = True
+    user.failed_login_count = 0
+    user.locked_until = None
+    revoked = revoke_all_sessions(session, user.id)
+    session.flush()
+    _audit_admin(session, admin, "user.reset_password", user, {"revoked_sessions": revoked})
+    return _redirect_flash(
+        "/admin",
+        f"Password reset for {user.username!r} ({revoked} session(s) revoked) — "
+        f"temporary password (shown once): {temp}",
+    )
+
+
+@app.post("/admin/users/{user_id}/delete")
+def admin_delete_user(
+    user_id: int,
+    request: Request,
+    session: Session = Depends(get_session),
+    csrf: str = Form(""),
+    confirm: str = Form(""),
+):
+    admin = _admin_or_none(request)
+    if admin is None:
+        raise HTTPException(403)
+    if not _check_admin_csrf(request, csrf):
+        return _redirect_flash("/admin", "Bad CSRF token — action rejected.", "error")
+    user = _get_target(session, user_id)
+    if user is None:
+        return _redirect_flash("/admin", "User not found.", "error")
+    if _last_admin(session, user):
+        return _redirect_flash("/admin", f"{user.username} is the last admin — deletion blocked.", "error")
+    if user.id == admin.id:
+        return _redirect_flash("/admin", "You cannot delete your own account.", "error")
+    if confirm != user.username:
+        return _redirect_flash(
+            "/admin", f"Deletion not confirmed — type the username ({user.username}) to confirm.", "error"
+        )
+    username = user.username
+    session.delete(user)  # session tokens cascade
+    _audit_admin(session, admin, "user.delete", detail={"username": username})
+    return _redirect_flash("/admin", f"Deleted user {username!r}.")
+
+
+@app.post("/admin/users/{user_id}/revoke-sessions")
+def admin_revoke_user_sessions(
+    user_id: int,
+    request: Request,
+    session: Session = Depends(get_session),
+    csrf: str = Form(""),
+):
+    admin = _admin_or_none(request)
+    if admin is None:
+        raise HTTPException(403)
+    if not _check_admin_csrf(request, csrf):
+        return _redirect_flash("/admin", "Bad CSRF token — action rejected.", "error")
+    user = _get_target(session, user_id)
+    if user is None:
+        return _redirect_flash("/admin", "User not found.", "error")
+    revoked = revoke_all_sessions(session, user.id)
+    _audit_admin(session, admin, "session.revoke_all", user, {"revoked": revoked})
+    return _redirect_flash("/admin", f"Revoked {revoked} session(s) for {user.username!r}.")
+
+
+@app.post("/admin/sessions/{token_id}/revoke")
+def admin_revoke_session(
+    token_id: int,
+    request: Request,
+    session: Session = Depends(get_session),
+    csrf: str = Form(""),
+):
+    admin = _admin_or_none(request)
+    if admin is None:
+        raise HTTPException(403)
+    if not _check_admin_csrf(request, csrf):
+        return _redirect_flash("/admin", "Bad CSRF token — action rejected.", "error")
+    token = session.get(SessionToken, token_id)
+    if token is None:
+        return _redirect_flash("/admin", "Session not found.", "error")
+    owner = session.get(User, token.user_id)
+    username = owner.username if owner is not None else "?"
+    session.delete(token)
+    _audit_admin(session, admin, "session.revoke", detail={"username": username})
+    return _redirect_flash("/admin", f"Revoked session #{token_id} ({username}).")
+
+
+@app.post("/admin/smtp/save")
+def admin_smtp_save(
+    request: Request,
+    session: Session = Depends(get_session),
+    csrf: str = Form(""),
+    host: str = Form(""),
+    port: str = Form("465"),
+    user: str = Form(""),
+    password: str = Form(""),
+    starttls: str | None = Form(None),
+    from_address: str = Form(""),
+):
+    admin = _admin_or_none(request)
+    if admin is None:
+        raise HTTPException(403)
+    if not _check_admin_csrf(request, csrf):
+        return _redirect_flash("/admin", "Bad CSRF token — action rejected.", "error")
+    from scry.mail import save_smtp_config
+
+    host = host.strip()
+    if not host:
+        # Blank host clears the DB overrides — the env config becomes effective again.
+        session.execute(delete(SystemSetting).where(SystemSetting.key.like("smtp.%")))
+        _audit_admin(session, admin, "smtp.clear")
+        return _redirect_flash("/admin", "SMTP config cleared — env values (if any) apply.")
+    try:
+        port_num = int(port)
+    except ValueError:
+        return _redirect_flash("/admin", f"Invalid port: {port!r}", "error")
+    if not 1 <= port_num <= 65535:
+        return _redirect_flash("/admin", f"Invalid port: {port_num}", "error")
+    if not from_address.strip() or not _EMAIL_RE.match(from_address.strip()):
+        return _redirect_flash("/admin", "A valid from address is required.", "error")
+    existing = session.scalar(select(SystemSetting).where(SystemSetting.key == "smtp.password"))
+    if not password and existing is not None and existing.value:
+        password_encrypted = existing.value  # keep the stored secret when left blank
+        save_smtp_config(
+            session,
+            host=host,
+            port=port_num,
+            user=user,
+            password="",
+            starttls=starttls == "on",
+            from_address=from_address,
+        )
+        session.flush()
+        existing.value = password_encrypted
+    else:
+        save_smtp_config(
+            session,
+            host=host,
+            port=port_num,
+            user=user,
+            password=password,
+            starttls=starttls == "on",
+            from_address=from_address,
+        )
+    session.flush()
+    _audit_admin(session, admin, "smtp.update", detail={"host": host, "port": port_num})
+    return _redirect_flash("/admin", f"SMTP config saved for {host}:{port_num}.")
+
+
+@app.post("/admin/smtp/test")
+def admin_smtp_test(
+    request: Request,
+    session: Session = Depends(get_session),
+    csrf: str = Form(""),
+    test_to: str = Form(""),
+):
+    admin = _admin_or_none(request)
+    if admin is None:
+        raise HTTPException(403)
+    if not _check_admin_csrf(request, csrf):
+        return _redirect_flash("/admin", "Bad CSRF token — action rejected.", "error")
+    from scry.mail import test_smtp
+
+    to = test_to.strip() or None
+    if to and not _EMAIL_RE.match(to):
+        return _redirect_flash("/admin", f"Invalid test address: {to!r}", "error")
+    ok, error = test_smtp(session, to=to)
+    _audit_admin(session, admin, "smtp.test", detail={"ok": ok, "to": to})
+    if ok:
+        target = f" to {to}" if to else ""
+        return _redirect_flash("/admin", f"SMTP test OK{target}.")
+    return _redirect_flash("/admin", f"SMTP test failed: {error}", "error")
 
 
 # ------------------------- helpers -------------------------

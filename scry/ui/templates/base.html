@@ -417,6 +417,9 @@
       </div>
     </div>
     <a href="/ui/search">Search</a>
+    {% if request.state.user and request.state.user.role == 'admin' %}
+      <a href="/admin">Admin</a>
+    {% endif %}
     <a href="/docs" target="_blank" rel="noopener">API</a>
     <span class="spacer"></span>
     {% if request.state.user %}

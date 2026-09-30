@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}403 · Scry{% endblock %}
+{% block content %}
+<div class="panel" style="max-width: 460px; margin: 48px auto;">
+  <h1 style="font-size: 20px;">403 — Admins only</h1>
+  <p class="muted" style="font-size: 14px;">
+    Your account <b>{{ request.state.user.username }}</b> does not have the admin role
+    required to view the control panel.
+  </p>
+  <a class="btn secondary" href="/">Back to dashboard</a>
+</div>
+{% endblock %}

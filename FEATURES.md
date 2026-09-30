@@ -117,10 +117,13 @@ prefix `v0.5.0 step N:`. Owner decisions locked 2026-09-29:
   OR master CTI_API_KEY (per-user keys land in step 3 — design the dependency
   so keys are pluggable); exemptions /health /api/health /api/ai/status
   /api/ai/provider GET stay as today.
-- [ ] **Step 2 — Roles + /admin.** Role column (user|admin); /admin gated to
+- [x] **Step 2 — Roles + /admin.** Role column (user|admin); /admin gated to
   admins (403 page otherwise); admin dashboard: user table (create/edit role/
   disable/reset password/delete), app stats reuse, failed-logins/lockouts
   panel, admin audit via scry/audit.py. Nav link visible to admins only.
+  Plus SMTP config (locked decision 4b): DB-stored admin SMTP server
+  (scry/models/system.py + scry/mail.py) overriding env fallback, password
+  encrypted, /admin test button, clean bypass when unconfigured.
 - [ ] **Step 3 — /profile + per-user scry API keys + email verification.**
   /profile page: display name, change password (enforces must_change_password),
   email verification status + PIN entry UI; per-user API keys (create/revoke,

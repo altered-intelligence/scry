@@ -21,6 +21,7 @@ from scry.models.observable import Observable, ObservableMention
 from scry.models.ransomware_feed import RansomwareFeedItem
 from scry.models.relationship import Relationship
 from scry.models.source import Source, SourceFetch, SourceReliabilityProfile
+from scry.models.system import SystemSetting
 from scry.models.telegram_channel import TelegramChannel
 from scry.models.threat_feed import ThreatFeedItem
 from scry.models.threat_intel_source import ThreatIntelSource
@@ -63,6 +64,7 @@ __all__ = [
     "Source",
     "SourceFetch",
     "SourceReliabilityProfile",
+    "SystemSetting",
     "TelegramChannel",
     "ThreatActor",
     "ThreatFeedItem",
