@@ -145,7 +145,7 @@ prefix `v0.5.0 step N:`. Owner decisions locked 2026-09-29:
   acting user's keys; observable detail verdict panel (live lookup, personal
   key); bulk "enrich unenriched" with quota guard; enriched badges in
   observable lists; enrichment coverage stats (admin).
-- [ ] **Step 7 — Master key + widget wiring.** Generate strong random
+- [x] **Step 7 — Master key + widget wiring.** Generate strong random
   CTI_API_KEY into .env; add X-API-Key header to the three Dashboard widget
   automation scripts under the kimi-desktop blueprint dir (ask scry, AI
   provider, server status); verify each widget still works end-to-end.
