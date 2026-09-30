@@ -34,7 +34,7 @@ Conventions for every step:
   Thin adapters over existing service functions (import, don't reimplement).
   CLI entry `scry mcp` in `scry/cli.py`. README section with client config
   snippets (Claude Desktop / Cursor). Tests for tool handlers.
-- [ ] **Step 3 — AI-synthesized briefs.** `POST /api/reports/brief?scope=daily|weekly`
+- [x] **Step 3 — AI-synthesized briefs.** `POST /api/reports/brief?scope=daily|weekly`
   pipes the existing plain-text report through the active `resolve_ai_provider`
   LLM into an executive summary; result cached in-memory per scope/day.
   UI button on reports area + `scry reporting brief --scope daily` CLI. Reuse

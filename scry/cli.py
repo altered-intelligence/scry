@@ -11,6 +11,7 @@ Commands:
   semantic-search <query>  Semantic search (articles)
   report daily             Print the daily report
   report weekly            Print the weekly report
+  reporting brief          AI-synthesized executive briefing (--scope daily|weekly)
   sources list             List sources
   sources test             Run policy checks for each enabled source
   reviews list             List open analyst reviews
@@ -30,6 +31,7 @@ from rich.console import Console
 from rich.table import Table
 from sqlalchemy import func, select
 
+from scry.ai.errors import AskError
 from scry.db import get_engine, session_scope
 from scry.enrichment import EnrichmentEngine
 from scry.ingestion import IngestionEngine
@@ -45,7 +47,7 @@ from scry.models import (
     Source,
 )
 from scry.pipeline import CTIPipeline
-from scry.reporting import generate_daily_report, generate_weekly_report
+from scry.reporting import generate_brief, generate_daily_report, generate_weekly_report
 from scry.scoring.lifecycle import LifecycleEngine
 from scry.search import full_text_search, semantic_search
 
@@ -247,6 +249,32 @@ def report_daily(since_hours: int = 24) -> None:
 def report_weekly() -> None:
     with session_scope() as session:
         sys.stdout.write(generate_weekly_report(session))
+
+
+reporting_app = typer.Typer(help="AI-synthesized reporting")
+app.add_typer(reporting_app, name="reporting")
+
+
+@reporting_app.command("brief")
+def reporting_brief(scope: str = typer.Option("daily", "--scope")) -> None:
+    """Synthesize an executive briefing from the daily/weekly report via the active LLM."""
+
+    if scope not in ("daily", "weekly"):
+        console.print("[red]--scope must be 'daily' or 'weekly'[/red]")
+        raise typer.Exit(2)
+
+    async def _run():
+        with session_scope() as session:
+            return await generate_brief(session, scope)
+
+    try:
+        result = asyncio.run(_run())
+    except AskError as exc:
+        console.print(f"[red]{exc.detail}[/red]")
+        raise typer.Exit(1) from None
+    note = " · cached" if result["cached"] else ""
+    console.print(f"[dim]{result['model']} · {result['elapsed_ms']} ms{note}[/dim]")
+    sys.stdout.write(result["brief"] + "\n")
 
 
 sources_app = typer.Typer(help="Source management")

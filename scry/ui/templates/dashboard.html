@@ -134,10 +134,33 @@
         <li><a href="/ui/tags">Browse tags</a></li>
         <li><a href="/ui/sources">Manage sources</a></li>
         <li><a href="/reports/daily" target="_blank">Daily report</a></li>
+        <li><a href="/reports/weekly" target="_blank">Weekly report</a></li>
         <li><a href="/ui/intel-feeds/threat-feeds?category=Data+Breach">Data breaches</a></li>
         <li><a href="/ui/intel-feeds/threat-feeds?category=Initial+Access">Initial access listings</a></li>
         <li><a href="/ui/intel-feeds/threat-feeds?network=tor">Dark web items</a></li>
       </ul>
+
+      <h3>AI briefing</h3>
+      <div class="row" style="gap:8px;margin-bottom:6px">
+        <button class="btn" type="button" onclick="loadBrief('daily')">Daily</button>
+        <button class="btn" type="button" onclick="loadBrief('weekly')">Weekly</button>
+      </div>
+      <pre id="brief-out" class="muted" style="display:none;white-space:pre-wrap;font-size:12px;max-height:420px;overflow:auto;background:rgba(0,0,0,.15);padding:8px;border-radius:6px"></pre>
+      <script>
+      async function loadBrief(scope) {
+        const out = document.getElementById('brief-out');
+        out.style.display = 'block';
+        out.textContent = 'Generating ' + scope + ' briefing… (first run loads the model)';
+        try {
+          const r = await fetch('/api/reports/brief?scope=' + scope, {method: 'POST'});
+          const body = await r.json();
+          if (!r.ok) { out.textContent = 'Briefing unavailable: ' + (body.detail || ('HTTP ' + r.status)); return; }
+          out.textContent = body.brief + '\n\n— ' + body.model + ' · ' + body.elapsed_ms + ' ms' + (body.cached ? ' · cached' : '');
+        } catch (err) {
+          out.textContent = 'Briefing request failed: ' + err;
+        }
+      }
+      </script>
     </div>
   </aside>
 </div>

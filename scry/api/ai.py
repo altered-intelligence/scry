@@ -22,9 +22,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from scry.ai.errors import AskError
 from scry.ai.prompts import AI_SEARCH_SYSTEM_PROMPT, build_ai_search_user_prompt
 from scry.ai.providers.local import LocalLlamaProvider
 from scry.ai.registry import PROVIDER_CLASSES, resolve_ai_provider
+from scry.ai.registry import provider_model as _provider_model
 from scry.api.deps import get_session
 from scry.audit import record
 from scry.config import get_settings
@@ -175,20 +177,6 @@ def _resolve_provider(session: Session):
     """Provider that will answer the next question (None if none usable)."""
     provider, _ = resolve_ai_provider(session)
     return provider
-
-
-def _provider_model(provider) -> str:
-    """Model identifier to pass to chat_stream for this provider."""
-    if getattr(provider, "name", "") == "local" and hasattr(provider, "model_path"):
-        return str(provider.model_path).split("/")[-1]
-    if getattr(provider, "default_model", ""):
-        return provider.default_model
-    list_models = getattr(provider, "list_models", None)
-    if callable(list_models):
-        models = list_models()
-        if models:
-            return models[0].model_id
-    return ""
 
 
 def _collect_sources(session: Session, question: str, limit: int) -> list[dict[str, Any]]:
@@ -369,19 +357,8 @@ async def ai_provider_configure(
     return entry
 
 
-class AskError(Exception):
-    """A question could not be answered — carries an HTTP-style status + message.
-
-    Raised by `answer_question` so the HTTP endpoint (maps it to
-    HTTPException) and the MCP `scry_ask` tool (maps it to an error dict)
-    share one implementation without web exceptions leaking into the MCP
-    server.
-    """
-
-    def __init__(self, status_code: int, detail: str) -> None:
-        self.status_code = status_code
-        self.detail = detail
-        super().__init__(detail)
+# AskError lives in scry.ai.errors (shared with reporting briefs); it is
+# re-exported here via the import above so existing imports keep working.
 
 
 async def answer_question(session: Session, question: str) -> dict[str, Any]:

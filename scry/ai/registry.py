@@ -127,3 +127,17 @@ def resolve_ai_provider(session: Session) -> tuple[LLMProvider | None, str]:
     if ollama.is_available():
         return ollama, "ollama"
     return None, ""
+
+
+def provider_model(provider) -> str:
+    """Model identifier to pass to chat_stream for this provider."""
+    if getattr(provider, "name", "") == "local" and hasattr(provider, "model_path"):
+        return str(provider.model_path).split("/")[-1]
+    if getattr(provider, "default_model", ""):
+        return provider.default_model
+    list_models = getattr(provider, "list_models", None)
+    if callable(list_models):
+        models = list_models()
+        if models:
+            return models[0].model_id
+    return ""

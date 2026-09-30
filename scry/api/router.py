@@ -10,13 +10,14 @@ All endpoints are mounted here. Mountpoints follow the spec:
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from scry.ai.errors import AskError
 from scry.alerting import AlertEngine
 from scry.api.deps import get_session
 from scry.audit import record as audit_record
@@ -52,7 +53,7 @@ from scry.models import (
 from scry.models.ransomware_feed import RansomwareFeedItem
 from scry.models.threat_feed import ThreatFeedItem
 from scry.pipeline import CTIPipeline
-from scry.reporting import generate_daily_report, generate_weekly_report
+from scry.reporting import generate_brief, generate_daily_report, generate_weekly_report
 from scry.review import ReviewQueue
 from scry.schemas import (
     ArticleOut,
@@ -540,6 +541,23 @@ def report_daily(since_hours: int = 24, session: Session = Depends(get_session))
 @api_router.get("/reports/weekly", response_class=PlainTextResponse)
 def report_weekly(session: Session = Depends(get_session)):
     return generate_weekly_report(session)
+
+
+@api_router.post("/reports/brief")
+@api_router.post("/api/reports/brief")
+async def report_brief(
+    scope: Literal["daily", "weekly"] = "daily",
+    session: Session = Depends(get_session),
+):
+    """AI-synthesized executive briefing of the daily/weekly report (cached per day).
+
+    Registered under both /reports/brief (sibling of /reports/daily|weekly)
+    and /api/reports/brief (the canonical REST prefix used elsewhere in docs).
+    """
+    try:
+        return await generate_brief(session, scope)
+    except AskError as exc:
+        raise HTTPException(exc.status_code, detail=exc.detail) from None
 
 
 @api_router.post("/exports/json", response_class=PlainTextResponse)
