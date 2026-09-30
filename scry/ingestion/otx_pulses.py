@@ -36,6 +36,7 @@ logger = get_logger("otx_pulses")
 
 OTX_BASE_URL = "https://otx.alienvault.com"
 SEARCH_URL = f"{OTX_BASE_URL}/api/v1/search/pulses"
+PULSE_DETAIL_URL = f"{OTX_BASE_URL}/api/v1/pulses/{{pulse_id}}"
 PULSE_PAGE_URL = f"{OTX_BASE_URL}/pulse/{{pulse_id}}"
 PARSER_VERSION = "0.1"
 
@@ -160,6 +161,13 @@ class OTXPulseClient:
         results = data.get("results") or []
         return [p for p in results if isinstance(p, dict)][:limit]
 
+    def get_pulse(self, pulse_id: str) -> dict[str, Any]:
+        """Fetch one pulse's full detail (search results omit tags)."""
+        r = self._client.get(PULSE_DETAIL_URL.format(pulse_id=pulse_id))
+        r.raise_for_status()
+        data = r.json()
+        return data if isinstance(data, dict) else {}
+
 
 def _parse_ts(value: Any) -> datetime | None:
     if not value or not isinstance(value, str):
@@ -241,8 +249,20 @@ def pull_subscription(client: OTXPulseClient, sub: PulseSubscription, session: S
             continue
         tags = _pulse_tags(pulse)
         if sub.tags and not {t.lower() for t in sub.tags} & {t.lower() for t in tags}:
-            counts["filtered"] += 1
-            continue
+            # OTX search results omit tags (always []) — fetch the pulse
+            # detail before rejecting on a tag filter.
+            # (live incident 2026-09-30: an all-25-filtered pull)
+            try:
+                detail = client.get_pulse(pulse_id)
+            except Exception as exc:
+                logger.warning("otx_pulse_detail_failed", pulse_id=pulse_id, error=str(exc))
+                detail = {}
+            detail_tags = _pulse_tags(detail)
+            if detail_tags:
+                tags = detail_tags
+            if not {t.lower() for t in sub.tags} & {t.lower() for t in tags}:
+                counts["filtered"] += 1
+                continue
 
         url = PULSE_PAGE_URL.format(pulse_id=pulse_id)
         title = (pulse.get("name") or "").strip() or "(untitled pulse)"

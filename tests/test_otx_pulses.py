@@ -274,6 +274,28 @@ class TestPullSubscription:
         assert art.url.endswith("/pulse/t1")
 
     @respx.mock
+    def test_tag_filter_fetches_detail_when_search_omits_tags(self, session):
+        # OTX search results always carry tags: [] — the pull must fetch the
+        # pulse detail to evaluate a tag filter (same live incident).
+        from scry.ingestion.otx_pulses import PULSE_DETAIL_URL, OTXPulseClient, pull_subscription
+
+        mock_search([pulse("t1"), pulse("t2")])
+        respx.get(PULSE_DETAIL_URL.format(pulse_id="t1")).mock(
+            return_value=httpx.Response(200, json=pulse("t1", tags=["Ransomware"]))
+        )
+        respx.get(PULSE_DETAIL_URL.format(pulse_id="t2")).mock(
+            return_value=httpx.Response(200, json=pulse("t2", tags=["apt"]))
+        )
+        s = sub(tags=["ransomware"])
+
+        with OTXPulseClient(SYS_OTX_KEY) as client:
+            counts = pull_subscription(client, s, session)
+        assert counts["added"] == 1 and counts["filtered"] == 1
+        art = session.scalar(select(Article))
+        assert art.url.endswith("/pulse/t1")
+        assert "ransomware" in [t.lower() for t in art.tags]
+
+    @respx.mock
     def test_limit_caps_results(self, session):
         mock_search([pulse(f"p{i}") for i in range(10)])
         s = sub(limit=3)
