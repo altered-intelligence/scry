@@ -72,8 +72,15 @@ class Settings(BaseSettings):
     # Alert channels (off until explicitly enabled)
     slack_webhook_url: str = ""
     teams_webhook_url: str = ""
+    webhook_url: str = ""  # generic JSON webhook
     alert_email_from: str = ""
     alert_email_to: str = ""
+    smtp_host: str = ""
+    smtp_port: int = 465
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_starttls: bool = False
+    notify_desktop: bool = False  # macOS desktop notifications via osascript
 
     # Optional integrations (legacy fields for backwards compatibility)
     misp_key: str = ""

@@ -699,8 +699,18 @@ def ui_alerts(
     total = session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     alerts = list(session.scalars(stmt.offset(offset).limit(limit)))
     filters = {"limit": limit, "offset": offset, "qs": ""}
+    from scry.alerting.channels import channel_status
+
     return templates.TemplateResponse(
-        request, "alerts.html", {"alerts": alerts, "total": total, "filters": filters}
+        request,
+        "alerts.html",
+        {
+            "alerts": alerts,
+            "total": total,
+            "filters": filters,
+            "channels": channel_status(),
+            "outbound_enabled": get_settings().enable_outbound_alerts,
+        },
     )
 
 

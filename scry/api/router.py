@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from scry.ai.errors import AskError
 from scry.alerting import AlertEngine
+from scry.alerting.channels import deliver_test
 from scry.api.deps import get_session
 from scry.audit import record as audit_record
 from scry.clustering import cluster_articles
@@ -32,6 +33,7 @@ from scry.exports import (
     export_stix_like_bundle,
 )
 from scry.ingestion import IngestionEngine
+from scry.logging import get_logger
 from scry.models import (
     CVE,
     Alert,
@@ -71,6 +73,8 @@ from scry.schemas import (
 )
 from scry.scoring.lifecycle import LifecycleEngine
 from scry.search import full_text_search, semantic_search
+
+logger = get_logger("api")
 
 api_router = APIRouter()
 
@@ -173,6 +177,13 @@ async def ingest_run(session: Session = Depends(get_session)):
     pipeline = CTIPipeline(session)
     for art in session.scalars(select(Article).where(Article.extractor_version == "0")):
         pipeline.process_article(art)
+    # Auto-evaluate triggers on the fresh data so alerts land right after
+    # ingest. Failures are logged and never break the ingest response.
+    try:
+        created = AlertEngine(session).evaluate()
+        res = {**res, "alerts_created": len(created)}
+    except Exception as exc:
+        logger.warning("post_ingest_evaluate_failed", exc=str(exc))
     return res
 
 
@@ -417,6 +428,12 @@ def list_alerts(session: Session = Depends(get_session), limit: int = 100):
 def run_alerts(session: Session = Depends(get_session)):
     created = AlertEngine(session).evaluate()
     return {"created": len(created)}
+
+
+@api_router.post("/alerts/test")
+def alerts_test() -> dict[str, bool]:
+    """Send a test message through every configured notification channel."""
+    return deliver_test()
 
 
 @api_router.get("/watchlists")

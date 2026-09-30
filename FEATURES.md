@@ -40,7 +40,7 @@ Conventions for every step:
   UI button on reports area + `scry reporting brief --scope daily` CLI. Reuse
   provider/registry code from `scry/api/ai.py` (factor shared helper if clean).
   Tests with stub provider.
-- [ ] **Step 4 — Alert notifications.** Extend `scry/alerting/channels.py`:
+- [x] **Step 4 — Alert notifications.** Extend `scry/alerting/channels.py`:
   generic webhook (`CTI_WEBHOOK_URL`), email via SMTP
   (`CTI_ALERT_EMAIL_*` + `CTI_SMTP_HOST/PORT/USER/PASSWORD`), macOS desktop
   notification (`osascript`, no extra deps). Add `POST /api/alerts/test` that

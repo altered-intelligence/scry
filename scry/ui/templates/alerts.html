@@ -6,6 +6,68 @@
 <h1>Alerts</h1>
 
 <div class="panel">
+  <h2>Notification channels</h2>
+  <p>
+    Outbound alerts:
+    {% if outbound_enabled %}<span class="badge good">enabled</span>{% else %}<span class="badge dim">disabled</span>{% endif %}
+    <span class="chip">CTI_ENABLE_OUTBOUND_ALERTS</span>
+  </p>
+  <ul class="channel-list" style="list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 8px;">
+    {% for name in ["slack", "teams", "webhook", "email", "desktop"] %}
+    <li>
+      <span class="chip">{{ name }}</span>
+      {% if channels[name] == "configured" %}
+      <span class="badge good">configured</span>
+      {% else %}
+      <span class="badge dim">missing</span>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  <p style="margin-top: 12px;">
+    <button id="test-alerts-btn" class="btn" type="button">Send test</button>
+    <span id="test-alerts-status" class="chip" style="display: none;"></span>
+  </p>
+  <div id="test-alerts-results"></div>
+</div>
+
+<script>
+document.getElementById("test-alerts-btn").addEventListener("click", async () => {
+  const btn = document.getElementById("test-alerts-btn");
+  const status = document.getElementById("test-alerts-status");
+  const results = document.getElementById("test-alerts-results");
+  btn.disabled = true;
+  status.style.display = "";
+  status.textContent = "sending…";
+  results.innerHTML = "";
+  try {
+    const r = await fetch("/alerts/test", { method: "POST" });
+    const data = await r.json();
+    const keys = Object.keys(data);
+    if (keys.length === 0) {
+      status.textContent = "no channels configured or outbound alerts disabled";
+    } else {
+      status.textContent = "done";
+      const ul = document.createElement("ul");
+      ul.style.listStyle = "none";
+      ul.style.padding = "0";
+      for (const k of keys) {
+        const li = document.createElement("li");
+        li.innerHTML = '<span class="chip">' + k + '</span> ' +
+          (data[k] ? '<span class="badge good">ok</span>' : '<span class="badge bad">failed</span>');
+        ul.appendChild(li);
+      }
+      results.appendChild(ul);
+    }
+  } catch (e) {
+    status.textContent = "request failed";
+  } finally {
+    btn.disabled = false;
+  }
+});
+</script>
+
+<div class="panel">
   <table>
     <thead><tr><th>#</th><th>Trigger</th><th>Title</th><th>Severity</th><th>Confidence</th><th>Delivered</th><th>Created</th></tr></thead>
     <tbody>
