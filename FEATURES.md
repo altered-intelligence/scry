@@ -152,3 +152,52 @@ prefix `v0.5.0 step N:`. Owner decisions locked 2026-09-29:
 - [x] **Step 8 — Release.** Bump 0.4.0 → 0.5.0 (pyproject, main.py app
   version, CHANGELOG, README), tag v0.5.0, push, GitHub release via
   /opt/homebrew/bin/gh.
+
+---
+
+# scry v0.6.0 feature track — OTX pulses, alert escalation, enrichment refresh
+
+Conventions as before: committed steps, `.venv/bin/pytest -q` green (459 passed
+baseline), prefix `v0.5.0`→`v0.6.0 step N:`. Owner-approved 2026-09-30.
+
+Context: the enrichment batch ALREADY skips observables carrying a
+`{provider}_checked_at` marker (default no-repeat). This track makes that
+guarantee explicit, adds staleness-based refresh, vendor-verdict alert
+escalation, and OTX pulse ingestion as a first-class source.
+
+- [ ] **Step 1 — OTX pulse ingestion.** `config/otx_pulses.yaml` subscriptions
+  (name, query, tags, max_pulse_age_days default 30, limit default 25).
+  `scry/ingestion/otx_pulses.py`: pull matching pulses via OTX API
+  (/api/v1/search/pulses?q=...), store each pulse as an Article (source
+  `otx_pulse:<name>`, url = pulse page URL, summary = description, tags merged,
+  published date) so the existing extraction/enrichment pipeline picks up IOCs;
+  dedup via existing article URL dedup; no-op on unchanged content. Key
+  resolution: background/scheduled → system OTX key; user-triggered pull →
+  acting user's personal OTX key (locked v0.5 rule). `POST /ingest/otx-pulses`
+  (optional subscription filter), `scry ingest otx-pulses` CLI, subscriptions
+  summary + pull-now on the threat-feeds UI page, scheduler hook alongside
+  existing ingest jobs. Disabled entirely when no OTX key anywhere.
+- [ ] **Step 2 — Vendor-verdict alert escalation.** AlertEngine gains
+  `_vendor_confirmed_alerts()`: observables whose enrichment JSON shows VT
+  malicious votes >= `vt_escalate_min_detections` (default 10) AND ratio >=
+  `vt_escalate_min_ratio` (default 0.5), OR GreyNoise classification ==
+  "malicious", OR AbuseIPDB score >= `abuseipdb_escalate_min_score` (default
+  80) → AlertCandidate trigger `vendor_confirmed_malicious` (dedup key per
+  observable+provider), plus an observable risk_score bump (cap 100) on
+  confirmation. Thresholds as Settings (env-tunable CTI_*). Alerts page badge
+  for the new trigger.
+- [ ] **Step 3 — Enrichment idempotency + refresh.** Per-provider staleness TTL
+  (Settings `enrichment_refresh_days_<provider>`, defaults: virustotal 7,
+  otx 14, abuseipdb 7, greynoise 3): batch re-enriches ONLY observables whose
+  `{provider}_checked_at` is missing OR older than TTL (fresh ones counted as
+  `fresh_skipped`); `force=true` on POST /enrichment/run ignores markers.
+  Bulk runs order oldest-checked-first (quota goes to stalest data). UI:
+  observable detail shows per-provider "last enriched Xd ago" + per-provider
+  Re-check (existing live lookup, labeled); observables page gains
+  "Re-enrich stale" and "Force re-enrich all" (confirm-guarded); admin
+  coverage table adds fresh/stale counts.
+- [ ] **Step 4 — Deploy + live verify.** Touch-restart the uvicorn --reload
+  server, verify: OTX pulse pull with real key (small limit), escalation rule
+  dry presence, enrichment run reports fresh_skipped on second pass.
+- [ ] **Step 5 — Release.** 0.5.0 → 0.6.0 bump, CHANGELOG, README, tag,
+  push, GitHub release via /opt/homebrew/bin/gh.
