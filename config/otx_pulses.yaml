@@ -1,0 +1,27 @@
+# OTX pulse subscriptions (v0.6.0 step 1).
+#
+# Each subscription searches AlienVault OTX pulses (/api/v1/search/pulses)
+# and stores every matching pulse as an Article, so the regular
+# extraction/enrichment pipeline picks up its IOCs. Pulses are deduplicated
+# by their pulse page URL; re-pulling an unchanged pulse updates nothing.
+#
+# Fields:
+#   name               — unique label; articles get source "otx_pulse:<name>"
+#   query              — OTX search query (required, non-empty)
+#   tags               — optional list; when set, only pulses carrying at
+#                        least one of these tags are kept (merged into the
+#                        article tags either way)
+#   max_pulse_age_days — skip pulses older than this (default 30)
+#   limit              — max search results per pull, newest-modified first
+#                        (default 25)
+#
+# Key resolution (locked v0.5 rule): scheduled pulls use the SYSTEM OTX key;
+# user-triggered pulls use the ACTING USER's personal OTX key; no key →
+# the feature is a clean no-op.
+
+subscriptions:
+  - name: ransomware
+    query: ransomware
+    tags: [ransomware]
+    max_pulse_age_days: 30
+    limit: 25

@@ -135,6 +135,45 @@ def ingest_all() -> None:
     asyncio.run(_run())
 
 
+# ------------------------- ingest group (v0.6.0 step 1) -------------------------
+
+ingest_app = typer.Typer(help="Ingestion jobs")
+app.add_typer(ingest_app, name="ingest")
+
+
+@ingest_app.command("otx-pulses")
+def ingest_otx_pulses(subscriptions: str = typer.Option("", "--subscriptions", "-s")) -> None:
+    """Pull subscribed OTX pulses and store them as Articles (system key).
+
+    Uses the SYSTEM OTX key (env/DB chain). User-triggered pulls with a
+    personal key live behind POST /ingest/otx-pulses and the threat-feeds UI.
+    Never prints key material.
+    """
+    from scry.ingestion.otx_pulses import load_subscriptions, pull_all, resolve_key
+
+    names = [n.strip() for n in subscriptions.split(",") if n.strip()]
+    with session_scope() as session:
+        api_key, _key_source = resolve_key(session, None)
+        if not api_key:
+            console.print("[yellow]OTX pulse ingestion disabled: no system OTX API key configured.[/yellow]")
+            return
+        subs = load_subscriptions()
+        if names:
+            known = {s.name for s in subs}
+            unknown = [n for n in names if n not in known]
+            if unknown:
+                console.print(f"[red]Unknown subscription(s): {', '.join(unknown)}[/red]")
+                raise typer.Exit(2)
+            subs = [s for s in subs if s.name in set(names)]
+        results = pull_all(session, api_key=api_key, subscriptions=subs)
+        pipeline = CTIPipeline(session)
+        processed = 0
+        for art in session.scalars(select(Article).where(Article.extractor_version == "0")):
+            pipeline.process_article(art)
+            processed += 1
+    console.print_json(json.dumps({"results": results, "pipeline_processed": processed}))
+
+
 @app.command("extract")
 def extract(article_id: int) -> None:
     """Re-run extraction on an article."""

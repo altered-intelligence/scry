@@ -183,6 +183,10 @@ def load_pirs() -> list[dict[str, Any]]:
     return list(_read_yaml("pirs.yaml").get("pirs", []))
 
 
+def load_otx_pulse_subscriptions() -> list[dict[str, Any]]:
+    return list(_read_yaml("otx_pulses.yaml").get("subscriptions", []))
+
+
 def load_policies() -> dict[str, Any]:
     return _read_yaml("policies.yaml")
 

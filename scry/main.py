@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hmac
 import json
 import re
@@ -56,6 +57,7 @@ from scry.enrichment.user_keys import (
     test_key,
 )
 from scry.enrichment.virustotal import VirusTotalEnricher
+from scry.ingestion.otx_pulses import last_run_stats, load_subscriptions, pull_all, resolve_key
 from scry.logging import configure_logging, get_logger
 from scry.models import (
     CVE,
@@ -2640,6 +2642,91 @@ def _signed_in_user(request: Request, session: Session) -> User | None:
     return session.get(User, state_user.id)
 
 
+# ------------------------- OTX pulse subscriptions (v0.6.0 step 1) -------------------------
+
+
+def _otx_subs_context(request: Request, session: Session) -> dict | None:
+    """'OTX pulse subscriptions' card data; None when anonymous."""
+    state_user = getattr(request.state, "user", None)
+    if state_user is None:
+        return None
+    raw = request.cookies.get(SESSION_COOKIE)
+    subs = load_subscriptions()
+    stats = last_run_stats(session, subs)
+    for stat in stats.values():
+        at = stat.get("at")
+        if isinstance(at, str):
+            with contextlib.suppress(ValueError):
+                stat["at"] = datetime.fromisoformat(at)
+    return {
+        "csrf": _admin_csrf_token(raw) if raw else "",
+        "subscriptions": [
+            {
+                "name": s.name,
+                "query": s.query,
+                "tags": s.tags,
+                "max_pulse_age_days": s.max_pulse_age_days,
+                "limit": s.limit,
+                "last_run": stats.get(s.name) or {},
+            }
+            for s in subs
+        ],
+    }
+
+
+def _summarize_otx_results(results: dict[str, dict[str, int]]) -> str:
+    parts = []
+    for name, counts in results.items():
+        bits = []
+        for key in ("added", "updated", "skipped", "filtered"):
+            if counts.get(key):
+                bits.append(f"{key} {counts[key]}")
+        if counts.get("error"):
+            bits.append("error")
+        parts.append(f"{name}: {', '.join(bits) if bits else 'nothing new'}")
+    return "; ".join(parts) if parts else "no subscriptions configured"
+
+
+@app.post("/ui/intel-feeds/otx-pull")
+def ui_otx_pull(
+    request: Request,
+    session: Session = Depends(get_session),
+    csrf: str = Form(""),
+    subscription: str = Form(""),
+):
+    """Pull OTX pulses for one subscription (or all) as the acting user.
+
+    Uses the acting user's PERSONAL OTX key (locked v0.5 rule) — never the
+    system key, never any key material in flashes or logs.
+    """
+    user = _signed_in_user(request, session)
+    if user is None:
+        return RedirectResponse(url="/login", status_code=303)
+    back = "/ui/intel-feeds/threat-feeds"
+    if not _check_admin_csrf(request, csrf):
+        return _redirect_flash(back, "Bad CSRF token — action rejected.", "error")
+
+    api_key, _key_source = resolve_key(session, user)
+    if not api_key:
+        return _redirect_flash(
+            back,
+            "OTX pulse pull disabled: save a personal OTX key in 'My API keys' above first.",
+            "error",
+        )
+
+    subs = load_subscriptions()
+    name = subscription.strip()
+    if name:
+        subs = [s for s in subs if s.name == name]
+        if not subs:
+            return _redirect_flash(back, f"Unknown OTX pulse subscription {name!r}.", "error")
+
+    results = pull_all(session, api_key=api_key, subscriptions=subs)
+    _feed_key_audit(session, user, "otx_pulse.pull", name or "*")
+    summary = _summarize_otx_results(results)
+    return _redirect_flash(back, f"OTX pulse pull complete — {summary}.")
+
+
 @app.post("/ui/intel-feeds/my-keys/{provider}/save")
 def ui_my_key_save(
     provider: str,
@@ -2810,6 +2897,7 @@ def ui_threat_feeds(
             "categories": [c for c, _ in cat_counts],
             "filters": filters,
             "my_keys": _my_keys_context(request, session),
+            "otx_subs": _otx_subs_context(request, session),
         },
     )
 

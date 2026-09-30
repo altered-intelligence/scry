@@ -38,6 +38,7 @@ from scry.exports import (
     export_stix_like_bundle,
 )
 from scry.ingestion import IngestionEngine
+from scry.ingestion.otx_pulses import last_run_stats, load_subscriptions, pull_all, resolve_key
 from scry.logging import get_logger
 from scry.models import (
     CVE,
@@ -270,6 +271,75 @@ def enrichment_provider_configure(
     )
 
     return _enrichment_provider_entry(session, payload.provider)
+
+
+# ---------- OTX pulse ingestion (v0.6.0 step 1) ----------
+
+
+class OtxPulsePullRequest(BaseModel):
+    subscriptions: list[str] | None = None  # None = pull all
+
+
+@api_router.post("/ingest/otx-pulses")
+def ingest_otx_pulses(
+    request: Request,
+    payload: OtxPulsePullRequest | None = None,
+    session: Session = Depends(get_session),
+):
+    """Pull subscribed OTX pulses and store them as Articles.
+
+    Key resolution (locked v0.5 rule): an acting user (session cookie or
+    per-user API key) triggers the pull with their PERSONAL OTX key; with no
+    acting user the SYSTEM env/DB key chain is used. No key anywhere → clean
+    disabled result, never an error.
+    """
+    user = getattr(request.state, "api_user", None)
+    api_key, key_source = resolve_key(session, user)
+    if not api_key:
+        reason = (
+            "No personal OTX key for the acting user"
+            if user is not None
+            else "No OTX API key configured (system or personal)"
+        )
+        return {"status": "disabled", "reason": reason, "results": {}}
+
+    subs = load_subscriptions()
+    if payload and payload.subscriptions:
+        wanted = list(dict.fromkeys(payload.subscriptions))
+        known = {s.name for s in subs}
+        unknown = [n for n in wanted if n not in known]
+        if unknown:
+            raise HTTPException(400, detail=f"Unknown subscription(s): {', '.join(unknown)}")
+        subs = [s for s in subs if s.name in set(wanted)]
+
+    results = pull_all(session, api_key=api_key, subscriptions=subs)
+    # Process newly-ingested articles through extraction like /ingest/run does
+    pipeline = CTIPipeline(session)
+    processed = 0
+    for art in session.scalars(select(Article).where(Article.extractor_version == "0")):
+        pipeline.process_article(art)
+        processed += 1
+    return {"status": "ok", "key_source": key_source, "results": results, "pipeline_processed": processed}
+
+
+@api_router.get("/ingest/otx-pulses/subscriptions")
+def ingest_otx_pulse_subscriptions(session: Session = Depends(get_session)):
+    """Configured OTX pulse subscriptions + per-subscription last-run stats."""
+    subs = load_subscriptions()
+    stats = last_run_stats(session, subs)
+    return {
+        "subscriptions": [
+            {
+                "name": s.name,
+                "query": s.query,
+                "tags": s.tags,
+                "max_pulse_age_days": s.max_pulse_age_days,
+                "limit": s.limit,
+                "last_run": stats.get(s.name) or {},
+            }
+            for s in subs
+        ]
+    }
 
 
 @api_router.post("/ingest/fetch-full")

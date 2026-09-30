@@ -63,6 +63,60 @@
 </div>
 {% endif %}
 
+{# --- OTX pulse subscriptions (v0.6.0 step 1) --- #}
+{% if otx_subs %}
+<div class="panel" id="otx-pulse-subscriptions">
+  <h2>OTX pulse subscriptions</h2>
+  <p class="muted">
+    Pulled from AlienVault OTX with <em>your</em> personal OTX key; each pulse becomes an
+    article so the extraction/enrichment pipeline picks up its IOCs. Scheduled pulls use the
+    <a href="/ui/alerts">system key</a> instead.
+  </p>
+  {% if not otx_subs.subscriptions %}
+  <p class="muted">No subscriptions configured — add entries to <code>config/otx_pulses.yaml</code>.</p>
+  {% else %}
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Query</th>
+        <th>Tags</th>
+        <th>Last pull</th>
+        <th>Added last pull</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in otx_subs.subscriptions %}
+      <tr>
+        <td><strong>{{ s.name }}</strong></td>
+        <td><code>{{ s.query }}</code></td>
+        <td>
+          {% for tag in s.tags[:4] %}<span class="chip">{{ tag }}</span>{% else %}<span class="muted">—</span>{% endfor %}
+        </td>
+        <td class="muted">
+          {% if s.last_run.at %}{{ s.last_run.at | timeago }}{% else %}never{% endif %}
+        </td>
+        <td>{% if s.last_run.at %}{{ s.last_run.added | default(0) | int }}{% else %}—{% endif %}</td>
+        <td>
+          <form method="post" action="/ui/intel-feeds/otx-pull" style="display:inline">
+            <input type="hidden" name="csrf" value="{{ otx_subs.csrf }}">
+            <input type="hidden" name="subscription" value="{{ s.name }}">
+            <button class="btn secondary" type="submit">Pull now</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <form method="post" action="/ui/intel-feeds/otx-pull" style="margin-top:8px">
+    <input type="hidden" name="csrf" value="{{ otx_subs.csrf }}">
+    <button class="btn" type="submit">Pull all subscriptions</button>
+  </form>
+  {% endif %}
+</div>
+{% endif %}
+
 {# --- Stats row --- #}
 <div class="grid" style="grid-template-columns: repeat(5,1fr);">
   {% for cat, cnt in cat_counts[:5] %}

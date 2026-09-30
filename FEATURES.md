@@ -165,7 +165,7 @@ Context: the enrichment batch ALREADY skips observables carrying a
 guarantee explicit, adds staleness-based refresh, vendor-verdict alert
 escalation, and OTX pulse ingestion as a first-class source.
 
-- [ ] **Step 1 — OTX pulse ingestion.** `config/otx_pulses.yaml` subscriptions
+- [x] **Step 1 — OTX pulse ingestion.** `config/otx_pulses.yaml` subscriptions
   (name, query, tags, max_pulse_age_days default 30, limit default 25).
   `scry/ingestion/otx_pulses.py`: pull matching pulses via OTX API
   (/api/v1/search/pulses?q=...), store each pulse as an Article (source
