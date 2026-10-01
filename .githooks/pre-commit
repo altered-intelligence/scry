@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Pre-commit secret scan: blocks commits whose staged diff contains
+# credential-shaped strings. High-signal patterns only (provider prefixes,
+# private keys) to avoid false positives on hex digests and IDs.
+#
+# Emergency bypass: SKIP_SECRET_SCAN=1 git commit ...
+set -euo pipefail
+
+if [ "${SKIP_SECRET_SCAN:-0}" = "1" ]; then
+  echo "secret-scan: skipped (SKIP_SECRET_SCAN=1)"
+  exit 0
+fi
+
+PATTERNS='(AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|AIza[0-9A-Za-z_-]{35}|xox[baprs]-[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)'
+
+# Only scan added lines ('+'), and strip the leading '+' so provider-prefix
+# patterns that could start with '+'-like chars match cleanly.
+HITS=$(git diff --cached --no-color --unified=0 | grep -E '^\+' | grep -vF '+++' | sed 's/^\+//' | grep -nE "$PATTERNS" || true)
+
+if [ -n "$HITS" ]; then
+  echo "secret-scan: potential credential in staged changes — commit blocked." >&2
+  echo "Matched lines (relative to staged diff):" >&2
+  echo "$HITS" | head -20 | sed 's/^/  /' >&2
+  echo "If this is intentional (e.g. a test fixture), use: SKIP_SECRET_SCAN=1 git commit" >&2
+  exit 1
+fi
+
+exit 0

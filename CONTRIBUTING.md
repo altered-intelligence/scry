@@ -12,7 +12,11 @@ platform. Contributions are welcome under the terms of the
    no offensive automation, dark-web collection disabled by default.
 2. **No secrets, ever.** Never commit API keys, tokens, or personal data.
    `.env`, `.cti_secret`, databases, and logs are gitignored — keep it that
-   way. Use placeholders in docs and examples.
+   way. Use placeholders in docs and examples. A pre-commit hook
+   (`.githooks/pre-commit`, enabled via `core.hooksPath`) blocks
+   credential-shaped strings in staged diffs, and CI runs gitleaks on every
+   push and pull request. If a match is an intentional test fixture, commit
+   with `SKIP_SECRET_SCAN=1`.
 3. **Safe-by-default.** New capabilities that carry risk must ship disabled
    behind an explicit `CTI_ENABLE_*` setting.
 

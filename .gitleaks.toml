@@ -1,0 +1,16 @@
+# gitleaks config for CI secret scanning.
+#
+# allowlist:
+#  - tests/test_redactor.py contains intentional fake credentials used to
+#    exercise the redactor (AWS example key, fake PEM block).
+#  - "Batman911!#" appears only in historical commits (v0.5.0-v0.7.0 era)
+#    as the removed default seed password. It is rotated/dead; kept out of
+#    scan noise so full-history scans stay green. Never reuse this string.
+title = "scry secret-scan config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+paths = ['''tests/test_redactor.py''']
+regexes = ['''Batman911''', '''SEED_INITIAL_PASSWORD''']
