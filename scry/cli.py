@@ -18,6 +18,8 @@ Commands:
   alerts list              List recent alerts
   decay run                Apply IOC decay
   stats                    Show DB counts
+  backup                   Archive DB + config + secrets for a machine move
+  restore <archive>        Restore a backup archive (refuses to clobber the DB)
   users create             Create a user account
   users list               List user accounts
   users promote|demote     Grant/revoke the admin role
@@ -34,6 +36,8 @@ import json
 import re
 import secrets
 import sys
+import tarfile
+from pathlib import Path
 
 import typer
 from rich.console import Console
@@ -419,6 +423,83 @@ def stats() -> None:
             ),
         }
         console.print_json(json.dumps(out))
+
+
+# ------------------------- backup / restore (v0.8.0 step 1) -------------------------
+
+
+@app.command("backup")
+def backup_cmd(
+    output: str | None = typer.Option(
+        None, "--output", "-o", help="Archive path (default scry-backup-<UTC-date>.tar.gz in CWD)"
+    ),
+    full: bool = typer.Option(False, "--full", help="Also include data/ and downloaded AI models"),
+    encrypt: bool = typer.Option(False, "--encrypt", help="Fernet-encrypt the archive with .cti_secret"),
+) -> None:
+    """Archive this install's data (DB, .env, .cti_secret, config/*.yaml) for a machine move.
+
+    Run with the scry server STOPPED — backing up a live SQLite DB is not safe.
+    The archive ALWAYS contains secrets (.env, .cti_secret, API keys): protect it.
+    """
+    from scry import backup as backup_mod
+
+    try:
+        path = backup_mod.create_backup(Path(output) if output else None, full=full, encrypt=encrypt)
+    except backup_mod.BackupError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from None
+    size = path.stat().st_size
+    console.print(f"[green]Backup written:[/green] {path} ({size / 1024 / 1024:.1f} MiB)")
+    console.print(
+        "[bold yellow]Warning: this archive contains secrets (.env, .cti_secret, API keys) — store it safely.[/bold yellow]"
+    )
+    try:
+        with tarfile.open(path, "r:gz") as tf:
+            names = [m.name for m in tf.getmembers() if m.isfile()]
+        console.print(
+            f"Contents: {len(names)} files — {', '.join(names[:8])}{' …' if len(names) > 8 else ''}"
+        )
+    except tarfile.TarError:
+        console.print(f"Contents: encrypted archive ({path.name})")
+
+
+@app.command("restore")
+def restore_cmd(
+    archive: str = typer.Argument(..., help="Path to a scry backup archive (.tar.gz or .tar.gz.enc)"),
+    force: bool = typer.Option(
+        False, "--force", help="Overwrite existing DB / accept a newer-version archive"
+    ),
+    target_dir: str = typer.Option(".", "--target-dir", help="Directory to restore into (default: CWD)"),
+) -> None:
+    """Restore a backup archive made by `scry backup`.
+
+    Run with the scry server STOPPED — restoring over a live SQLite DB is not safe.
+    Refuses to overwrite an existing database unless --force; encrypted archives
+    (.enc) are decrypted with the local .cti_secret key.
+    """
+    from scry import backup as backup_mod
+
+    try:
+        summary = backup_mod.restore_backup(Path(archive), force=force, target_dir=Path(target_dir))
+    except backup_mod.BackupError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from None
+
+    console.print(f"[green]Restored {len(summary['restored'])} files from {summary['archive']}[/green]")
+    console.print(
+        f"Archive scry_version {summary['scry_version']} → installed {summary['installed_version']}"
+    )
+    for name in summary["restored"]:
+        console.print(f"  {name}")
+    counts = summary["manifest_counts"]
+    if counts:
+        console.print("Table counts (at backup → now):")
+        for key, value in counts.items():
+            console.print(f"  {key}: {value} → {(summary['counts_after'] or {}).get(key, '—')}")
+    if summary["counts_before"] is not None:
+        console.print("Replaced DB counts (before → after):")
+        for key, value in summary["counts_before"].items():
+            console.print(f"  {key}: {value} → {(summary['counts_after'] or {}).get(key, '—')}")
 
 
 @app.command("mcp")
