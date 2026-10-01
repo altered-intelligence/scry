@@ -259,7 +259,7 @@ part of this track. Deferred to v0.9.0: WHOIS enricher (dependency + privacy
 review) and pgvector semantic search (Postgres-only; needs a SQLite fallback
 design).
 
-- [ ] **Step 1 — `scry backup` / `scry restore`.** One-command move of an
+`- [x] **Step 1 — `scry backup` / `scry restore`.** One-command move of an
   install between machines (code comes from git; this covers DATA). Archive
   (tar.gz via stdlib tarfile) with `manifest.json` (scry_version, created_at,
   database_url kind, table counts via `scry stats`, file checksums). Default
