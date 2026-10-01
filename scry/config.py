@@ -123,6 +123,11 @@ class Settings(BaseSettings):
     nvd_api_key: str = ""  # Optional, increases rate limit
     github_token: str = ""  # For GitHub Advisories API
 
+    # EPSS (v0.8.0 step 2) — keyless FIRST.org EPSS enrichment for CVEs.
+    # No API key needed (free, public); these only tune the batch behaviour.
+    epss_max_per_run: int = 100  # CVEs selected per enrichment run (CTI_EPSS_MAX_PER_RUN)
+    epss_refresh_days: int = 7  # re-enrich CVEs whose EPSS data is older than this (CTI_EPSS_REFRESH_DAYS)
+
     # Threat intelligence platforms
     misp_url: str = ""
     misp_api_key: str = ""

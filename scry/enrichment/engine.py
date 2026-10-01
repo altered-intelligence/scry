@@ -10,7 +10,7 @@ import ipaddress
 import json
 import re
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlparse
 
@@ -20,7 +20,9 @@ from sqlalchemy.orm import Session
 from scry.config import get_settings
 from scry.enrichment.abuseipdb import AbuseIPDBEnricher
 from scry.enrichment.attack_mapping import AttackMappingEnricher
+from scry.enrichment.base import EnrichmentError
 from scry.enrichment.email import EmailEnricher
+from scry.enrichment.epss import EpsEnricher
 from scry.enrichment.greynoise import GreyNoiseEnricher
 from scry.enrichment.infrastructure import InfrastructureEnricher
 from scry.enrichment.otx import OTXEnricher
@@ -30,7 +32,7 @@ from scry.enrichment.url import URLEnricher
 from scry.enrichment.virustotal import VirusTotalEnricher
 from scry.enrichment.vulnerability import VulnerabilityEnricher
 from scry.logging import get_logger
-from scry.models import Observable, SystemSetting
+from scry.models import CVE, Observable, SystemSetting
 
 logger = get_logger("enrichment")
 
@@ -153,6 +155,9 @@ class EnrichmentEngine:
         self.otx = OTXEnricher(api_key=otx_key)
         self.abuseipdb = AbuseIPDBEnricher(api_key=self.provider_states["abuseipdb"].api_key)
         self.greynoise = GreyNoiseEnricher(api_key=self.provider_states["greynoise"].api_key)
+        # v0.8.0 step 2 — FIRST.org EPSS for CVEs: keyless global enrichment,
+        # no per-user key concept, always runs during batch enrichment.
+        self.epss = EpsEnricher()
         self._external = {
             "virustotal": self.vt,
             "otx": self.otx,
@@ -341,11 +346,38 @@ class EnrichmentEngine:
         Candidates are processed oldest-checked-first (missing markers first,
         then descending marker age) so quota reaches the stalest data first.
 
+        v0.8.0 step 2 — EPSS (FIRST.org, keyless) also runs in this batch path
+        when no `providers` filter is given or "epss" is among the requested
+        providers. It selects CVEs whose `epss_enriched_at` is NULL or older
+        than `epss_refresh_days` (oldest first, capped at
+        `epss_max_per_run`) and records `epss_enriched` / `epss_skipped`
+        (unknown CVEs marked checked-without-data) in the summary.
+
         Returns per-provider enriched counts plus errors/skip bookkeeping;
         ``refreshed`` counts re-enrichments of records that carried a stale
         marker (as opposed to first-time enrichments).
         """
-        runnable, skipped = self._select_external(providers)
+        # EPSS is not part of the keyed-provider registry; validate the filter
+        # here (registry validation would reject "epss" as unknown) and strip
+        # it before provider selection.
+        run_epss = providers is None or "epss" in providers
+        if providers:
+            unknown = [p for p in providers if p not in _EXTERNAL_PROVIDERS and p != "epss"]
+            if unknown:
+                raise ValueError(
+                    f"Unknown enrichment provider(s): {', '.join(sorted(unknown))}. "
+                    f"Supported: {', '.join(sorted([*_EXTERNAL_PROVIDERS, 'epss']))}"
+                )
+            external_providers = [p for p in providers if p != "epss"] or None
+            epss_only = external_providers is None
+        else:
+            external_providers = None
+            epss_only = False
+
+        runnable: dict[str, Any] = {}
+        skipped: dict[str, str] = {}
+        if not epss_only:
+            runnable, skipped = self._select_external(external_providers)
         # Only observables whose type at least one selected provider supports.
         selected_types: set[str] = set()
         for name in runnable:
@@ -427,21 +459,94 @@ class EnrichmentEngine:
                 errors += 1
 
         self.session.commit()
+
+        epss_counts: dict[str, int] = {}
+        if run_epss:
+            epss_counts = self._run_epss_enrichment(now, force=force, include_stale=include_stale)
+            errors += epss_counts.pop("epss_errors", 0)
+            self.session.commit()
+
         result: dict[str, Any] = {_EXTERNAL_PROVIDERS[name]["count_key"]: counts[name] for name in runnable}
+        result.update(epss_counts)
         result.update(
             {
                 "errors": errors,
                 "total_candidates": len(to_enrich),
-                "providers": sorted(runnable),
+                "providers": sorted([*runnable, *(["epss"] if run_epss else [])]),
                 "skipped": skipped,
                 "quota_skipped": {k: v for k, v in quota_skipped.items() if v},
                 "fresh_skipped": {k: v for k, v in fresh_skipped.items() if v},
                 "refreshed": {k: v for k, v in refreshed.items() if v},
             }
         )
-        logger.info("external_enrichment_batch_done", counts=counts, errors=errors)
+        logger.info("external_enrichment_batch_done", counts=counts, epss=epss_counts, errors=errors)
         self._record_vt_daily_usage()
         return result
+
+    def _run_epss_enrichment(
+        self, now: datetime, *, force: bool = False, include_stale: bool = True
+    ) -> dict[str, int]:
+        """EPSS phase of a batch run: enrich CVEs due for (re-)scoring.
+
+        Selection mirrors the observable staleness logic: candidates carry a
+        NULL ``epss_enriched_at`` (never checked) or one older than
+        ``epss_refresh_days``; ``include_stale=False`` restricts to
+        never-checked rows, ``force=True`` ignores the marker entirely.
+        Oldest-checked-first so the stalest data gets refreshed first, capped
+        at ``epss_max_per_run`` per run. Unknown CVEs get the timestamp
+        sentinel (checked-without-data) so they are not re-queried forever.
+
+        Returns ``epss_enriched`` / ``epss_skipped`` counts plus
+        ``epss_errors`` (batches that raised).
+        """
+        settings = get_settings()
+        ttl_days = max(0, settings.epss_refresh_days)
+        max_per_run = max(1, settings.epss_max_per_run)
+
+        conditions = []
+        if not force:
+            if include_stale:
+                conditions.append(
+                    (CVE.epss_enriched_at.is_(None)) | (CVE.epss_enriched_at < now - timedelta(days=ttl_days))
+                )
+            else:
+                conditions.append(CVE.epss_enriched_at.is_(None))
+
+        stmt = select(CVE).order_by(CVE.epss_enriched_at.asc().nullsfirst())
+        if conditions:
+            stmt = stmt.where(*conditions)
+        stmt = stmt.limit(max_per_run)
+        candidates = self.session.scalars(stmt).all()
+
+        enriched = 0
+        sentinel = 0
+        errors = 0
+        logger.info("epss_batch_start", total=len(candidates))
+
+        for start in range(0, len(candidates), EpsEnricher.BATCH_SIZE):
+            chunk = candidates[start : start + EpsEnricher.BATCH_SIZE]
+            try:
+                result = self.epss.enrich_batch([c.cve_id for c in chunk])
+            except EnrichmentError as exc:
+                errors += 1
+                logger.warning("epss_batch_error", exc=str(exc))
+                continue
+            for cve_id, record in result.records.items():
+                row = next((c for c in chunk if c.cve_id == cve_id), None)
+                if row is None:
+                    continue
+                row.epss = record.epss
+                row.epss_percentile = record.percentile
+                row.epss_enriched_at = now
+                enriched += 1
+            for cve_id in result.not_found:
+                row = next((c for c in chunk if c.cve_id == cve_id), None)
+                if row is None:
+                    continue
+                row.epss_enriched_at = now  # sentinel: checked, EPSS has no score
+                sentinel += 1
+
+        return {"epss_enriched": enriched, "epss_skipped": sentinel, "epss_errors": errors}
 
     def _record_vt_daily_usage(self) -> None:
         """Persist the VT daily-quota counter for the admin coverage panel.

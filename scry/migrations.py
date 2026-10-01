@@ -48,6 +48,18 @@ MIGRATIONS: tuple[AddColumn, ...] = (
         column="api_key_encrypted",
         ddl="ALTER TABLE connector_settings ADD COLUMN api_key_encrypted VARCHAR",
     ),
+    # v0.8.0 step 2 — EPSS percentile + enrichment timestamp; create_all only
+    # covers fresh databases, existing ones need the explicit ALTER.
+    AddColumn(
+        table="cves",
+        column="epss_percentile",
+        ddl="ALTER TABLE cves ADD COLUMN epss_percentile FLOAT",
+    ),
+    AddColumn(
+        table="cves",
+        column="epss_enriched_at",
+        ddl="ALTER TABLE cves ADD COLUMN epss_enriched_at DATETIME",
+    ),
 )
 
 

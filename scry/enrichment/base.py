@@ -22,3 +22,8 @@ class BaseEnricher(ABC):
 
     @abstractmethod
     def enrich(self, value: str, *, context: dict[str, Any] | None = None) -> EnrichmentOutput: ...
+
+
+class EnrichmentError(Exception):
+    """A provider lookup failed (HTTP/parse) in a way the engine should record
+    and keep going from, not crash on."""

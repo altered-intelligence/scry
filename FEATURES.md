@@ -273,7 +273,7 @@ design).
   database unless `--force`; print a summary diff of table counts. Backup
   refuses to run while the DB is potentially mid-write is out of scope —
   document "run with the server stopped" in help text.
-- [ ] **Step 2 — EPSS enricher (CVEs).** FIRST.org EPSS API
+- [x] **Step 2 — EPSS enricher (CVEs).** FIRST.org EPSS API
   (https://api.first.org/data/v1/epss?cve=CVE-...), free, no key. Populate
   `CVE.epss` (add `epss_percentile` + `epss_enriched_at` columns via startup
   auto-migration pattern used before). Integrate into the enrichment engine as

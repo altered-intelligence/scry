@@ -9,7 +9,7 @@
     {{ cve.vendor or '?' }} · {{ cve.product or '?' }}
     {% if cve.severity %} · severity <span class="badge {% if cve.severity == 'critical' %}bad{% elif cve.severity == 'high' %}warn{% elif cve.severity == 'medium' %}mid{% else %}dim{% endif %}">{{ cve.severity }}</span>{% endif %}
     {% if cve.cvss_v3 %} · CVSS v3 {{ cve.cvss_v3 }}{% endif %}
-    {% if cve.epss %} · EPSS {{ cve.epss }}{% endif %}
+    {% if cve.epss %} · EPSS {{ cve.epss }}{% if cve.epss_percentile is not none %} (percentile {{ "%.1f"|format(cve.epss_percentile * 100) }}%){% endif %}{% if cve.epss_enriched_at %} · EPSS updated {{ cve.epss_enriched_at|timeago }}{% endif %}{% endif %}
   </div>
   <div class="tags" style="margin-top: 8px;">
     {% if cve.kev %}{{ m.kev_badge() }}{% endif %}

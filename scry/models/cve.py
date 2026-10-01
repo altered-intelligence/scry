@@ -24,6 +24,9 @@ class CVE(Base, IdMixin, TimestampMixin):
     cvss_v4: Mapped[float | None] = mapped_column(Float, nullable=True)
     severity: Mapped[str | None] = mapped_column(String(16), nullable=True)
     epss: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # v0.8.0 step 2 — FIRST.org EPSS percentile + enrichment timestamp (TTL refresh).
+    epss_percentile: Mapped[float | None] = mapped_column(Float, nullable=True)
+    epss_enriched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     kev: Mapped[bool] = mapped_column(Boolean, default=False)
     kev_added_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     exploited_in_the_wild: Mapped[bool] = mapped_column(Boolean, default=False)
