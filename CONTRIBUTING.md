@@ -39,6 +39,21 @@ platform. Contributions are welcome under the terms of the
 5. Open a pull request with a clear description of the change and its
    security posture impact, if any.
 
+## Release procedure
+
+Releases follow the end-of-track checklist (see
+[HANDOFF.md](./HANDOFF.md) §2.2 for the full convention):
+
+1. Bump the version in `scry/main.py` and `pyproject.toml`.
+2. Add a `[X.Y.Z]` section to `CHANGELOG.md` (Keep a Changelog format).
+3. Update `README.md` ("What's new in X.Y.Z" + feature bullets).
+4. **Update `HANDOFF.md`'s current-state section** — version number, test
+   count, release date, and build-journal row — so the handoff document
+   stays accurate for anyone (human or AI) picking up the project.
+5. Commit as `Release vX.Y.Z: <headline>`, tag `vX.Y.Z`, push branch + tag.
+6. Publish the GitHub release with the changelog section as notes; verify
+   tag == `HEAD` == remote `HEAD` and the working tree is clean.
+
 ## Reporting issues
 
 - **Bugs / feature requests:** open a GitHub issue with reproduction steps.
