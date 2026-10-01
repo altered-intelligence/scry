@@ -249,3 +249,47 @@ Conventions as before. Owner-approved 2026-09-30. Collection is GLOBAL
   confirm window filtering, confirm at least the new blogs' feeds fetch.
 - [x] **Step 4 — Release.** 0.6.0 → 0.7.0, CHANGELOG, README, tag, push,
   GitHub release via /opt/homebrew/bin/gh.
+
+# scry v0.8.0 feature track — backup/restore + passive enrichment
+
+Conventions as before. Owner-approved 2026-10-01. Scope note: GreyNoise
+enrichment shipped in v0.4.0 and VT/GreyNoise/AbuseIPDB-driven
+`vendor_confirmed_malicious` alert escalation shipped in v0.6.0 — they are NOT
+part of this track. Deferred to v0.9.0: WHOIS enricher (dependency + privacy
+review) and pgvector semantic search (Postgres-only; needs a SQLite fallback
+design).
+
+- [ ] **Step 1 — `scry backup` / `scry restore`.** One-command move of an
+  install between machines (code comes from git; this covers DATA). Archive
+  (tar.gz via stdlib tarfile) with `manifest.json` (scry_version, created_at,
+  database_url kind, table counts via `scry stats`, file checksums). Default
+  contents: `cti.sqlite`, `.env`, `.cti_secret`, `config/*.yaml`, alembic
+  version stamp. `--full` additionally includes `data/` (raw HTML) and
+  downloaded AI models. `--encrypt` Fernet-encrypts the archive using the
+  install's existing `.cti_secret` key (archive then contains secrets — warn
+  in CLI output either way). `restore <archive>`: extract to temp dir,
+  validate manifest + version (warn if archive newer than installed scry),
+  restore DB + config + secret atomically; REFUSE to overwrite an existing
+  database unless `--force`; print a summary diff of table counts. Backup
+  refuses to run while the DB is potentially mid-write is out of scope —
+  document "run with the server stopped" in help text.
+- [ ] **Step 2 — EPSS enricher (CVEs).** FIRST.org EPSS API
+  (https://api.first.org/data/v1/epss?cve=CVE-...), free, no key. Populate
+  `CVE.epss` (add `epss_percentile` + `epss_enriched_at` columns via startup
+  auto-migration pattern used before). Integrate into the enrichment engine as
+  a vulnerability enrichment: batch lookup for CVEs with null/stale
+  `epss_enriched_at` (TTL 7d), capped batch per run, honors existing
+  ratelimit module. /ui/cve detail already renders `cve.epss`.
+- [ ] **Step 3 — crt.sh passive-DNS / cert-transparency enricher (domains).**
+  Free, no key: https://crt.sh/?q=%25.<domain>&output=json. Passive only —
+  public certificate transparency, no active scanning (SECURITY.md boundary).
+  Store discovered-subdomain count + up to N sample names in observable
+  infrastructure attributes; TTL 14d; one request per domain per run.
+- [ ] **Step 4 — Deploy + live verify.** Restart (touch). Backup the live
+  install, restore into a scratch dir, boot the restored copy on a spare port,
+  `scry stats` counts match. Trigger EPSS enrichment on a handful of CVEs and
+  confirm epss + percentile populate. Enrich a well-known domain via crt.sh
+  and confirm passive-DNS attributes land.
+- [ ] **Step 5 — Release.** 0.7.2 → 0.8.0: CHANGELOG, README "What's new",
+  HANDOFF.md current-state + build-journal row, tag, push, GitHub release via
+  /opt/homebrew/bin/gh, confirm CI + secret-scan green on the release commit.
