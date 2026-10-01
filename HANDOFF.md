@@ -1,6 +1,6 @@
 # Scry — Project Handbook & AI Handoff Document
 
-**Version:** 0.7.1 · **Repo:** https://github.com/altered-intelligence/scry · **License:** Apache-2.0
+**Version:** 0.7.2 · **Repo:** https://github.com/altered-intelligence/scry · **License:** Apache-2.0
 **Purpose of this document:** Explain what this project is, how it was built ("vibe coding" methodology), how it's organized, how GitHub is used as a backup, and — most importantly — provide a **master prompt** that lets any AI coding assistant (Claude Code, Codex, DeepSeek, Kimi, etc.) pick up development or recreate the project from scratch in any environment.
 
 ---
@@ -58,6 +58,7 @@ Track conventions:
 | **v0.6.0** | 2026-09-30 | 5-step track: **OTX pulse ingestion** as a first-class source (config-driven subscriptions); **vendor-verdict alert escalation** (auto risk bump when VT/GreyNoise/AbuseIPDB confirm malicious); **staleness-aware enrichment refresh** (per-provider TTLs, oldest-first, `force` override). |
 | **v0.7.0** | 2026-09-30 | 4-step track: **Sources admin page** under Intel Feeds (per-source on/off checkboxes, admin-only, global collection); **15 vendor-blog sources** completed (Talos, SOCRadar, DFIR Report, Securelist, Krebs, SentinelOne Labs, Red Canary, Rapid7, Huntress added); **collection window** (last N days, 1–7, admin-only). |
 | **v0.7.1** | 2026-10-01 | **Security**: removed hardcoded seed credentials; **first-run `/setup` page** (first account becomes admin, endpoint 404s once any user exists); `scry users seed --username NAME` (random one-time password, refuses if users exist); pre-commit + CI gitleaks secret scanning. |
+| **v0.7.2** | 2026-10-01 | **Docs patch**: corrected REST API paths in README (main API serves at root paths like `/observables`; only `/api/ai/*`, `/api/reports/brief`, `/taxii2/*` carry a prefix) — surfaced by the fresh-clone e2e first-run verification. |
 
 **Session pattern that worked:** research/plan → implement step → run tests → live-verify on a running dev server → commit → repeat → release. Large features (auth, sources admin) were always split into 4–7 steps so progress survived session limits.
 
@@ -172,7 +173,7 @@ Server config: host/port via `CTI_API_HOST`/`CTI_API_PORT` (default 8000; a loca
 
 ## 7. Current State & Deferred Items
 
-**Current:** v0.7.1 released (tag + GitHub release). 592 tests green. CI + secret scanning green. Repo is a clean public backup.
+**Current:** v0.7.2 released (tag + GitHub release; docs-only patch correcting REST API paths). 592 tests green. CI + secret scanning green. Repo is a clean public backup. Fresh-clone e2e verification (clone → install → first-run /setup → auth gating) passes 9/9.
 
 **Deferred / roadmap (from README/FEATURES):**
 - pgvector + real embedding model to replace hash-embedding semantic search
@@ -200,7 +201,7 @@ Copy everything in the fenced block below verbatim. It contains everything a mod
 You are working on "scry" — a self-hosted threat-intelligence platform (defensive
 security OSINT collector/extractor/enricher with web UI, REST API, MCP server,
 STIX 2.1/TAXII 2.1 export, and multi-user auth). Public repo:
-https://github.com/altered-intelligence/scry (Apache-2.0). Current version: 0.7.1.
+https://github.com/altered-intelligence/scry (Apache-2.0). Current version: 0.7.2.
 
 If the repo is not present, clone it and set up:
     python3 -m venv .venv && source .venv/bin/activate
@@ -233,7 +234,9 @@ xAI) · bcrypt + TOTP + WebAuthn auth · Fernet at-rest secret encryption (key f
    (Keep a Changelog), README "What's new" section, commit "Release vX.Y.Z: ...",
    tag, push, `gh release create`. Verify tag == HEAD == remote HEAD.
 6. Auth conventions: scheduled jobs use the system key; user actions use the acting
-   user's key. /api/* + /taxii2 require auth once any user exists. Intel data is
+   user's key. REST API routes + /taxii2 require auth once any user exists (main
+   API at root paths like /observables; only /api/ai/*, /api/reports/brief, and
+   /taxii2/* carry a prefix). Intel data is
    shared across users; per-user privacy only for chat + action attribution.
 7. Never rewrite published git history. Rotate exposed credentials instead.
 8. Don't touch satellite systems (personal dashboards/automations outside the repo).

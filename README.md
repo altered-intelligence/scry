@@ -18,6 +18,10 @@ A defensive cyber threat intelligence platform that ingests public sources, extr
 
 ---
 
+## What's new in 0.7.2
+
+- **Docs: corrected REST API paths** — the main REST API serves at root paths (`/articles`, `/observables`, `/ingest/*`, `/alerts`, `/exports/*`, …); only the AI routes (`/api/ai/*`), `/api/reports/brief`, and `/taxii2/*` carry a prefix. README references fixed to match (see `docs/api-reference.md` for the full, correct route table). No code changes.
+
 ## What's new in 0.7.0
 
 - **Source management** — Sources moved under the Intel Feeds menu, with per-source on/off checkboxes on /ui/sources. Toggling is admin-only (standard users see greyed checkboxes with an "Only admin users can toggle sources on/off" hint); collection is global across users, and the yaml→DB sync no longer overwrites runtime toggles on restart — `enabled` now applies at source creation only.
@@ -28,7 +32,7 @@ See [CHANGELOG.md](./CHANGELOG.md) for details.
 
 ## What's new in 0.6.0
 
-- **OTX pulse ingestion** — subscribe to AlienVault OTX pulses in `config/otx_pulses.yaml` (query, optional tags, max age, limit); pulses land as Articles and flow through extraction/enrichment, with idempotent re-pulls. `POST /api/ingest/otx-pulses`, `scry ingest otx-pulses`, scheduler + Threat Feeds pull-now; scheduled pulls use the system key, user pulls use your personal key.
+- **OTX pulse ingestion** — subscribe to AlienVault OTX pulses in `config/otx_pulses.yaml` (query, optional tags, max age, limit); pulses land as Articles and flow through extraction/enrichment, with idempotent re-pulls. `POST /ingest/otx-pulses`, `scry ingest otx-pulses`, scheduler + Threat Feeds pull-now; scheduled pulls use the system key, user pulls use your personal key.
 - **Vendor-verdict alert escalation** — new `vendor_confirmed_malicious` trigger (VT votes ≥ 10 & ratio ≥ 0.5, GreyNoise "malicious", or AbuseIPDB ≥ 80) with a capped risk-score bump and env-tunable thresholds.
 - **Staleness-aware enrichment refresh** — per-provider TTLs (VT/AbuseIPDB 7d, OTX 14d, GreyNoise 3d); batch runs skip fresh markers (`fresh_skipped`), work oldest-first, and `force=true` re-enriches everything. UI shows per-provider "last enriched Xd ago" + Re-enrich stale / Force re-enrich all.
 
@@ -40,17 +44,17 @@ See [CHANGELOG.md](./CHANGELOG.md) for details.
 - **MFA & passkeys** — TOTP (Google Authenticator QR, verify-before-enable, 10 one-time recovery codes) and WebAuthn passkeys (register on /profile, username-first login, satisfies MFA; works on localhost and LAN/HTTPS).
 - **Admin panel** — /admin user management, stats, failed-login/lockout panel, session revocation, audit log, and DB-stored SMTP config with test button.
 - **/profile** — display name, password change with must-change enforcement, email verification (6-digit PIN via SMTP when configured), per-user scry API keys (masked, revocable, expiry, last-used).
-- **API auth** — once any user exists, `/api/*` + `/taxii2` require a session cookie, per-user API key, or master `CTI_API_KEY`; legacy-open when no users.
+- **API auth** — once any user exists, the REST API (root paths like `/articles`, `/observables`, `/ingest/*`) + `/taxii2` require a session cookie, per-user API key, or master `CTI_API_KEY`; legacy-open when no users.
 - **Per-user feed keys** — personal VirusTotal/OTX keys on Threat Feeds (Test → Connected/Failed), live verdict lookup on observables, bulk enrich-unenriched, coverage stats on /admin.
 
 See [CHANGELOG.md](./CHANGELOG.md) for details.
 
 ## What's new in 0.4.0
 
-- **Optional API token auth** — set `CTI_API_KEY` to require `X-API-Key` / `Bearer` on all `/api` + `/taxii2` routes (health & AI-status stay open).
+- **Optional API token auth** — set `CTI_API_KEY` to require `X-API-Key` / `Bearer` on all REST API + `/taxii2` routes (health & AI-status stay open).
 - **MCP server** — six tools (`scry_health`, `scry_stats`, `scry_search`, `scry_observables`, `scry_alerts`, `scry_ask`) over stdio for Claude Desktop / Cursor: `pip install scry[mcp]`, `scry mcp`.
 - **AI briefs** — `POST /api/reports/brief?scope=daily|weekly` turns daily/weekly reports into executive summaries; dashboard button + `scry reporting brief`.
-- **Alert channels** — generic webhook, SMTP email, and macOS desktop notifications with `POST /api/alerts/test` and a channel status panel on `/ui/alerts`; auto-evaluated after every ingest.
+- **Alert channels** — generic webhook, SMTP email, and macOS desktop notifications with `POST /alerts/test` and a channel status panel on `/ui/alerts`; auto-evaluated after every ingest.
 - **Ask memory** — multi-turn AI Search conversations with sessions API (`/api/ai/sessions`) and a conversation sidebar on the Search page.
 - **IOC enrichment** — AbuseIPDB + GreyNoise providers, VirusTotal daily quota enforced, per-provider toggles + Fernet-encrypted keys with env fallback.
 - **STIX 2.1 + TAXII 2.1** — spec-valid bundle export (`POST /exports/stix21`) and a read-only TAXII server at `/taxii2/` with `intel` + `articles` collections.
@@ -59,7 +63,7 @@ See [CHANGELOG.md](./CHANGELOG.md) for details.
 
 ## What it does
 
-- **Authenticates** every user and API call — accounts with bcrypt passwords, TOTP MFA and WebAuthn passkeys, DB-backed sessions with sliding expiry, an admin panel, and per-user scry API keys. Once any user exists, `/api/*` and `/taxii2` require a session cookie, per-user key, or the master `CTI_API_KEY`.
+- **Authenticates** every user and API call — accounts with bcrypt passwords, TOTP MFA and WebAuthn passkeys, DB-backed sessions with sliding expiry, an admin panel, and per-user scry API keys. Once any user exists, the REST API (root paths like `/articles`, `/observables`, `/ingest/*`) and `/taxii2` require a session cookie, per-user key, or the master `CTI_API_KEY`.
 - **Ingests** public RSS / blogs / vendor research / CISA KEV / Reddit (and any source you add to `config/sources.yaml`) under per-source collection policies — plus **OTX pulse subscriptions** (`config/otx_pulses.yaml`): matching pulses are stored as articles and flow through extraction/enrichment with idempotent re-pulls.
 - **Parses** articles (trafilatura → readability → bs4 fallback), normalizes Unicode, redacts credentials / API keys / private keys before indexing.
 - **Extracts** IPv4/IPv6, domains, URLs, defanged variants, emails, hashes (MD5/SHA1/SHA256/SHA512/SSDEEP/TLSH), CVEs, ATT&CK techniques, ASNs, onion, wallets, registry keys, named pipes, Telegram/Discord handles — with evidence text and confidence scores.
@@ -207,8 +211,8 @@ scry stats
 - **Login** — `/login` takes username + password; 5 failed attempts lock the account for 15 minutes. Sessions are DB-backed HttpOnly cookies with a sliding 7-day expiry; "log out everywhere" revokes all sessions from /profile or /admin.
 - **MFA (TOTP)** — on /profile, scan the QR code with Google Authenticator, confirm one code, and MFA is enabled; 10 one-time recovery codes are shown once at setup. MFA is challenged at login when enabled; a recovery code works as a fallback.
 - **Passkeys (WebAuthn)** — register a passkey on /profile, then log in with username + passkey (no password). Passkey login satisfies MFA. The relying party is derived per-request from the Host header, so passkeys work on `localhost` now and on LAN/HTTPS hosts as-is.
-- **Master API key (`CTI_API_KEY`)** — a static key accepted on all `/api/*` and `/taxii2` routes via `X-API-Key` or `Authorization: Bearer`, constant-time compared. Useful for automation/Dashboard widgets.
-- **Per-user API keys** — created on /profile (masked after creation, revocable, optional expiry, last-used tracking). Once users exist, `/api/*` and `/taxii2` accept any of: session cookie, per-user API key, or master `CTI_API_KEY`. Exemptions that stay open: `/health`, `/api/ai/status`, `/api/ai/provider` GET, and `/login` + `/static`.
+- **Master API key (`CTI_API_KEY`)** — a static key accepted on all REST API and `/taxii2` routes via `X-API-Key` or `Authorization: Bearer`, constant-time compared. Useful for automation/Dashboard widgets.
+- **Per-user API keys** — created on /profile (masked after creation, revocable, optional expiry, last-used tracking). Once users exist, the REST API and `/taxii2` accept any of: session cookie, per-user API key, or master `CTI_API_KEY`. Exemptions that stay open: `/health`, `/api/ai/status`, `/api/ai/provider` GET, and `/login` + `/static`.
 
 ## Configuration
 

@@ -4,6 +4,17 @@ All notable changes to Scry are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 semantic versioning.
 
+## [0.7.2] — 2026-10-01
+
+### Fixed
+
+- **Docs: corrected REST API paths.** The main REST API serves at root paths
+  (`/articles`, `/observables`, `/ingest/*`, `/alerts`, `/exports/*`, …); only
+  the AI routes (`/api/ai/*`), `/api/reports/brief`, and `/taxii2/*` carry a
+  prefix. README references updated to match `docs/api-reference.md` (already
+  correct). No code changes. An earlier e2e first-run verification surfaced
+  the discrepancy.
+
 ## [0.7.1] — 2026-10-03
 
 ### Security
