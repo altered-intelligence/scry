@@ -43,6 +43,26 @@
       </div>
     {% endif %}
 
+    {% set pdns = observable.enrichment or {} %}
+    {% if pdns.get('passive_dns_enriched_at') %}
+      <div class="panel">
+        <h3>Certificate transparency</h3>
+        <p class="muted">Passive DNS from public certificate-transparency logs (crt.sh) — passive only, no active scanning of the target.</p>
+        <dl class="kv">
+          <dt>Subdomains seen</dt><dd>{{ pdns.get('passive_dns_count', 0) }}</dd>
+          <dt>Updated</dt><dd>{{ passive_dns_age }}</dd>
+        </dl>
+        {% if pdns.get('passive_dns_samples') %}
+          <div class="tags">
+            {% for name in pdns.passive_dns_samples[:10] %}<code class="chip">{{ name }}</code>{% endfor %}
+          </div>
+          {% if pdns.passive_dns_samples|length > 10 %}
+            <p class="muted">showing 10 of {{ pdns.passive_dns_samples|length }} stored samples</p>
+          {% endif %}
+        {% endif %}
+      </div>
+    {% endif %}
+
     {% if can_lookup_vt or can_lookup_otx %}
     <div class="panel">
       <h3>Live lookup</h3>

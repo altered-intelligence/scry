@@ -294,7 +294,9 @@ class TestEngineIntegration:
         assert result["epss_enriched"] == 1
         assert "epss" in result["providers"]
         # No keyed provider ran or even appeared in the provider list.
-        assert result["providers"] == ["epss"]
+        # v0.8.0 step 3 — the default run now also includes the keyless
+        # passive_dns phase (crt.sh), which simply finds no domain candidates.
+        assert result["providers"] == ["epss", "passive_dns"]
         assert result["skipped"] != {}  # keyed providers skipped with reasons
 
     @respx.mock

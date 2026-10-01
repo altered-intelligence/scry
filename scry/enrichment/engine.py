@@ -26,6 +26,7 @@ from scry.enrichment.epss import EpsEnricher
 from scry.enrichment.greynoise import GreyNoiseEnricher
 from scry.enrichment.infrastructure import InfrastructureEnricher
 from scry.enrichment.otx import OTXEnricher
+from scry.enrichment.passive_dns import PassiveDnsEnricher
 from scry.enrichment.prevalence import prevalence_summary
 from scry.enrichment.provider_settings import load_provider_states, selected_providers
 from scry.enrichment.url import URLEnricher
@@ -158,6 +159,10 @@ class EnrichmentEngine:
         # v0.8.0 step 2 — FIRST.org EPSS for CVEs: keyless global enrichment,
         # no per-user key concept, always runs during batch enrichment.
         self.epss = EpsEnricher()
+        # v0.8.0 step 3 — crt.sh passive DNS / certificate transparency for
+        # domains: keyless, passive-only (public CT logs), same always-runs
+        # batch semantics as EPSS.
+        self.passive_dns = PassiveDnsEnricher()
         self._external = {
             "virustotal": self.vt,
             "otx": self.otx,
@@ -353,30 +358,41 @@ class EnrichmentEngine:
         `epss_max_per_run`) and records `epss_enriched` / `epss_skipped`
         (unknown CVEs marked checked-without-data) in the summary.
 
+        v0.8.0 step 3 — passive_dns (crt.sh, keyless, passive-only) runs the
+        same way for domain observables: those whose `passive_dns_checked_at`
+        marker is missing or older than `passive_dns_refresh_days`, oldest
+        first, capped at `passive_dns_max_per_run`, one request per domain
+        per run. Results land in observable.enrichment as
+        `passive_dns_count` / `passive_dns_samples` /
+        `passive_dns_enriched_at`. Timeouts count as `passive_dns_skipped`
+        (retried next run), never as errors.
+
         Returns per-provider enriched counts plus errors/skip bookkeeping;
         ``refreshed`` counts re-enrichments of records that carried a stale
         marker (as opposed to first-time enrichments).
         """
-        # EPSS is not part of the keyed-provider registry; validate the filter
-        # here (registry validation would reject "epss" as unknown) and strip
-        # it before provider selection.
+        # EPSS and passive_dns are not part of the keyed-provider registry;
+        # validate the filter here (registry validation would reject them as
+        # unknown) and strip them before provider selection.
+        _KEYLESS_PROVIDERS = ("epss", "passive_dns")
         run_epss = providers is None or "epss" in providers
+        run_passive_dns = providers is None or "passive_dns" in providers
         if providers:
-            unknown = [p for p in providers if p not in _EXTERNAL_PROVIDERS and p != "epss"]
+            unknown = [p for p in providers if p not in _EXTERNAL_PROVIDERS and p not in _KEYLESS_PROVIDERS]
             if unknown:
                 raise ValueError(
                     f"Unknown enrichment provider(s): {', '.join(sorted(unknown))}. "
-                    f"Supported: {', '.join(sorted([*_EXTERNAL_PROVIDERS, 'epss']))}"
+                    f"Supported: {', '.join(sorted([*_EXTERNAL_PROVIDERS, *_KEYLESS_PROVIDERS]))}"
                 )
-            external_providers = [p for p in providers if p != "epss"] or None
-            epss_only = external_providers is None
+            external_providers = [p for p in providers if p in _EXTERNAL_PROVIDERS] or None
+            keyless_only = external_providers is None
         else:
             external_providers = None
-            epss_only = False
+            keyless_only = False
 
         runnable: dict[str, Any] = {}
         skipped: dict[str, str] = {}
-        if not epss_only:
+        if not keyless_only:
             runnable, skipped = self._select_external(external_providers)
         # Only observables whose type at least one selected provider supports.
         selected_types: set[str] = set()
@@ -466,20 +482,39 @@ class EnrichmentEngine:
             errors += epss_counts.pop("epss_errors", 0)
             self.session.commit()
 
+        pdns_counts: dict[str, int] = {}
+        if run_passive_dns:
+            pdns_counts = self._run_passive_dns_enrichment(now, force=force, include_stale=include_stale)
+            errors += pdns_counts.pop("passive_dns_errors", 0)
+            self.session.commit()
+
         result: dict[str, Any] = {_EXTERNAL_PROVIDERS[name]["count_key"]: counts[name] for name in runnable}
         result.update(epss_counts)
+        result.update(pdns_counts)
         result.update(
             {
                 "errors": errors,
                 "total_candidates": len(to_enrich),
-                "providers": sorted([*runnable, *(["epss"] if run_epss else [])]),
+                "providers": sorted(
+                    [
+                        *runnable,
+                        *(["epss"] if run_epss else []),
+                        *(["passive_dns"] if run_passive_dns else []),
+                    ]
+                ),
                 "skipped": skipped,
                 "quota_skipped": {k: v for k, v in quota_skipped.items() if v},
                 "fresh_skipped": {k: v for k, v in fresh_skipped.items() if v},
                 "refreshed": {k: v for k, v in refreshed.items() if v},
             }
         )
-        logger.info("external_enrichment_batch_done", counts=counts, epss=epss_counts, errors=errors)
+        logger.info(
+            "external_enrichment_batch_done",
+            counts=counts,
+            epss=epss_counts,
+            passive_dns=pdns_counts,
+            errors=errors,
+        )
         self._record_vt_daily_usage()
         return result
 
@@ -547,6 +582,85 @@ class EnrichmentEngine:
                 sentinel += 1
 
         return {"epss_enriched": enriched, "epss_skipped": sentinel, "epss_errors": errors}
+
+    def _run_passive_dns_enrichment(
+        self, now: datetime, *, force: bool = False, include_stale: bool = True
+    ) -> dict[str, int]:
+        """crt.sh passive-DNS phase of a batch run: enrich domains due for
+        (re-)checking with public certificate-transparency data.
+
+        Selection mirrors the observable staleness logic: candidates are
+        domain observables whose ``passive_dns_checked_at`` marker is missing
+        or older than ``passive_dns_refresh_days``; ``include_stale=False``
+        restricts to never-checked records, ``force=True`` ignores the
+        marker. Oldest-checked-first so the stalest data gets refreshed
+        first, capped at ``passive_dns_max_per_run`` per run, with at most
+        one crt.sh request per domain per run (the enricher enforces a
+        minimum interval between requests).
+
+        Results are stored in the observable's ``enrichment`` JSON:
+        ``passive_dns_count`` (distinct SAN names under the domain, 0 when
+        the domain is absent from CT logs — a checked-but-empty sentinel
+        that still resets the TTL), ``passive_dns_samples`` (≤ 25 sample
+        subdomains) and ``passive_dns_enriched_at``.
+
+        Returns ``passive_dns_enriched`` / ``passive_dns_skipped`` counts
+        plus ``passive_dns_errors``. A crt.sh TIMEOUT is a skip (not an
+        error and no marker is written, so the domain is retried next run);
+        HTTP/transport failures are errors (recorded, run keeps going).
+        """
+        settings = get_settings()
+        ttl_days = max(0, settings.passive_dns_refresh_days)
+        max_per_run = max(1, settings.passive_dns_max_per_run)
+
+        candidates: list[tuple[tuple[int, float], Observable]] = []
+        for ob in self.session.scalars(select(Observable)).all():
+            if ob.type != "domain":
+                continue
+            if not _is_valid_for_external("domain", ob.normalized_value):
+                continue
+            enrichment = ob.enrichment or {}
+            age = _marker_age_seconds(enrichment, "passive_dns", now)
+            if force:
+                key = (0, 0.0) if age is None else (1, -age)
+            elif age is None:
+                key = (0, 0.0)  # never checked
+            elif include_stale and age > ttl_days * 86400:
+                key = (1, -age)  # stale: oldest first
+            else:
+                continue  # fresh (or "unenriched only" mode)
+            candidates.append((key, ob))
+        candidates.sort(key=lambda item: item[0])
+        selected = candidates[:max_per_run]
+
+        enriched = 0
+        skipped = 0
+        errors = 0
+        logger.info("passive_dns_batch_start", total=len(selected))
+
+        for _, ob in selected:
+            try:
+                res = self.passive_dns.enrich(ob.normalized_value)
+            except EnrichmentError as exc:
+                errors += 1
+                logger.warning("passive_dns_error", ob_id=ob.id, exc=str(exc))
+                continue
+            if res.fields.get("_passive_dns_status") == "skipped":
+                # Timeout — skip with a note, no marker: retried next run.
+                skipped += 1
+                logger.info("passive_dns_skipped", ob_id=ob.id, note=res.fields.get("passive_dns_note"))
+                continue
+            merged = dict(ob.enrichment or {})
+            merged.update(res.fields)
+            merged["passive_dns_checked_at"] = now.isoformat()
+            ob.enrichment = merged
+            enriched += 1
+
+        return {
+            "passive_dns_enriched": enriched,
+            "passive_dns_skipped": skipped,
+            "passive_dns_errors": errors,
+        }
 
     def _record_vt_daily_usage(self) -> None:
         """Persist the VT daily-quota counter for the admin coverage panel.

@@ -2214,6 +2214,14 @@ def ui_observable_detail(ob_id: int, request: Request, session: Session = Depend
         for name in ("virustotal", "otx", "abuseipdb", "greynoise")
     }
 
+    # v0.8.0 step 3 — age of the certificate-transparency (passive DNS) data
+    # for the CT block; None until the domain has been enriched by crt.sh.
+    passive_dns_age = (
+        _humanize_checked_age(enrichment_now, "passive_dns", now)
+        if enrichment_now.get("passive_dns_enriched_at")
+        else None
+    )
+
     # v0.5.0 step 6 — live lookup is only offered for providers the acting
     # user has a personal key for (user-triggered actions use personal keys).
     user = _signed_in_user(request, session)
@@ -2252,6 +2260,7 @@ def ui_observable_detail(ob_id: int, request: Request, session: Session = Depend
             "relationships": rels,
             "enrichment_json": enrichment_json,
             "provider_ages": provider_ages,
+            "passive_dns_age": passive_dns_age,
             "can_lookup_vt": "virustotal" in personal_keys,
             "can_lookup_otx": "otx" in personal_keys,
             "lookup_csrf": _admin_csrf_token(raw_cookie) if raw_cookie else "",

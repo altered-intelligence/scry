@@ -280,7 +280,7 @@ design).
   a vulnerability enrichment: batch lookup for CVEs with null/stale
   `epss_enriched_at` (TTL 7d), capped batch per run, honors existing
   ratelimit module. /ui/cve detail already renders `cve.epss`.
-- [ ] **Step 3 — crt.sh passive-DNS / cert-transparency enricher (domains).**
+- [x] **Step 3 — crt.sh passive-DNS / cert-transparency enricher (domains).**
   Free, no key: https://crt.sh/?q=%25.<domain>&output=json. Passive only —
   public certificate transparency, no active scanning (SECURITY.md boundary).
   Store discovered-subdomain count + up to N sample names in observable

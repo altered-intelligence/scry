@@ -128,6 +128,14 @@ class Settings(BaseSettings):
     epss_max_per_run: int = 100  # CVEs selected per enrichment run (CTI_EPSS_MAX_PER_RUN)
     epss_refresh_days: int = 7  # re-enrich CVEs whose EPSS data is older than this (CTI_EPSS_REFRESH_DAYS)
 
+    # crt.sh passive DNS / certificate transparency (v0.8.0 step 3) — keyless,
+    # passive-only (public CT logs) subdomain intel for domains. No API key;
+    # these only tune the batch behaviour.
+    passive_dns_max_per_run: int = 50  # domains enriched per run (CTI_PASSIVE_DNS_MAX_PER_RUN)
+    passive_dns_refresh_days: int = (
+        14  # re-enrich domains whose data is older than this (CTI_PASSIVE_DNS_REFRESH_DAYS)
+    )
+
     # Threat intelligence platforms
     misp_url: str = ""
     misp_api_key: str = ""
