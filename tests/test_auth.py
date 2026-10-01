@@ -248,6 +248,117 @@ class TestLoginUI:
         assert "login.success" in actions
 
 
+# ------------------------- first-run setup page (v0.7.1) -------------------------
+
+
+class TestFirstRunSetup:
+    def _get_csrf(self, client: TestClient) -> str:
+        import re
+
+        r = client.get("/setup")
+        assert r.status_code == 200
+        m = re.search(r'name="csrf" value="([^"]+)"', r.text)
+        assert m, "setup page must carry a CSRF token"
+        return m.group(1)
+
+    def test_setup_page_renders_with_zero_users(self):
+        with TestClient(app) as client:
+            r = client.get("/setup")
+            assert r.status_code == 200
+            assert "Create first administrator account" in r.text
+            assert 'name="confirm_password"' in r.text
+            # The zero-users login page points at /setup.
+            r = client.get("/login")
+            assert "/setup" in r.text
+
+    def test_setup_creates_admin_and_signs_in(self):
+        with TestClient(app) as client:
+            csrf = self._get_csrf(client)
+            r = client.post(
+                "/setup",
+                data={
+                    "csrf": csrf,
+                    "username": "root",
+                    "password": "Sup3r!pass",
+                    "confirm_password": "Sup3r!pass",
+                    "email": "root@example.com",
+                },
+                follow_redirects=False,
+            )
+            assert r.status_code == 303, r.text
+            assert r.headers["location"] == "/"
+            assert SESSION_COOKIE in client.cookies
+            user = get_user("root")
+            assert user.role == "admin"
+            assert user.must_change_password is False
+            assert verify_password("Sup3r!pass", user.password_hash)
+            assert "user.setup" in audit_actions()
+
+    def test_setup_default_email_when_omitted(self):
+        with TestClient(app) as client:
+            csrf = self._get_csrf(client)
+            client.post(
+                "/setup",
+                data={
+                    "csrf": csrf,
+                    "username": "root",
+                    "password": "Sup3r!pass",
+                    "confirm_password": "Sup3r!pass",
+                },
+                follow_redirects=False,
+            )
+            assert get_user("root").email == "root@example.com"
+
+    def test_setup_rejects_mismatched_passwords(self):
+        with TestClient(app) as client:
+            csrf = self._get_csrf(client)
+            r = client.post(
+                "/setup",
+                data={
+                    "csrf": csrf,
+                    "username": "root",
+                    "password": "Sup3r!pass",
+                    "confirm_password": "Different!1",
+                },
+                follow_redirects=False,
+            )
+            assert r.status_code == 303
+            assert "do+not+match" in r.headers["location"] or "not match" in r.headers["location"]
+            assert get_user("root") is None
+
+    def test_setup_rejects_bad_csrf(self):
+        with TestClient(app) as client:
+            r = client.post(
+                "/setup",
+                data={
+                    "csrf": "forged",
+                    "username": "root",
+                    "password": "Sup3r!pass",
+                    "confirm_password": "Sup3r!pass",
+                },
+                follow_redirects=False,
+            )
+            assert r.status_code == 403
+            assert get_user("root") is None
+
+    def test_setup_unreachable_once_users_exist(self):
+        make_user()
+        with TestClient(app) as client:
+            assert client.get("/setup").status_code == 404
+            r = client.post(
+                "/setup",
+                data={
+                    "csrf": "whatever",
+                    "username": "eve",
+                    "password": "Sup3r!pass",
+                    "confirm_password": "Sup3r!pass",
+                },
+                follow_redirects=False,
+            )
+            assert r.status_code == 404
+            assert get_user("eve") is None
+
+
 # ------------------------- throttling -------------------------
 
 
@@ -409,28 +520,41 @@ class TestUsersCLI:
         assert runner.invoke(cli_app, ["users", "enable", "alice"]).exit_code == 0
         assert get_user("alice").status == "active"
 
-    def test_seed_creates_admins(self, monkeypatch):
-        monkeypatch.setenv("CTI_ADMIN_INITIAL_PASSWORD", "Seed3d!pass")
-        r = runner.invoke(cli_app, ["users", "seed", "--yes"])
+    def test_seed_creates_single_admin_with_explicit_password(self):
+        r = runner.invoke(cli_app, ["users", "seed", "--username", "root", "--password", "Seed3d!pass"])
         assert r.exit_code == 0, r.output
-        for username in ("alakhani", "admin"):
-            user = get_user(username)
-            assert user is not None
-            assert user.role == "admin"
-            assert user.must_change_password is True
-            assert verify_password("Seed3d!pass", user.password_hash)
+        user = get_user("root")
+        assert user is not None
+        assert user.role == "admin"
+        assert user.must_change_password is True
+        assert verify_password("Seed3d!pass", user.password_hash)
 
-    def test_seed_skips_existing(self, monkeypatch):
-        make_user("alakhani")
-        monkeypatch.setenv("CTI_ADMIN_INITIAL_PASSWORD", "Seed3d!pass")
-        r = runner.invoke(cli_app, ["users", "seed", "--yes"])
-        assert r.exit_code == 0
-        assert get_user("admin") is not None  # created
-        assert get_user("alakhani").role == "user"  # untouched
+    def test_seed_generates_password_when_omitted(self):
+        r = runner.invoke(cli_app, ["users", "seed", "--username", "root"])
+        assert r.exit_code == 0, r.output
+        # The generated one-time password is printed exactly once.
+        marker = "One-time password"
+        assert marker in r.output
+        printed = r.output.split(marker, 1)[1].strip().splitlines()[1].strip()
+        user = get_user("root")
+        assert verify_password(printed, user.password_hash)
+        assert user.must_change_password is True
 
-    def test_seed_requires_yes(self):
+    def test_seed_refuses_when_users_exist(self):
+        make_user()
+        r = runner.invoke(cli_app, ["users", "seed", "--username", "root", "--password", "Seed3d!pass"])
+        assert r.exit_code == 1
+        assert get_user("root") is None
+        assert "already exist" in r.output
+
+    def test_seed_requires_username(self):
         r = runner.invoke(cli_app, ["users", "seed"])
         assert r.exit_code == 2
+
+    def test_seed_short_password_rejected(self):
+        r = runner.invoke(cli_app, ["users", "seed", "--username", "root", "--password", "short"])
+        assert r.exit_code == 2
+        assert get_user("root") is None
 
     def test_user_mgmt_audited(self):
         make_user()

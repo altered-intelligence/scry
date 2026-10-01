@@ -23,7 +23,7 @@ Commands:
   users promote|demote     Grant/revoke the admin role
   users reset-password     Reset a user's password (forces change + logout)
   users disable|enable     Disable/enable a user account
-  users seed               Seed alakhani+admin (--yes; CTI_ADMIN_INITIAL_PASSWORD)
+  users seed               Bootstrap the FIRST admin (one-time password)
   feeds migrate-env-keys   Copy env VT/OTX keys into user profiles (--users a,b)
 """
 
@@ -31,8 +31,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import re
+import secrets
 import sys
 
 import typer
@@ -438,8 +438,6 @@ def mcp_command() -> None:
 # ------------------------- users (v0.5.0 step 1) -------------------------
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-SEED_INITIAL_PASSWORD_ENV = "CTI_ADMIN_INITIAL_PASSWORD"
-SEED_INITIAL_PASSWORD_DEFAULT = "Batman911!#"
 
 
 def _audit_user(session, action: str, user: User, detail: dict | None = None) -> None:
@@ -605,45 +603,57 @@ def users_enable(username: str) -> None:
 
 @users_app.command("seed")
 def users_seed(
-    yes: bool = typer.Option(False, "--yes", help="Confirm creation of the seeded admin accounts"),
+    username: str = typer.Option(..., "--username", help="Username for the first admin account"),
+    password: str | None = typer.Option(
+        None, "--password", "-p", help="One-time password; generated + printed once when omitted"
+    ),
+    email: str | None = typer.Option(None, "--email", "-e", help="Defaults to <username>@example.com"),
 ) -> None:
-    """Seed the standard admin accounts (alakhani + admin).
+    """Bootstrap the FIRST admin account (v0.7.1).
 
-    Reads the initial password from $CTI_ADMIN_INITIAL_PASSWORD
-    (default "Batman911!#"); both accounts are created with
-    must_change_password=true. Existing usernames are skipped.
+    Refuses to run once any user account exists — first-run setup belongs on
+    the /setup page or here, exactly once. If --password is omitted, a random
+    one-time password is generated and printed to stdout exactly once: record
+    it immediately, it is never shown again and is not stored in plaintext.
+    The account must change the password at first login.
     """
-    if not yes:
-        console.print("[yellow]This creates admin accounts. Re-run with --yes to confirm.[/yellow]")
+    if password is not None and len(password) < 8:
+        console.print("[red]Password must be at least 8 characters[/red]")
         raise typer.Exit(2)
-    password = os.environ.get(SEED_INITIAL_PASSWORD_ENV, SEED_INITIAL_PASSWORD_DEFAULT)
-    seeded: list[str] = []
+    generated = password is None
+    if generated:
+        password = secrets.token_urlsafe(12)
     with session_scope() as session:
+        from scry.auth.sessions import users_exist
+
+        if users_exist(session):
+            console.print(
+                "[red]Refusing to seed: user accounts already exist. "
+                "Use the /setup page or `scry users create`.[/red]"
+            )
+            raise typer.Exit(1)
         from scry import mail as _mail
 
-        for username, email in (("alakhani", "alakhani@example.com"), ("admin", "admin@example.com")):
-            if _find_user(session, username) is not None:
-                continue
-            user = User(
-                username=username,
-                email=email,
-                role="admin",
-                password_hash=hash_password(password),
-                must_change_password=True,
-                # No mailer → nothing can verify the address; trust it (locked
-                # bypass). With SMTP up the admin verifies via PIN later.
-                email_verified=not _mail.smtp_configured(session),
-            )
-            session.add(user)
-            session.flush()
-            _audit_user(session, "user.seed", user)
-            seeded.append(username)
-    if seeded:
-        source = f"${SEED_INITIAL_PASSWORD_ENV}" if SEED_INITIAL_PASSWORD_ENV in os.environ else "default"
-        console.print(f"[green]Seeded admin accounts: {', '.join(seeded)}[/green]")
-        console.print(f"[dim]Initial password from {source}; must be changed at first login.[/dim]")
+        user = User(
+            username=username,
+            email=_validate_email(email) if email else f"{username}@example.com",
+            role="admin",
+            password_hash=hash_password(password),
+            must_change_password=True,
+            # No mailer → nothing can verify the address; trust it (locked
+            # bypass). With SMTP up the admin verifies via PIN later.
+            email_verified=not _mail.smtp_configured(session),
+        )
+        session.add(user)
+        session.flush()
+        _audit_user(session, "user.seed", user)
+    console.print(f"[green]Seeded first admin account: {username!r}[/green]")
+    if generated:
+        console.print("[bold]One-time password — shown once, copy it now:[/bold]")
+        console.print(f"  {password}")
+        console.print("[dim]Must be changed at first login.[/dim]")
     else:
-        console.print("[yellow]Seed usernames already exist — nothing to do.[/yellow]")
+        console.print("[dim]Password must be changed at first login.[/dim]")
 
 
 # ------------------------- feeds (v0.5.0 step 6) -------------------------

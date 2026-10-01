@@ -194,11 +194,12 @@ scry stats
 
 ## Users & authentication
 
-- **First run is open.** With no users in the database, the UI and API behave as before — everything is accessible. Create the first accounts with the CLI:
+- **First run is open.** With no users in the database, the UI and API behave as before — everything is accessible. Start the server and open the app: you'll be offered a **first-run setup page** (`/setup`) to create the initial administrator account (username, password, optional email). Authentication turns on the moment that account exists. CLI alternative:
 
   ```bash
-  scry users seed                # seeded admins: alakhani + admin (password "Batman911!#", must change at first login)
-  scry users create --username alice --email alice@example.com
+  scry users seed --username admin   # one-time bootstrap; prints a generated
+                                     # one-time password (must change at first login)
+  scry users create --email alice@example.com alice
   scry users list | promote | reset-password | disable
   ```
 

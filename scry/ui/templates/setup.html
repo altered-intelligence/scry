@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}First-run setup · Scry{% endblock %}
+{% block content %}
+<div class="panel" style="max-width: 420px; margin: 48px auto;">
+  <h1 style="font-size: 20px;">Create first administrator account</h1>
+  <p class="muted" style="font-size: 14px;">
+    No user accounts exist yet, so Scry is open to everyone. Create the first
+    administrator now — authentication turns on immediately afterwards, and
+    this page disappears for good.
+  </p>
+  {% if error %}
+    <div class="flash error" role="alert"><span>{{ error }}</span></div>
+  {% endif %}
+  <form method="post" action="/setup" style="display: grid; gap: 12px;">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label style="display: grid; gap: 4px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em;">
+      Username
+      <input type="text" name="username" required autofocus autocomplete="username">
+    </label>
+    <label style="display: grid; gap: 4px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em;">
+      Password <span style="text-transform: none; letter-spacing: 0;">(min 8 characters)</span>
+      <input type="password" name="password" required minlength="8" autocomplete="new-password">
+    </label>
+    <label style="display: grid; gap: 4px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em;">
+      Confirm password
+      <input type="password" name="confirm_password" required minlength="8" autocomplete="new-password">
+    </label>
+    <label style="display: grid; gap: 4px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em;">
+      Email <span style="text-transform: none; letter-spacing: 0;">(optional)</span>
+      <input type="text" name="email" autocomplete="email" placeholder="you@example.com">
+    </label>
+    <button type="submit" class="btn" style="justify-self: start;">Create administrator</button>
+  </form>
+</div>
+{% endblock %}

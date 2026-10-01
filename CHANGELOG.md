@@ -4,6 +4,28 @@ All notable changes to Scry are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 semantic versioning.
 
+## [0.7.1] — 2026-10-03
+
+### Security
+
+- **Removed hardcoded default admin credentials.** The repo no longer ships a
+  default initial password or hardcoded seed usernames (previously
+  `scry users seed` created two named admins from a password committed to the
+  repo). Note: the old password remains visible in git history — rotate any
+  deployment still using it.
+- **First-run admin setup page.** While the users table is empty, `/login`
+  points to a new CSRF-guarded `/setup` page ("Create first administrator
+  account": username, password, confirm, optional email). The first account
+  is created as role=admin with `must_change_password=false`, the installer is
+  signed in immediately, and the page starts returning 404 the moment any
+  account exists (also enforced on POST, and re-checked inside the
+  transaction). The setup event is written to the audit log.
+- **`scry users seed` now bootstraps a single admin safely.** New signature:
+  `scry users seed --username NAME [--password PW] [--email EMAIL]`. Without
+  `--password` a random one-time password is generated and printed to stdout
+  exactly once (must be changed at first login). The command refuses to run
+  once any user account exists.
+
 ## [0.7.0] — 2026-09-30
 
 ### Added

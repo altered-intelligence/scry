@@ -100,9 +100,13 @@ prefix `v0.5.0 step N:`. Owner decisions locked 2026-09-29:
 - Once ANY user exists: /api/* requires auth (session cookie, per-user API
   key, or master CTI_API_KEY). Master key generated into .env + added to
   Dashboard widget scripts. No users → legacy open behavior.
-- Seeded admins: alakhani + admin, password "Batman911!#", must change at
-  first login, MFA/passkeys off initially. Existing VT/OTX keys migrated from
-  .env into both profiles.
+- First admin bootstrap (v0.7.1): zero users → a first-run setup page
+  (`/setup`) creates the initial admin account (CSRF-guarded, logs the
+  installer straight in, no forced password change); `scry users seed
+  --username NAME` is the CLI alternative and generates a random one-time
+  password printed once (must change at first login). No hardcoded default
+  credentials anywhere. Existing VT/OTX keys migrated from .env into the
+  seeded profile.
 
 ## Steps
 
@@ -112,7 +116,8 @@ prefix `v0.5.0 step N:`. Owner decisions locked 2026-09-29:
   + future /admin behind session (redirect to /login; /login + /static exempt);
   login throttling (5 fails → 15-min lockout); email column required;
   `scry users` CLI (create/list/promote/demote/reset-password/disable/seed);
-  seed alakhani+admin (must_change_password=true); extension of
+  first-run /setup page + `scry users seed --username` (one-time generated
+  password, must_change_password=true); extension of
   scry/api/auth.py: when users exist require session cookie OR valid API key
   OR master CTI_API_KEY (per-user keys land in step 3 — design the dependency
   so keys are pluggable); exemptions /health /api/health /api/ai/status

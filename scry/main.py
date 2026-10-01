@@ -124,7 +124,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Scry",
-    version="0.7.0",
+    version="0.7.1",
     description="Defensive CTI collection, extraction, enrichment, correlation, search, and reporting.",
     lifespan=lifespan,
 )
@@ -352,6 +352,135 @@ def logout(request: Request):
     response = RedirectResponse(url="/login", status_code=303)
     response.delete_cookie(SESSION_COOKIE, path="/")
     return response
+
+
+# ------------------------- first-run setup (v0.7.1) -------------------------
+
+# CSRF for the setup form: there is no session cookie yet, so the
+# admin-form CSRF scheme (derived from the session cookie) cannot apply.
+# Instead GET /setup issues a random token — its sha256 goes into a
+# short-lived HttpOnly cookie, the raw token into a hidden form field —
+# and POST /setup requires both to match (double-submit pattern).
+SETUP_CSRF_COOKIE = "scry_setup_csrf"
+
+
+def _setup_csrf_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def _check_setup_csrf(request: Request, form_token: str | None) -> bool:
+    raw = request.cookies.get(SETUP_CSRF_COOKIE)
+    if not raw or not form_token:
+        return False
+    return hmac.compare_digest(hash_token(form_token), hash_token(raw))
+
+
+@app.get("/setup", response_class=HTMLResponse)
+def setup_page(request: Request):
+    """First-run admin creation — only while the users table is empty."""
+    with session_scope() as session:
+        has_users = users_exist(session)
+    if has_users:
+        raise HTTPException(404)
+    token = _setup_csrf_token()
+    response = templates.TemplateResponse(
+        request,
+        "setup.html",
+        {
+            "has_users": False,
+            "error": request.query_params.get("error"),
+            "csrf": token,
+        },
+    )
+    response.set_cookie(
+        SETUP_CSRF_COOKIE,
+        token,
+        max_age=600,
+        httponly=True,
+        samesite="lax",
+        path="/setup",
+    )
+    return response
+
+
+@app.post("/setup")
+def setup_submit(
+    request: Request,
+    csrf: str = Form(""),
+    username: str = Form(""),
+    password: str = Form(""),
+    confirm_password: str = Form(""),
+    email: str = Form(""),
+):
+    with session_scope() as session:
+        if users_exist(session):
+            # Defense in depth: the page is gone once any account exists.
+            # Runs before field validation so a live instance always 404s.
+            raise HTTPException(404)
+        if not _check_setup_csrf(request, csrf):
+            raise HTTPException(403)
+        username = username.strip()
+        if not username:
+            return _setup_redirect("Username is required.")
+        if len(password) < 8:
+            return _setup_redirect("Password must be at least 8 characters.")
+        if password != confirm_password:
+            return _setup_redirect("Passwords do not match.")
+        from scry import mail as _mail
+
+        user = User(
+            username=username,
+            email=_validate_email_or_default(email, username),
+            role="admin",
+            password_hash=hash_password(password),
+            must_change_password=False,  # installer just chose this password
+            email_verified=not _mail.smtp_configured(session),
+        )
+        session.add(user)
+        session.flush()
+        from scry.audit import record
+
+        record(
+            session,
+            action="user.setup",
+            actor=username,
+            target_type="user",
+            target_id=user.id,
+            detail={"role": "admin"},
+        )
+        # Log the installer straight in.
+        raw_token = create_session(
+            session,
+            user,
+            ip=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        )
+        session.commit()
+
+    response = RedirectResponse(url="/", status_code=303)
+    response.set_cookie(
+        SESSION_COOKIE,
+        raw_token,
+        max_age=int(SESSION_TTL.total_seconds()),
+        httponly=True,
+        samesite="lax",
+        path="/",
+    )
+    response.delete_cookie(SETUP_CSRF_COOKIE, path="/setup")
+    return response
+
+
+def _validate_email_or_default(email: str, username: str) -> str:
+    email = (email or "").strip()
+    if not email:
+        return f"{username}@example.com"
+    if not _EMAIL_RE.match(email):
+        raise HTTPException(422, "Invalid email address.")
+    return email
+
+
+def _setup_redirect(message: str) -> RedirectResponse:
+    return RedirectResponse(url=f"/setup?{urlencode({'error': message})}", status_code=303)
 
 
 # ------------------------- MFA login challenge (v0.5.0 step 4) -------------------------
@@ -629,7 +758,7 @@ def _collection_window_days(session: Session) -> int:
 def admin_page(request: Request, session: Session = Depends(get_session)):
     admin = _admin_or_none(request)
     if request.state.user is None:
-        # Zero users → /login shows the setup note; otherwise middleware
+        # Zero users → /login links to the /setup page; otherwise middleware
         # already redirected anonymous users here.
         return RedirectResponse(url="/login", status_code=303)
     if admin is None:
