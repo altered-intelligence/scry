@@ -619,6 +619,12 @@ def _smtp_overview(session: Session) -> dict:
     }
 
 
+def _collection_window_days(session: Session) -> int:
+    from scry.ingestion.collection_window import get_window_days
+
+    return get_window_days(session)
+
+
 @app.get("/admin", response_class=HTMLResponse)
 def admin_page(request: Request, session: Session = Depends(get_session)):
     admin = _admin_or_none(request)
@@ -672,6 +678,7 @@ def admin_page(request: Request, session: Session = Depends(get_session)):
             "audit_entries": audit_entries,
             "smtp": _smtp_overview(session),
             "enrichment_coverage": _enrichment_coverage(session),
+            "collection_window_days": _collection_window_days(session),
         },
     )
 
@@ -1040,6 +1047,34 @@ def admin_smtp_test(
         target = f" to {to}" if to else ""
         return _redirect_flash("/admin", f"SMTP test OK{target}.")
     return _redirect_flash("/admin", f"SMTP test failed: {error}", "error")
+
+
+@app.post("/admin/collection-window/save")
+def admin_collection_window_save(
+    request: Request,
+    session: Session = Depends(get_session),
+    csrf: str = Form(""),
+    days: str = Form(""),
+):
+    """Set the global collection window — admin-only (v0.7.0 step 2).
+
+    Collection is global: the window applies to every source for every
+    user. Applies to new collection only; existing articles are untouched.
+    """
+    admin = _admin_or_none(request)
+    if admin is None:
+        raise HTTPException(403)
+    if not _check_admin_csrf(request, csrf):
+        return _redirect_flash("/admin", "Bad CSRF token — action rejected.", "error")
+    from scry.ingestion.collection_window import set_window_days
+
+    try:
+        requested = int(days)
+    except ValueError:
+        return _redirect_flash("/admin", f"Invalid collection window: {days!r}", "error")
+    saved = set_window_days(session, requested)
+    _audit_admin(session, admin, "collection_window.set", detail={"days": saved, "requested": requested})
+    return _redirect_flash("/admin", f"Collection window set to last {saved} day(s).")
 
 
 # ------------------------- profile (v0.5.0 step 3) -------------------------
@@ -2634,6 +2669,7 @@ def ui_sources(request: Request, session: Session = Depends(get_session)):
             "enabled_count": enabled_count,
             "is_admin": user is not None and user.role == "admin",
             "csrf": _admin_csrf_token(raw_cookie) if raw_cookie else "",
+            "collection_window_days": _collection_window_days(session),
         },
     )
 

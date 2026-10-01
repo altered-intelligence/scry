@@ -233,7 +233,7 @@ Conventions as before. Owner-approved 2026-09-30. Collection is GLOBAL
   already present (CrowdStrike, Fortinet, Unit42, Check Point, Google/Mandiant,
   Microsoft). Feed URLs (not page URLs) go in the `feed:` field; page URL in
   `url:`.
-- [ ] **Step 2 — Collection window (1-7 days, admin-only).** New SystemSetting
+- [x] **Step 2 — Collection window (1-7 days, admin-only).** New SystemSetting
   `collection_window_days` (default 1 = last 24h). Admin-only control on
   /admin (number input clamped 1-7, or select) + displayed (read-only) on the
   Sources page. Enforced in ingest_engine/rss path: skip feed entries whose

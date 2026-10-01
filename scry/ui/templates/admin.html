@@ -9,6 +9,7 @@
   <a class="btn secondary" href="#security">Security</a>
   <a class="btn secondary" href="#sessions">Sessions</a>
   <a class="btn secondary" href="#smtp">SMTP</a>
+  <a class="btn secondary" href="#collection-window">Collection window</a>
   <a class="btn secondary" href="#audit">Audit log</a>
 </div>
 
@@ -249,6 +250,26 @@
   <p class="muted">DB-stored values override the environment config
   (<code>SMTP_HOST</code>, <code>SMTP_PORT</code>, …). Clearing the host removes the DB overrides.
   The password is stored encrypted and never displayed.</p>
+</div>
+
+{# ------------------------- collection window (v0.7.0 step 2) ------------------------- #}
+<div class="panel" id="collection-window">
+  <h2 style="margin-top: 0;">Collection window</h2>
+  <p>
+    Only feed entries published within the last
+    <strong>{{ collection_window_days }} day(s)</strong> are collected.
+    Entries without a date are always kept. Applies to new collection only —
+    existing articles are untouched.
+  </p>
+  <form method="post" action="/admin/collection-window/save" class="filters" style="align-items: end;">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>Days (1–7)
+      <input type="number" name="days" min="1" max="7" step="1" value="{{ collection_window_days }}"
+             style="min-width: 80px;">
+    </label>
+    <button type="submit" class="btn">Save</button>
+  </form>
+  <p class="muted">Collection is global — the window applies to every source for all users.</p>
 </div>
 
 {# ------------------------- audit log ------------------------- #}

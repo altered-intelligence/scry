@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from scry.ingestion.collection_window import entry_in_window, get_window_days
 from scry.ingestion.cve_feed import parse_kev_json
 from scry.ingestion.fetcher import FetchResult, SafeFetcher
 from scry.ingestion.policy import CollectionPolicyEngine, PolicyDecision
@@ -88,7 +89,12 @@ class IngestionEngine:
                 return {"articles": 1 if article else 0}
 
             persisted = 0
+            window_skipped = 0
+            window_days = get_window_days(self.session)
             for entry in entries[:200]:
+                if not entry_in_window(entry.published_at, window_days, datetime.now(UTC)):
+                    window_skipped += 1
+                    continue
                 if self._is_duplicate_url(entry.url):
                     continue
                 article = Article(
@@ -111,7 +117,9 @@ class IngestionEngine:
                 self.session.add(article)
                 persisted += 1
             self.session.commit()
-            return {"articles": persisted, "feed_entries": len(entries)}
+            if window_skipped:
+                logger.info("window_filtered", source=source.name, skipped=window_skipped, days=window_days)
+            return {"articles": persisted, "feed_entries": len(entries), "window_skipped": window_skipped}
 
     async def ingest_all(self) -> dict[str, int]:
         totals: dict[str, int] = {"articles": 0, "cves": 0, "errors": 0, "blocked": 0}
