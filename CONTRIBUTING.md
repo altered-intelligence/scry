@@ -53,6 +53,10 @@ Releases follow the end-of-track checklist (see
 5. Commit as `Release vX.Y.Z: <headline>`, tag `vX.Y.Z`, push branch + tag.
 6. Publish the GitHub release with the changelog section as notes; verify
    tag == `HEAD` == remote `HEAD` and the working tree is clean.
+7. **Confirm CI is green on `main`** — the `ci.yml` (ruff, black, pytest) and
+   `secret-scan.yml` (gitleaks) workflows must both pass on the release
+   commit. A red pipeline is a failed release: fix forward with a follow-up
+   commit before starting the next track. The README badges must show green.
 
 ## Reporting issues
 
