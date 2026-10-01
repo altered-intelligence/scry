@@ -219,7 +219,7 @@ class TestSourcesPage:
             assert "CISA AIS (TAXII)" in body
             assert "Google Cloud Threat Intelligence (Mandiant)" in body
             # summary strip shows totals
-            assert "28 total" in body
+            assert "37 total" in body
             # both enabled and disabled badges present
             assert '<span class="badge good">enabled</span>' in body
             assert '<span class="badge dim">disabled</span>' in body
@@ -239,10 +239,15 @@ class TestSourcesPage:
             assert sophos is not None and sophos.enabled is False
             assert ais is not None and ais.enabled is False
 
-    def test_nav_contains_sources_link(self):
+    def test_nav_contains_sources_link_in_intel_feeds_dropdown(self):
         with TestClient(app) as client:
             r = client.get("/")
             assert 'href="/ui/sources"' in r.text
+            # v0.7.0 step 1 — Sources moved from the standalone Intel nav
+            # position into the Intel Feeds dropdown (after Ransomware Feeds).
+            dropdown = r.text.split('Intel Feeds</button>')[1].split('</div>')[0]
+            assert 'href="/ui/sources"' in dropdown
+            assert 'href="/ui/intel-feeds/ransomware-feeds"' in dropdown
 
 
 class TestNavAndTheme:

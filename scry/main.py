@@ -2623,11 +2623,58 @@ def ui_sources(request: Request, session: Session = Depends(get_session)):
         session.scalars(select(Source).order_by(Source.enabled.desc(), Source.baseline_confidence.desc()))
     )
     enabled_count = sum(1 for s in sources if s.enabled)
+    user = getattr(request.state, "user", None)
+    raw_cookie = request.cookies.get(SESSION_COOKIE)
     return templates.TemplateResponse(
         request,
         "sources.html",
-        {"sources": sources, "total": len(sources), "enabled_count": enabled_count},
+        {
+            "sources": sources,
+            "total": len(sources),
+            "enabled_count": enabled_count,
+            "is_admin": user is not None and user.role == "admin",
+            "csrf": _admin_csrf_token(raw_cookie) if raw_cookie else "",
+        },
     )
+
+
+@app.post("/ui/sources/{source_id}/toggle")
+def ui_source_toggle(
+    request: Request,
+    source_id: int,
+    session: Session = Depends(get_session),
+    csrf: str = Form(""),
+):
+    """Flip Source.enabled — admin-only (v0.7.0 step 1).
+
+    Collection is global: the toggle changes what every user collects. The
+    runtime value lives in the DB and survives restarts because
+    SourceRegistry.sync_from_yaml only applies yaml ``enabled`` at creation.
+    """
+    user = getattr(request.state, "user", None)
+    if user is None:
+        return RedirectResponse(url="/login", status_code=303)
+    if user.role != "admin":
+        return templates.TemplateResponse(request, "403.html", {}, status_code=403)
+    if not _check_admin_csrf(request, csrf):
+        return _redirect_flash("/ui/sources", "Bad CSRF token — action rejected.", "error")
+    source = session.get(Source, source_id)
+    if source is None:
+        return _redirect_flash("/ui/sources", f"Unknown source #{source_id}.", "error")
+    source.enabled = not source.enabled
+    session.flush()
+    from scry.audit import record
+
+    record(
+        session,
+        action="source.toggle",
+        actor=user.username,
+        target_type="source",
+        target_id=source.id,
+        detail={"name": source.name, "enabled": source.enabled},
+    )
+    state = "enabled — it will be collected" if source.enabled else "disabled — collection skipped"
+    return _redirect_flash("/ui/sources", f"{source.name} is now {state}.")
 
 
 # ------------------------- search -------------------------

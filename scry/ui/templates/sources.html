@@ -11,8 +11,10 @@
     <span class="badge good">{{ enabled_count }} enabled</span>
     <span class="badge dim">{{ total - enabled_count }} disabled</span>
   </div>
-  <span class="muted">Synced from <code>config/sources.yaml</code> at startup / <code>scry init-db</code>.</span>
+  <span class="muted">Synced from <code>config/sources.yaml</code> at startup / <code>scry init-db</code>. On/off toggles are stored in the DB and survive restarts.</span>
 </div>
+
+<p class="muted" style="margin: 8px 2px 12px">Collection is global — changes affect what everyone collects.</p>
 
 <div class="panel">
   <table>
@@ -27,7 +29,19 @@
           {% if s.feed %}<br><span class="muted" style="font-size:11px">feed: {{ s.feed[:60] }}{% if s.feed|length > 60 %}…{% endif %}</span>{% endif %}
         </td>
         <td><span class="chip">{{ s.type }}</span></td>
-        <td>{% if s.enabled %}<span class="badge good">enabled</span>{% else %}<span class="badge dim">disabled</span>{% endif %}</td>
+        <td>
+          {% if is_admin %}
+          <form method="post" action="/ui/sources/{{ s.id }}/toggle" style="display:inline;margin:0">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input type="checkbox" onchange="this.form.submit()" {% if s.enabled %}checked{% endif %} title="Toggle {{ s.name }} on/off" style="vertical-align:middle">
+          </form>
+          {% else %}
+          <span title="Only admin users can toggle sources on/off">
+            <input type="checkbox" disabled {% if s.enabled %}checked{% endif %} title="Only admin users can toggle sources on/off" style="vertical-align:middle">
+          </span>
+          {% endif %}
+          {% if s.enabled %}<span class="badge good">enabled</span>{% else %}<span class="badge dim">disabled</span>{% endif %}
+        </td>
         <td>
           {% if s.priority == 'high' %}<span class="badge warn">high</span>
           {% elif s.priority == 'low' %}<span class="badge dim">low</span>

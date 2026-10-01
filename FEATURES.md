@@ -209,7 +209,7 @@ escalation, and OTX pulse ingestion as a first-class source.
 Conventions as before. Owner-approved 2026-09-30. Collection is GLOBAL
 (shared across all users) — source toggles affect what everyone collects.
 
-- [ ] **Step 1 — Sources under Intel Feeds with admin-only toggles.**
+- [x] **Step 1 — Sources under Intel Feeds with admin-only toggles.**
   Move Sources into the Intel Feeds dropdown menu (base.html). Sources page
   (sources.html): checkbox per source, ON by default. Admin POST
   /ui/sources/{id}/toggle (CSRF) flips Source.enabled — ingest already skips

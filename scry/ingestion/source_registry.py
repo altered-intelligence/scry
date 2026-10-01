@@ -55,7 +55,10 @@ class SourceRegistry:
                 existing.type = spec.get("type", existing.type)
                 existing.url = spec.get("url", existing.url)
                 existing.feed = spec.get("feed", existing.feed)
-                existing.enabled = bool(spec.get("enabled", existing.enabled))
+                # ``enabled`` is RUNTIME STATE managed from the Sources page
+                # (/ui/sources, admin-only toggles). The yaml value applies
+                # only when the row is first created; re-syncing here would
+                # clobber admin toggles on every restart (v0.7.0 step 1).
                 existing.priority = spec.get("priority", existing.priority)
                 existing.baseline_confidence = int(
                     spec.get("baseline_confidence", existing.baseline_confidence)

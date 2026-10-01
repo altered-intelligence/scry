@@ -89,6 +89,116 @@ sources:
     rate_limit_per_minute: 10
     tags: [vendor, threat-research, primary-source]
 
+  - name: Cisco Talos Blog
+    type: vendor_blog
+    url: https://blog.talosintelligence.com/
+    feed: https://blog.talosintelligence.com/rss/
+    enabled: true
+    priority: high
+    baseline_confidence: 92
+    collection_policy: safe_public_web
+    independent: true
+    rate_limit_per_minute: 10
+    tags: [vendor, cisco, threat-research, primary-source]
+    notes: "Feed validated live (200 + RSS XML). Homepage-declared feed; the old Blogger-style /feeds/posts/default path now 404s."
+
+  - name: SOCRadar Blog
+    type: vendor_blog
+    url: https://socradar.io/blog/
+    feed: https://socradar.io/blog/feed/
+    enabled: true
+    priority: high
+    baseline_confidence: 85
+    collection_policy: safe_public_web
+    independent: true
+    rate_limit_per_minute: 10
+    tags: [vendor, threat-research]
+
+  - name: The DFIR Report
+    type: vendor_blog
+    url: https://thedfirreport.com/
+    feed: https://thedfirreport.com/feed/
+    enabled: true
+    priority: high
+    baseline_confidence: 90
+    collection_policy: safe_public_web
+    independent: true
+    rate_limit_per_minute: 10
+    tags: [dfir, threat-research, primary-source]
+
+  - name: Securelist
+    type: vendor_blog
+    url: https://securelist.com/
+    feed: https://securelist.com/feed/
+    enabled: true
+    priority: high
+    baseline_confidence: 90
+    collection_policy: safe_public_web
+    independent: true
+    rate_limit_per_minute: 10
+    tags: [vendor, kaspersky, threat-research, primary-source]
+
+  - name: Krebs on Security
+    type: vendor_blog
+    url: https://krebsonsecurity.com/
+    feed: https://krebsonsecurity.com/feed/
+    enabled: true
+    priority: high
+    baseline_confidence: 88
+    collection_policy: safe_public_web
+    independent: true
+    rate_limit_per_minute: 10
+    tags: [journalist, investigative, threat-research]
+
+  - name: SentinelOne Labs
+    type: vendor_blog
+    url: https://www.sentinelone.com/labs/
+    feed: https://www.sentinelone.com/labs/feed/
+    enabled: true
+    priority: high
+    baseline_confidence: 90
+    collection_policy: safe_public_web
+    independent: true
+    rate_limit_per_minute: 10
+    tags: [vendor, threat-research, primary-source]
+
+  - name: Red Canary Blog
+    type: vendor_blog
+    url: https://redcanary.com/blog/
+    feed: https://redcanary.com/feed/
+    enabled: true
+    priority: high
+    baseline_confidence: 88
+    collection_policy: safe_public_web
+    independent: true
+    rate_limit_per_minute: 10
+    tags: [vendor, threat-research, primary-source]
+
+  - name: Rapid7 Blog
+    type: vendor_blog
+    url: https://www.rapid7.com/blog/
+    feed: https://www.rapid7.com/rss.xml
+    enabled: true
+    priority: high
+    baseline_confidence: 88
+    collection_policy: safe_public_web
+    independent: true
+    rate_limit_per_minute: 10
+    tags: [vendor, threat-research]
+    notes: "Feed validated live (200 + RSS XML). Homepage-declared site-wide feed; the /blog/rss.xml candidate 404s."
+
+  - name: Huntress Blog
+    type: vendor_blog
+    url: https://www.huntress.com/blog/
+    feed: https://www.huntress.com/blog/rss.xml
+    enabled: true
+    priority: high
+    baseline_confidence: 88
+    collection_policy: safe_public_web
+    independent: true
+    rate_limit_per_minute: 10
+    tags: [vendor, mdr, threat-research]
+
   - name: Sophos X-Ops
     type: vendor_blog
     url: https://news.sophos.com/en-us/
