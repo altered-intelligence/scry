@@ -206,9 +206,7 @@ class TestDeliverTest:
 
 class TestAlertsTestEndpoint:
     def test_endpoint_returns_per_channel_dict(self, outbound_on, monkeypatch):
-        monkeypatch.setattr(
-            "scry.api.router.deliver_test", lambda: {"slack": True, "webhook": False}
-        )
+        monkeypatch.setattr("scry.api.router.deliver_test", lambda: {"slack": True, "webhook": False})
         from scry.main import app
 
         with TestClient(app) as client:
@@ -251,9 +249,7 @@ class TestPostIngestEvaluate:
 
         self._patch_ingest(monkeypatch)
         calls: list[bool] = []
-        monkeypatch.setattr(
-            router_mod.AlertEngine, "evaluate", lambda self: calls.append(True) or []
-        )
+        monkeypatch.setattr(router_mod.AlertEngine, "evaluate", lambda self: calls.append(True) or [])
         from scry.main import app
 
         with TestClient(app) as client:

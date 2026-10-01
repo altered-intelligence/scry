@@ -203,15 +203,11 @@ async def ui_auth_middleware(request: Request, call_next):
     request.state.user = user
     if has_users and user is None:
         return RedirectResponse(url="/login", status_code=303)
-    if user is not None and user.must_change_password and not _password_change_exempt(
-        request.url.path
-    ):
+    if user is not None and user.must_change_password and not _password_change_exempt(request.url.path):
         # Forced password change (first login / admin reset): everything
         # except the profile routes themselves, login/logout, and static
         # assets redirects back to /profile with the banner.
-        return _redirect_flash(
-            "/profile", "You must change your password before continuing.", "error"
-        )
+        return _redirect_flash("/profile", "You must change your password before continuing.", "error")
     return await call_next(request)
 
 
@@ -545,9 +541,7 @@ def mfa_challenge_submit(
                 # user must log in again from the password step.
                 _audit_login(session, user.username, success=False, detail={"reason": "mfa_exhausted"})
                 session.commit()
-                response = _login_redirect(
-                    "Too many failed codes — please sign in again.", next
-                )
+                response = _login_redirect("Too many failed codes — please sign in again.", next)
                 response.delete_cookie(_totp.MFA_PENDING_COOKIE, path="/")
                 return response
             _audit_login(session, user.username, success=False, detail={"reason": "mfa"})
@@ -625,7 +619,9 @@ def _admin_or_none(request: Request) -> User | None:
     return user
 
 
-def _audit_admin(session: Session, actor: User, action: str, target: User | None = None, detail: dict | None = None) -> None:
+def _audit_admin(
+    session: Session, actor: User, action: str, target: User | None = None, detail: dict | None = None
+) -> None:
     from scry.audit import record
 
     record(
@@ -693,9 +689,7 @@ def _enrichment_coverage(session: Session) -> dict:
 
     quota_limit = get_settings().vt_daily_quota
     used = 0
-    row = session.scalar(
-        select(SystemSetting).where(SystemSetting.key == "enrichment.vt_daily_quota")
-    )
+    row = session.scalar(select(SystemSetting).where(SystemSetting.key == "enrichment.vt_daily_quota"))
     if row and row.value:
         try:
             snap = json.loads(row.value)
@@ -788,9 +782,7 @@ def admin_page(request: Request, session: Session = Depends(get_session)):
             select(AuditLog).where(AuditLog.action == "login.failure").order_by(AuditLog.id.desc()).limit(50)
         )
     )
-    audit_entries = list(
-        session.scalars(select(AuditLog).order_by(AuditLog.id.desc()).limit(100))
-    )
+    audit_entries = list(session.scalars(select(AuditLog).order_by(AuditLog.id.desc()).limit(100)))
     return templates.TemplateResponse(
         request,
         "admin.html",
@@ -864,9 +856,7 @@ def admin_create_user(
             if _verification.issue_pin(session, user)
             else " Verification email could not be sent."
         )
-    _audit_admin(
-        session, admin, "user.create", user, {"role": role, "email_verified": user.email_verified}
-    )
+    _audit_admin(session, admin, "user.create", user, {"role": role, "email_verified": user.email_verified})
     if generated:
         return _redirect_flash(
             "/admin",
@@ -1064,9 +1054,7 @@ def admin_reset_mfa(
         user,
         {"recovery_codes_deleted": deleted, "revoked_sessions": revoked},
     )
-    return _redirect_flash(
-        "/admin", f"Reset MFA for {user.username!r} ({revoked} session(s) revoked)."
-    )
+    return _redirect_flash("/admin", f"Reset MFA for {user.username!r} ({revoked} session(s) revoked).")
 
 
 @app.post("/admin/sessions/{token_id}/revoke")
@@ -1297,9 +1285,7 @@ def profile_page(request: Request, session: Session = Depends(get_session)):
     user = _profile_or_redirect(request, session)
     if user is None:
         return RedirectResponse(url="/login", status_code=303)
-    return templates.TemplateResponse(
-        request, "profile.html", _profile_context(request, session, user)
-    )
+    return templates.TemplateResponse(request, "profile.html", _profile_context(request, session, user))
 
 
 @app.post("/profile/display-name")
@@ -1349,9 +1335,7 @@ def profile_change_password(
     # Sign out every other session; keep the one driving this request.
     keep = hash_token(request.cookies.get(SESSION_COOKIE) or "")
     revoked = session.execute(
-        delete(SessionToken).where(
-            SessionToken.user_id == user.id, SessionToken.token_hash != keep
-        )
+        delete(SessionToken).where(SessionToken.user_id == user.id, SessionToken.token_hash != keep)
     ).rowcount
     session.flush()
     _audit_profile(session, user, "user.change_password", {"revoked_sessions": int(revoked or 0)})
@@ -1382,9 +1366,7 @@ def profile_verify_email(
         user.email_verified = True
         session.flush()
         _audit_profile(session, user, "email.verify.bypass")
-        return _redirect_flash(
-            "/profile", "SMTP not configured — email auto-verified.", "error"
-        )
+        return _redirect_flash("/profile", "SMTP not configured — email auto-verified.", "error")
     if _verification.issue_pin(session, user) is None:
         _audit_profile(session, user, "email.verify.send_failed")
         return _redirect_flash(
@@ -1424,9 +1406,7 @@ def profile_verify_email_confirm(
         )
     if result == "mismatch":
         return _redirect_flash("/profile", "Incorrect code — try again.", "error")
-    return _redirect_flash(
-        "/profile", "No pending verification code — request one first.", "error"
-    )
+    return _redirect_flash("/profile", "No pending verification code — request one first.", "error")
 
 
 @app.post("/profile/api-keys")
@@ -1452,9 +1432,7 @@ def profile_create_api_key(
         except ValueError:
             return _redirect_flash("/profile", f"Invalid expiry: {expiry_days!r}", "error")
         if not 1 <= days <= _MAX_KEY_EXPIRY_DAYS:
-            return _redirect_flash(
-                "/profile", f"Expiry must be 1-{_MAX_KEY_EXPIRY_DAYS} days.", "error"
-            )
+            return _redirect_flash("/profile", f"Expiry must be 1-{_MAX_KEY_EXPIRY_DAYS} days.", "error")
         expires_at = datetime.now(UTC) + timedelta(days=days)
     raw_key = "sk-" + secrets.token_urlsafe(32)
     session.add(
@@ -1467,9 +1445,7 @@ def profile_create_api_key(
         )
     )
     session.flush()
-    _audit_profile(
-        session, user, "api_key.create", {"name": name[:128], "expires_days": expiry_days or None}
-    )
+    _audit_profile(session, user, "api_key.create", {"name": name[:128], "expires_days": expiry_days or None})
     # The full key is shown exactly once; afterwards only the prefix survives.
     return _redirect_flash(
         "/profile",
@@ -1616,9 +1592,7 @@ def profile_mfa_disable(
     # Sign out every OTHER session; keep the one driving this request.
     keep = hash_token(request.cookies.get(SESSION_COOKIE) or "")
     revoked = session.execute(
-        delete(SessionToken).where(
-            SessionToken.user_id == user.id, SessionToken.token_hash != keep
-        )
+        delete(SessionToken).where(SessionToken.user_id == user.id, SessionToken.token_hash != keep)
     ).rowcount
     session.flush()
     _audit_profile(
@@ -1665,9 +1639,7 @@ def profile_passkey_register_begin(
     if not verify_password(password, user.password_hash):
         return JSONResponse({"error": "Password is incorrect."}, status_code=403)
     rp_id, _origin = _webauthn.rp_context(request)
-    credentials = list(
-        session.scalars(select(PasskeyCredential).where(PasskeyCredential.user_id == user.id))
-    )
+    credentials = list(session.scalars(select(PasskeyCredential).where(PasskeyCredential.user_id == user.id)))
     options_json, challenge = _webauthn.registration_options_json(user, credentials, rp_id)
     marker = _webauthn.issue_passkey_marker(user.id, challenge)
     response = JSONResponse({"options": json.loads(options_json)})
@@ -1697,9 +1669,7 @@ def profile_passkey_register_complete(
         return JSONResponse({"error": "Bad CSRF token — action rejected."}, status_code=403)
     marker = _webauthn.read_passkey_marker(request.cookies.get(_webauthn.PASSKEY_PENDING_COOKIE))
     if marker is None or marker["uid"] != user.id:
-        return JSONResponse(
-            {"error": "The passkey setup has expired — please try again."}, status_code=400
-        )
+        return JSONResponse({"error": "The passkey setup has expired — please try again."}, status_code=400)
     rp_id, origin = _webauthn.rp_context(request)
     credential = payload.get("credential") or {}
     try:
@@ -1710,9 +1680,7 @@ def profile_passkey_register_complete(
             expected_origin=origin,
         )
     except Exception:  # InvalidRegistrationResponse and friends — back to start.
-        response = JSONResponse(
-            {"error": "Passkey verification failed — please try again."}, status_code=400
-        )
+        response = JSONResponse({"error": "Passkey verification failed — please try again."}, status_code=400)
         response.delete_cookie(_webauthn.PASSKEY_PENDING_COOKIE, path="/")
         return response
     name = ((payload.get("name") or "").strip() or "Passkey")[:128]
@@ -1729,9 +1697,7 @@ def profile_passkey_register_complete(
         )
     )
     session.flush()
-    _audit_profile(
-        session, user, "passkey.register", {"name": name, "aaguid": verification.aaguid or None}
-    )
+    _audit_profile(session, user, "passkey.register", {"name": name, "aaguid": verification.aaguid or None})
     response = JSONResponse({"ok": True, "name": name})
     response.delete_cookie(_webauthn.PASSKEY_PENDING_COOKIE, path="/")
     return response
@@ -1800,9 +1766,7 @@ def login_passkey_begin(request: Request, username: str = Form(...)):
     from scry.auth import webauthn as _webauthn
 
     rp_id, _origin = _webauthn.rp_context(request)
-    generic_error = JSONResponse(
-        {"error": "No passkeys are registered for that username."}, status_code=400
-    )
+    generic_error = JSONResponse({"error": "No passkeys are registered for that username."}, status_code=400)
     with session_scope() as session:
         if not users_exist(session):
             return JSONResponse({"error": "No user accounts exist yet."}, status_code=400)
@@ -1834,9 +1798,7 @@ def login_passkey_complete(request: Request, payload: dict = Body(default={})):
 
     marker = _webauthn.read_passkey_marker(request.cookies.get(_webauthn.PASSKEY_PENDING_COOKIE))
     if marker is None:
-        return JSONResponse(
-            {"error": "The passkey sign-in has expired — please try again."}, status_code=400
-        )
+        return JSONResponse({"error": "The passkey sign-in has expired — please try again."}, status_code=400)
     rp_id, origin = _webauthn.rp_context(request)
     credential = payload.get("credential") or {}
     next_url = _safe_next(payload.get("next"))
@@ -2193,18 +2155,14 @@ def ui_enrich_unenriched(
                 parts.append(f"{provider} re-enriched stale {refreshed}")
     if result.get("fresh_skipped"):
         parts.append(
-            "fresh (skipped): "
-            + ", ".join(f"{k} {v}" for k, v in sorted(result["fresh_skipped"].items()))
+            "fresh (skipped): " + ", ".join(f"{k} {v}" for k, v in sorted(result["fresh_skipped"].items()))
         )
     if result.get("quota_skipped"):
         parts.append(
-            "skipped per quota: "
-            + ", ".join(f"{k} {v}" for k, v in sorted(result["quota_skipped"].items()))
+            "skipped per quota: " + ", ".join(f"{k} {v}" for k, v in sorted(result["quota_skipped"].items()))
         )
     if result["skipped"]:
-        parts.append(
-            "skipped: " + ", ".join(f"{k} ({v})" for k, v in sorted(result["skipped"].items()))
-        )
+        parts.append("skipped: " + ", ".join(f"{k} ({v})" for k, v in sorted(result["skipped"].items())))
     if result.get("errors"):
         parts.append(f"errors {result['errors']}")
     _feed_key_audit(session, user, f"observables.enrich_unenriched.{mode}", "+".join(sorted(keys)))
@@ -3047,9 +3005,7 @@ def ui_my_key_test(
         return _redirect_flash(back, f"Unknown provider {provider!r}.", "error")
     row = get_key(session, user.id, provider)
     if row is None:
-        return _redirect_flash(
-            back, f"No personal {_FEED_DISPLAY_NAMES[provider]} key saved yet.", "error"
-        )
+        return _redirect_flash(back, f"No personal {_FEED_DISPLAY_NAMES[provider]} key saved yet.", "error")
     key = get_decrypted_key(session, user.id, provider)
     ok, error = test_key(provider, key)
     record_test_result(session, row, ok, error)

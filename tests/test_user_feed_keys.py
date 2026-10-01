@@ -434,9 +434,7 @@ class TestEnrichmentRunKeyResolution:
         seed_ip()
         abuseipdb_route, greynoise_route = _mock_system_ip_providers()
         vt_route = respx.get(VT_IP.format(TEST_IP)).mock(return_value=httpx.Response(200, json=VT_PAYLOAD))
-        otx_route = respx.get(OTX_IP.format(TEST_IP)).mock(
-            return_value=httpx.Response(200, json=OTX_PAYLOAD)
-        )
+        otx_route = respx.get(OTX_IP.format(TEST_IP)).mock(return_value=httpx.Response(200, json=OTX_PAYLOAD))
 
         client = auth_client()
         r = client.post("/enrichment/run")
@@ -460,9 +458,7 @@ class TestEnrichmentRunKeyResolution:
         seed_ip()
         abuseipdb_route, greynoise_route = _mock_system_ip_providers()
         vt_route = respx.get(VT_IP.format(TEST_IP)).mock(return_value=httpx.Response(200, json=VT_PAYLOAD))
-        otx_route = respx.get(OTX_IP.format(TEST_IP)).mock(
-            return_value=httpx.Response(200, json=OTX_PAYLOAD)
-        )
+        otx_route = respx.get(OTX_IP.format(TEST_IP)).mock(return_value=httpx.Response(200, json=OTX_PAYLOAD))
 
         client = auth_client()
         r = client.post("/enrichment/run")
@@ -560,9 +556,7 @@ class TestLiveLookup:
         with session_scope() as s:
             set_key(s, uid, "otx", OTX_KEY)
         ob_id = seed_ip()
-        otx_route = respx.get(OTX_IP.format(TEST_IP)).mock(
-            return_value=httpx.Response(200, json=OTX_PAYLOAD)
-        )
+        otx_route = respx.get(OTX_IP.format(TEST_IP)).mock(return_value=httpx.Response(200, json=OTX_PAYLOAD))
 
         client = auth_client()
         r = client.post(
@@ -656,9 +650,7 @@ class TestEnrichUnenriched:
             return_value=httpx.Response(200, json=VT_PAYLOAD)
         )
         for i in range(2, 61):
-            respx.get(VT_IP.format(f"198.51.100.{i}")).mock(
-                return_value=httpx.Response(200, json=VT_PAYLOAD)
-            )
+            respx.get(VT_IP.format(f"198.51.100.{i}")).mock(return_value=httpx.Response(200, json=VT_PAYLOAD))
 
         client = auth_client()
         r = client.post(
@@ -841,9 +833,7 @@ class TestAdminCoverage:
             s.add(
                 SystemSetting(
                     key="enrichment.vt_daily_quota",
-                    value=json.dumps(
-                        {"date": datetime.now(UTC).date().isoformat(), "used": 30}
-                    ),
+                    value=json.dumps({"date": datetime.now(UTC).date().isoformat(), "used": 30}),
                 )
             )
         client = auth_client("root")

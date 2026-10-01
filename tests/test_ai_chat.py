@@ -109,12 +109,7 @@ def chat_session(session):
 
 
 def _messages_of(session, session_id) -> list[ChatMessage]:
-    return (
-        session.query(ChatMessage)
-        .filter_by(session_id=session_id)
-        .order_by(ChatMessage.id)
-        .all()
-    )
+    return session.query(ChatMessage).filter_by(session_id=session_id).order_by(ChatMessage.id).all()
 
 
 class TestAskWithSession:
@@ -157,16 +152,12 @@ class TestAskWithSession:
         chat_session.title = "My threat hunt"
         session.commit()
         with TestClient(app) as client:
-            r = client.post(
-                "/api/ai/ask", json={"question": "anything else?", "session_id": chat_session.id}
-            )
+            r = client.post("/api/ai/ask", json={"question": "anything else?", "session_id": chat_session.id})
         assert r.status_code == 200
         session.expire_all()
         assert session.get(ChatSession, chat_session.id).title == "My threat hunt"
 
-    def test_followup_sends_prior_turns_to_model(
-        self, fake_provider, seed_article, chat_session, session
-    ):
+    def test_followup_sends_prior_turns_to_model(self, fake_provider, seed_article, chat_session, session):
         with TestClient(app) as client:
             r1 = client.post(
                 "/api/ai/ask",
@@ -194,12 +185,8 @@ class TestAskWithSession:
 
     def test_history_caps_at_eight_turns(self, fake_provider, chat_session, session):
         for i in range(10):
-            session.add(
-                ChatMessage(session_id=chat_session.id, role="user", content=f"q{i}")
-            )
-            session.add(
-                ChatMessage(session_id=chat_session.id, role="assistant", content=f"a{i}")
-            )
+            session.add(ChatMessage(session_id=chat_session.id, role="user", content=f"q{i}"))
+            session.add(ChatMessage(session_id=chat_session.id, role="assistant", content=f"a{i}"))
         chat_session.message_count = 20
         chat_session.title = "long thread"
         session.commit()
@@ -225,25 +212,19 @@ class TestAskWithSession:
         chat_session.archived = True
         session.commit()
         with TestClient(app) as client:
-            r = client.post(
-                "/api/ai/ask", json={"question": "hi", "session_id": chat_session.id}
-            )
+            r = client.post("/api/ai/ask", json={"question": "hi", "session_id": chat_session.id})
         assert r.status_code == 409
 
     def test_provider_error_nothing_persisted(self, fake_provider, chat_session, session):
         fake_provider._answer = RuntimeError("boom")
         with TestClient(app) as client:
-            r = client.post(
-                "/api/ai/ask", json={"question": "hi", "session_id": chat_session.id}
-            )
+            r = client.post("/api/ai/ask", json={"question": "hi", "session_id": chat_session.id})
         assert r.status_code == 502
         assert _messages_of(session, chat_session.id) == []
 
 
 class TestSessionlessAsk:
-    def test_response_shape_unchanged_and_no_session_created(
-        self, fake_provider, seed_article, session
-    ):
+    def test_response_shape_unchanged_and_no_session_created(self, fake_provider, seed_article, session):
         fake_provider._answer = "LockBit hit three US hospitals [1]."
         with TestClient(app) as client:
             r = client.post("/api/ai/ask", json={"question": "lockbit hospitals"})
@@ -259,9 +240,7 @@ class TestSessionlessAsk:
 
 
 class TestSessionEndpoints:
-    def test_list_sorted_by_updated_desc_and_hides_archived(
-        self, fake_provider, chat_session, session
-    ):
+    def test_list_sorted_by_updated_desc_and_hides_archived(self, fake_provider, chat_session, session):
         from datetime import timedelta
 
         other = ChatSession(title="older")
@@ -305,9 +284,7 @@ class TestSessionEndpoints:
 
     def test_delete_cascades_messages(self, fake_provider, chat_session, session):
         with TestClient(app) as client:
-            client.post(
-                "/api/ai/ask", json={"question": "hi", "session_id": chat_session.id}
-            )
+            client.post("/api/ai/ask", json={"question": "hi", "session_id": chat_session.id})
         assert session.query(ChatMessage).count() == 2
 
         with TestClient(app) as client:

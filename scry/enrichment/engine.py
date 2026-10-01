@@ -90,8 +90,7 @@ def _provider_refresh_ttls() -> dict[str, int]:
     """Per-provider staleness TTLs (days) from Settings (CTI_ env-tunable)."""
     settings = get_settings()
     return {
-        name: max(0, getattr(settings, f"enrichment_refresh_days_{name}", 7))
-        for name in _EXTERNAL_PROVIDERS
+        name: max(0, getattr(settings, f"enrichment_refresh_days_{name}", 7)) for name in _EXTERNAL_PROVIDERS
     }
 
 
@@ -148,9 +147,7 @@ class EnrichmentEngine:
             else self.provider_states["virustotal"].api_key
         )
         otx_key = (
-            user_api_keys.get("otx", "")
-            if user_api_keys is not None
-            else self.provider_states["otx"].api_key
+            user_api_keys.get("otx", "") if user_api_keys is not None else self.provider_states["otx"].api_key
         )
         self.vt = VirusTotalEnricher(api_key=vt_key)
         self.otx = OTXEnricher(api_key=otx_key)
@@ -228,9 +225,7 @@ class EnrichmentEngine:
                     existing.append(tag)
             observable.tags = existing
 
-    def _select_external(
-        self, providers: list[str] | None
-    ) -> tuple[dict[str, Any], dict[str, str]]:
+    def _select_external(self, providers: list[str] | None) -> tuple[dict[str, Any], dict[str, str]]:
         """Apply the providers filter + enable/key gating.
 
         Returns (runnable name→enricher, skipped name→reason). Raises
@@ -323,9 +318,7 @@ class EnrichmentEngine:
         merged["prevalence"] = prevalence_summary(self.session, observable.id)
 
         observable.enrichment = merged
-        return EnrichmentResult(
-            fields=merged, rationale=rationale, fresh_skipped=fresh_skipped
-        )
+        return EnrichmentResult(fields=merged, rationale=rationale, fresh_skipped=fresh_skipped)
 
     def run_external_enrichment_batch(
         self,
@@ -399,9 +392,7 @@ class EnrichmentEngine:
         candidates.sort(key=lambda item: item[0])
         to_enrich = [ob for _, ob in candidates[:limit]]
 
-        logger.info(
-            "external_enrichment_batch_start", total=len(to_enrich), providers=sorted(runnable)
-        )
+        logger.info("external_enrichment_batch_start", total=len(to_enrich), providers=sorted(runnable))
 
         for ob in to_enrich:
             try:
@@ -412,9 +403,7 @@ class EnrichmentEngine:
                         continue
                     if not force:
                         age = _marker_age_seconds(merged, name, now)
-                        if age is not None and (
-                            not include_stale or age <= ttls[name] * 86400
-                        ):
+                        if age is not None and (not include_stale or age <= ttls[name] * 86400):
                             continue  # fresh (or "unenriched only" mode)
                         # age None → missing/unparseable marker → enrich.
                     had_stale_marker = _marker_age_seconds(merged, name, now) is not None
@@ -427,8 +416,7 @@ class EnrichmentEngine:
                             refreshed[name] += 1
                     new_rationale = rationale[rationale_len:]
                     if any(
-                        "quota" in entry.lower() or "rate limit" in entry.lower()
-                        for entry in new_rationale
+                        "quota" in entry.lower() or "rate limit" in entry.lower() for entry in new_rationale
                     ):
                         quota_skipped[name] += 1
 
@@ -439,9 +427,7 @@ class EnrichmentEngine:
                 errors += 1
 
         self.session.commit()
-        result: dict[str, Any] = {
-            _EXTERNAL_PROVIDERS[name]["count_key"]: counts[name] for name in runnable
-        }
+        result: dict[str, Any] = {_EXTERNAL_PROVIDERS[name]["count_key"]: counts[name] for name in runnable}
         result.update(
             {
                 "errors": errors,
@@ -471,9 +457,7 @@ class EnrichmentEngine:
             if row is None:
                 row = SystemSetting(key="enrichment.vt_daily_quota", value="")
                 self.session.add(row)
-            row.value = json.dumps(
-                {"date": datetime.now(UTC).date().isoformat(), "used": self.vt.daily.used}
-            )
+            row.value = json.dumps({"date": datetime.now(UTC).date().isoformat(), "used": self.vt.daily.used})
             self.session.commit()
         except Exception as exc:  # pragma: no cover - stats must never break runs
             logger.warning("vt_quota_snapshot_failed", exc=str(exc))

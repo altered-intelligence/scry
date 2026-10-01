@@ -201,9 +201,7 @@ class AlertEngine:
                     enrichment = dict(enrichment)
                     enrichment[marker] = datetime.now(UTC).isoformat()
                     ob.enrichment = enrichment
-                    ob.risk_score = min(
-                        100.0, float(ob.risk_score or 0.0) + float(s.escalation_risk_bump)
-                    )
+                    ob.risk_score = min(100.0, float(ob.risk_score or 0.0) + float(s.escalation_risk_bump))
                 severity = "high" if (ob.risk_score or 0) >= 70 else "medium"
                 out.append(
                     AlertCandidate(
@@ -250,7 +248,10 @@ def _vendor_verdict(provider: str, result: dict, s) -> tuple[str, int] | None:
         total = malicious + suspicious + harmless + undetected
         ratio = (malicious / total) if total else 0.0
         if malicious >= s.vt_escalate_min_detections and ratio >= s.vt_escalate_min_ratio:
-            return (f"{malicious}/{total} engines flag malicious (ratio {ratio:.2f})", min(100, round(ratio * 100)))
+            return (
+                f"{malicious}/{total} engines flag malicious (ratio {ratio:.2f})",
+                min(100, round(ratio * 100)),
+            )
         return None
     if provider == "abuseipdb":
         if result.get("not_found"):

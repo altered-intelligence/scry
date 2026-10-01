@@ -19,9 +19,7 @@ class ChatSession(Base, IdMixin, TimestampMixin):
     archived: Mapped[bool] = mapped_column(default=False)
     # Owning user (v0.5.0 step 3, per-user chat privacy). NULL = legacy
     # shared session, readable by anyone who can use the AI endpoints.
-    user_id: Mapped[int | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
-    )
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     messages: Mapped[list[ChatMessage]] = relationship(
         back_populates="session",

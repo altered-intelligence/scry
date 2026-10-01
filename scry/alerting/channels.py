@@ -37,11 +37,15 @@ def deliver(alert: Alert) -> bool:
     text = _format_text(alert)
     results: dict[str, bool] = {}
     if cfg["slack"]:
-        results["slack"] = _guarded("slack", _post_json, settings.slack_webhook_url, {"text": text, "blocks": []})
+        results["slack"] = _guarded(
+            "slack", _post_json, settings.slack_webhook_url, {"text": text, "blocks": []}
+        )
     if cfg["teams"]:
         results["teams"] = _guarded("teams", _post_json, settings.teams_webhook_url, {"text": text})
     if cfg["webhook"]:
-        results["webhook"] = _guarded("webhook", _post_json, settings.webhook_url, _webhook_payload(alert, text))
+        results["webhook"] = _guarded(
+            "webhook", _post_json, settings.webhook_url, _webhook_payload(alert, text)
+        )
     if cfg["email"]:
         results["email"] = _guarded(
             "email", _send_email, settings, f"[scry] {alert.severity}: {alert.title}", text
@@ -151,7 +155,7 @@ def _send_email(settings: Settings, subject: str, body: str) -> bool:
 def _notify_desktop(title: str, text: str) -> bool:
     if sys.platform != "darwin":
         return False
-    script = f'display notification {json.dumps(text[:200])} with title {json.dumps(title[:200])}'
+    script = f"display notification {json.dumps(text[:200])} with title {json.dumps(title[:200])}"
     r = subprocess.run(["osascript", "-e", script], capture_output=True, timeout=10)
     return r.returncode == 0
 

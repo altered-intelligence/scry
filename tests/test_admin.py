@@ -101,8 +101,15 @@ class TestAdminGate:
             login(client, "alice")
             r = client.get("/admin")
             assert r.status_code == 200
-            for section in ("Users", "Create user", "Stats", "Security", "Active sessions",
-                            "SMTP configuration", "Audit log"):
+            for section in (
+                "Users",
+                "Create user",
+                "Stats",
+                "Security",
+                "Active sessions",
+                "SMTP configuration",
+                "Audit log",
+            ):
                 assert section in r.text
 
     def test_zero_users_redirects_to_login_setup_note(self):
@@ -138,8 +145,14 @@ class TestAdminGate:
 
 
 def _create(client: TestClient, csrf: str, **overrides):
-    data = {"csrf": csrf, "username": "bob", "email": "bob@example.com",
-            "display_name": "", "role": "user", "password": "Init!pass123"}
+    data = {
+        "csrf": csrf,
+        "username": "bob",
+        "email": "bob@example.com",
+        "display_name": "",
+        "role": "user",
+        "password": "Init!pass123",
+    }
     data.update(overrides)
     return client.post("/admin/users/create", data=data, follow_redirects=False)
 
@@ -198,8 +211,12 @@ class TestUserEdit:
         uid = get_user("bob").id
         r = client.post(
             f"/admin/users/{uid}/edit",
-            data={"csrf": csrf_for(client), "email": "new@example.com",
-                  "display_name": "Bobby", "role": "admin"},
+            data={
+                "csrf": csrf_for(client),
+                "email": "new@example.com",
+                "display_name": "Bobby",
+                "role": "admin",
+            },
             follow_redirects=False,
         )
         assert r.status_code == 303
@@ -214,8 +231,7 @@ class TestUserEdit:
         uid = get_user("root").id
         client.post(
             f"/admin/users/{uid}/edit",
-            data={"csrf": csrf_for(client), "email": "root@example.com",
-                  "display_name": "", "role": "user"},
+            data={"csrf": csrf_for(client), "email": "root@example.com", "display_name": "", "role": "user"},
             follow_redirects=False,
         )
         assert get_user("root").role == "admin"
@@ -225,8 +241,7 @@ class TestUserEdit:
         uid = get_user("root").id
         r = client.post(
             f"/admin/users/{uid}/edit",
-            data={"csrf": csrf_for(client), "email": "root@example.com",
-                  "display_name": "", "role": "user"},
+            data={"csrf": csrf_for(client), "email": "root@example.com", "display_name": "", "role": "user"},
             follow_redirects=False,
         )
         assert "last admin" in flash_of(r)
@@ -407,7 +422,9 @@ class TestSessionRevocation:
         with session_scope() as s:
             token = s.scalar(select(SessionToken).join(User).where(User.username == "bob"))
             token_id = token.id
-        r = client.post(f"/admin/sessions/{token_id}/revoke", data={"csrf": csrf_for(client)}, follow_redirects=False)
+        r = client.post(
+            f"/admin/sessions/{token_id}/revoke", data={"csrf": csrf_for(client)}, follow_redirects=False
+        )
         assert r.status_code == 303
         with session_scope() as s:
             assert s.get(SessionToken, token_id) is None
@@ -439,8 +456,15 @@ class TestSessionRevocation:
 
 
 def _save_smtp(client: TestClient, csrf: str, **overrides):
-    data = {"csrf": csrf, "host": "smtp.example.com", "port": "587", "user": "mailer",
-            "password": "s3cret!", "starttls": "on", "from_address": "scry@example.com"}
+    data = {
+        "csrf": csrf,
+        "host": "smtp.example.com",
+        "port": "587",
+        "user": "mailer",
+        "password": "s3cret!",
+        "starttls": "on",
+        "from_address": "scry@example.com",
+    }
     data.update(overrides)
     return client.post("/admin/smtp/save", data=data, follow_redirects=False)
 
@@ -605,8 +629,13 @@ class TestMailer:
             from scry.mail import save_smtp_config, send_mail
 
             save_smtp_config(
-                s, host="smtp.example.com", port=465, user="mailer", password="pw",
-                starttls=False, from_address="scry@example.com",
+                s,
+                host="smtp.example.com",
+                port=465,
+                user="mailer",
+                password="pw",
+                starttls=False,
+                from_address="scry@example.com",
             )
             assert send_mail(s, "Hello", "Body text", "to@example.com") is True
         assert sent["host"] == "smtp.example.com"
@@ -637,8 +666,13 @@ class TestMailer:
             from scry.mail import save_smtp_config, test_smtp
 
             save_smtp_config(
-                s, host="smtp.example.com", port=587, user="mailer", password="pw",
-                starttls=False, from_address="scry@example.com",
+                s,
+                host="smtp.example.com",
+                port=587,
+                user="mailer",
+                password="pw",
+                starttls=False,
+                from_address="scry@example.com",
             )
             ok, error = test_smtp(s)
         assert ok is True

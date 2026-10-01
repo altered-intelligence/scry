@@ -135,9 +135,7 @@ class TestSourceToggle:
         client = client_as("root", role="admin")
         sid = source_id("CISA KEV")
         assert enabled_in_db(sid) is True
-        r = client.post(
-            f"/ui/sources/{sid}/toggle", data={"csrf": csrf_for(client)}, follow_redirects=False
-        )
+        r = client.post(f"/ui/sources/{sid}/toggle", data={"csrf": csrf_for(client)}, follow_redirects=False)
         assert r.status_code == 303
         assert r.headers["location"].startswith("/ui/sources")
         assert "CISA KEV" in flash_of(r)
@@ -157,9 +155,7 @@ class TestSourceToggle:
         client = client_as("root", role="admin")
         sid = source_id("Sophos X-Ops")
         assert enabled_in_db(sid) is False
-        r = client.post(
-            f"/ui/sources/{sid}/toggle", data={"csrf": csrf_for(client)}, follow_redirects=False
-        )
+        r = client.post(f"/ui/sources/{sid}/toggle", data={"csrf": csrf_for(client)}, follow_redirects=False)
         assert r.status_code == 303
         assert "enabled" in flash_of(r)
         assert enabled_in_db(sid) is True
@@ -167,9 +163,7 @@ class TestSourceToggle:
     def test_standard_user_post_gets_403(self):
         client = client_as("bob")
         sid = source_id("CISA KEV")
-        r = client.post(
-            f"/ui/sources/{sid}/toggle", data={"csrf": csrf_for(client)}, follow_redirects=False
-        )
+        r = client.post(f"/ui/sources/{sid}/toggle", data={"csrf": csrf_for(client)}, follow_redirects=False)
         assert r.status_code == 403
         assert "Admins only" in r.text
         assert enabled_in_db(sid) is True  # unchanged
@@ -194,9 +188,7 @@ class TestSourceToggle:
 
     def test_unknown_source(self):
         client = client_as("root", role="admin")
-        r = client.post(
-            "/ui/sources/99999/toggle", data={"csrf": csrf_for(client)}, follow_redirects=False
-        )
+        r = client.post("/ui/sources/99999/toggle", data={"csrf": csrf_for(client)}, follow_redirects=False)
         assert r.status_code == 303
         assert "Unknown source" in flash_of(r)
 
@@ -280,10 +272,7 @@ class TestNewVendorBlogs:
 
     def test_feed_urls_are_the_validated_ones(self, session):
         SourceRegistry(session).sync_from_yaml()
-        feeds = {
-            s.name: s.feed
-            for s in session.scalars(select(Source).where(Source.name.in_(NEW_BLOGS)))
-        }
+        feeds = {s.name: s.feed for s in session.scalars(select(Source).where(Source.name.in_(NEW_BLOGS)))}
         # Talos + Rapid7: homepage-declared alternates (original candidates 404'd)
         assert feeds["Cisco Talos Blog"] == "https://blog.talosintelligence.com/rss/"
         assert feeds["Rapid7 Blog"] == "https://www.rapid7.com/rss.xml"

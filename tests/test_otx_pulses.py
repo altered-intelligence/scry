@@ -182,7 +182,10 @@ class TestPullSubscription:
     @respx.mock
     def test_creates_articles_with_expected_fields(self, session):
         route = mock_search(
-            [pulse("p1", tags=["ransomware", "curated"]), pulse("p2", tags=["botnet", "curated"], name="Botnet ops")]
+            [
+                pulse("p1", tags=["ransomware", "curated"]),
+                pulse("p2", tags=["botnet", "curated"], name="Botnet ops"),
+            ]
         )
         s = sub(tags=["curated"])
 

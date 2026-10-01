@@ -70,9 +70,7 @@ def _check_owned(chat: ChatSession, user: User | None, session: Session) -> None
         raise HTTPException(404, detail=f"Chat session {chat.id} not found")
 
 
-def load_chat_session(
-    session: Session, session_id: int, user: User | None = None
-) -> ChatSession:
+def load_chat_session(session: Session, session_id: int, user: User | None = None) -> ChatSession:
     """Fetch a session for asking — 404 when missing/archived/not owned."""
     chat = session.get(ChatSession, session_id)
     if chat is None:

@@ -35,9 +35,7 @@ class User(Base, IdMixin, TimestampMixin):
     totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     totp_pending: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
-    sessions: Mapped[list[SessionToken]] = relationship(
-        back_populates="user", cascade="all, delete-orphan"
-    )
+    sessions: Mapped[list[SessionToken]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("ix_users_username_ci", func.lower(username), unique=True),

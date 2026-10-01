@@ -245,7 +245,7 @@ class TestSourcesPage:
             assert 'href="/ui/sources"' in r.text
             # v0.7.0 step 1 — Sources moved from the standalone Intel nav
             # position into the Intel Feeds dropdown (after Ransomware Feeds).
-            dropdown = r.text.split('Intel Feeds</button>')[1].split('</div>')[0]
+            dropdown = r.text.split("Intel Feeds</button>")[1].split("</div>")[0]
             assert 'href="/ui/sources"' in dropdown
             assert 'href="/ui/intel-feeds/ransomware-feeds"' in dropdown
 

@@ -57,9 +57,7 @@ def seed_intel(session):
     alert_open = Alert(
         trigger="kev_cve", title="New KEV CVE", severity="high", confidence=80, delivered=False
     )
-    alert_done = Alert(
-        trigger="kev_cve", title="Old KEV CVE", severity="low", confidence=70, delivered=True
-    )
+    alert_done = Alert(trigger="kev_cve", title="Old KEV CVE", severity="low", confidence=70, delivered=True)
     session.add_all([art, ob, alert_open, alert_done])
     session.commit()
     return {"article": art, "observable": ob, "alerts": [alert_open, alert_done]}

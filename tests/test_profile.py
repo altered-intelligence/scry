@@ -65,8 +65,7 @@ def audit_entries() -> list[AuditLog]:
 
 
 def login(client: TestClient, username: str = "alice", password: str = PASSWORD):
-    return client.post("/login", data={"username": username, "password": password},
-                       follow_redirects=False)
+    return client.post("/login", data={"username": username, "password": password}, follow_redirects=False)
 
 
 def profile_client(username: str = "alice") -> TestClient:
@@ -90,8 +89,13 @@ def save_smtp() -> None:
 
     with session_scope() as s:
         save_smtp_config(
-            s, host="smtp.example.com", port=465, user="mailer", password="pw",
-            starttls=False, from_address="scry@example.com",
+            s,
+            host="smtp.example.com",
+            port=465,
+            user="mailer",
+            password="pw",
+            starttls=False,
+            from_address="scry@example.com",
         )
 
 
@@ -275,9 +279,7 @@ class TestEmailVerification:
         with session_scope() as s:
             s.get(User, uid).email_verified = True
         client = profile_client()
-        r = client.post(
-            "/profile/verify-email", data={"csrf": csrf_for(client)}, follow_redirects=False
-        )
+        r = client.post("/profile/verify-email", data={"csrf": csrf_for(client)}, follow_redirects=False)
         assert "already verified" in flash_of(r)
 
     def test_pin_issued_and_emailed_when_smtp_configured(self, monkeypatch):
@@ -285,9 +287,7 @@ class TestEmailVerification:
         save_smtp()
         sent = capture_mail(monkeypatch)
         client = profile_client()
-        r = client.post(
-            "/profile/verify-email", data={"csrf": csrf_for(client)}, follow_redirects=False
-        )
+        r = client.post("/profile/verify-email", data={"csrf": csrf_for(client)}, follow_redirects=False)
         assert "Verification code sent to alice@example.com" in flash_of(r)
         assert sent["to"] == "alice@example.com"
         assert sent["subject"] == "Your scry verification code"
@@ -312,9 +312,7 @@ class TestEmailVerification:
         save_smtp()
         sent = capture_mail(monkeypatch)
         client = profile_client()
-        client.post(
-            "/profile/verify-email", data={"csrf": csrf_for(client)}, follow_redirects=False
-        )
+        client.post("/profile/verify-email", data={"csrf": csrf_for(client)}, follow_redirects=False)
         pin = re.search(r"\b(\d{6})\b", sent["body"]).group(1)
 
         r = client.post(
@@ -334,9 +332,7 @@ class TestEmailVerification:
         save_smtp()
         sent = capture_mail(monkeypatch)
         client = profile_client()
-        client.post(
-            "/profile/verify-email", data={"csrf": csrf_for(client)}, follow_redirects=False
-        )
+        client.post("/profile/verify-email", data={"csrf": csrf_for(client)}, follow_redirects=False)
         pin = re.search(r"\b(\d{6})\b", sent["body"]).group(1)
         wrong = "000000" if pin != "000000" else "000001"
 
@@ -396,12 +392,8 @@ class TestEmailVerification:
         save_smtp()
         sent = capture_mail(monkeypatch)
         client = profile_client()
-        client.post(
-            "/profile/verify-email", data={"csrf": csrf_for(client)}, follow_redirects=False
-        )
-        client.post(
-            "/profile/verify-email", data={"csrf": csrf_for(client)}, follow_redirects=False
-        )
+        client.post("/profile/verify-email", data={"csrf": csrf_for(client)}, follow_redirects=False)
+        client.post("/profile/verify-email", data={"csrf": csrf_for(client)}, follow_redirects=False)
         pins = [m.group(1) for b in sent["bodies"] if (m := re.search(r"\b(\d{6})\b", b))]
         assert len(pins) == 2 and pins[0] != pins[1]
         # Only the newest code is confirmable.
@@ -500,9 +492,7 @@ class TestApiKeys:
         anon = TestClient(app)
         assert anon.get("/articles").status_code == 401
         assert anon.get("/articles", headers={"X-API-Key": raw}).status_code == 200
-        assert (
-            anon.get("/articles", headers={"Authorization": f"Bearer {raw}"}).status_code == 200
-        )
+        assert anon.get("/articles", headers={"Authorization": f"Bearer {raw}"}).status_code == 200
         # last_used_at was touched by the successful calls.
         assert key_row().last_used_at is not None
 
@@ -647,9 +637,7 @@ class TestChatPrivacy:
         anon = TestClient(app)
         ids = {
             s["id"]
-            for s in anon.get("/api/ai/sessions", headers={"X-API-Key": "master-key"}).json()[
-                "sessions"
-            ]
+            for s in anon.get("/api/ai/sessions", headers={"X-API-Key": "master-key"}).json()["sessions"]
         }
         assert a_chat in ids  # master key: no resolved user → legacy shared view
 
@@ -661,10 +649,7 @@ class TestChatPrivacy:
         bob = profile_client("bob")
         raw = raw_key_for(bob)
         anon = TestClient(app)
-        ids = {
-            s["id"]
-            for s in anon.get("/api/ai/sessions", headers={"X-API-Key": raw}).json()["sessions"]
-        }
+        ids = {s["id"] for s in anon.get("/api/ai/sessions", headers={"X-API-Key": raw}).json()["sessions"]}
         assert b_chat in ids
 
 

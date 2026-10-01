@@ -40,9 +40,7 @@ def users_exist(session: Session) -> bool:
     return bool(session.scalar(select(func.count(User.id))))
 
 
-def create_session(
-    session: Session, user: User, ip: str | None = None, user_agent: str | None = None
-) -> str:
+def create_session(session: Session, user: User, ip: str | None = None, user_agent: str | None = None) -> str:
     """Create a session for ``user``; returns the raw (cookie) token."""
     raw = secrets.token_urlsafe(32)
     session.add(
@@ -66,9 +64,7 @@ def validate_session(session: Session, raw_token: str | None) -> User | None:
     """
     if not raw_token:
         return None
-    token = session.scalar(
-        select(SessionToken).where(SessionToken.token_hash == hash_token(raw_token))
-    )
+    token = session.scalar(select(SessionToken).where(SessionToken.token_hash == hash_token(raw_token)))
     if token is None:
         return None
     now = utcnow()
@@ -89,9 +85,7 @@ def validate_session(session: Session, raw_token: str | None) -> User | None:
 def revoke_session(session: Session, raw_token: str | None) -> bool:
     if not raw_token:
         return False
-    result = session.execute(
-        delete(SessionToken).where(SessionToken.token_hash == hash_token(raw_token))
-    )
+    result = session.execute(delete(SessionToken).where(SessionToken.token_hash == hash_token(raw_token)))
     session.flush()
     return bool(result.rowcount)
 

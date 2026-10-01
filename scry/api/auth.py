@@ -95,9 +95,7 @@ def require_api_key(request: Request) -> None:
         return  # no users and no master key — open by default (legacy behavior)
 
     provided = _provided_key(request)
-    if provided is not None and hmac.compare_digest(
-        provided.encode("utf-8"), expected.encode("utf-8")
-    ):
+    if provided is not None and hmac.compare_digest(provided.encode("utf-8"), expected.encode("utf-8")):
         return
 
     raise HTTPException(

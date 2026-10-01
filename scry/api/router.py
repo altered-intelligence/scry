@@ -220,9 +220,7 @@ def enrichment_run(
     user_api_keys = keys_for_user(session, user.id) if user is not None else None
     engine = EnrichmentEngine(session, user_api_keys=user_api_keys)
     try:
-        result = engine.run_external_enrichment_batch(
-            limit=limit, providers=providers or None, force=force
-        )
+        result = engine.run_external_enrichment_batch(limit=limit, providers=providers or None, force=force)
     except ValueError as exc:
         raise HTTPException(400, detail=str(exc)) from None
     return result
@@ -660,6 +658,7 @@ def run_conflicts(session: Session = Depends(get_session)):
 
 def compute_stats(session: Session) -> dict[str, Any]:
     """DB counts behind GET /stats — also used by the MCP `scry_stats` tool."""
+
     def _count(model) -> int:
         return session.scalar(select(func.count(model.id))) or 0
 

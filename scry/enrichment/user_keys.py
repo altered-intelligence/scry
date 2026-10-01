@@ -38,8 +38,7 @@ _PROVIDER_TEST_URL = {
 def validate_provider(provider: str) -> str:
     if provider not in UserFeedKey.PROVIDERS:
         raise ValueError(
-            f"Unknown personal-key provider {provider!r}. "
-            f"Supported: {', '.join(UserFeedKey.PROVIDERS)}"
+            f"Unknown personal-key provider {provider!r}. " f"Supported: {', '.join(UserFeedKey.PROVIDERS)}"
         )
     return provider
 

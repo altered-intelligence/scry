@@ -42,15 +42,9 @@ def test_key_configured_missing_header_returns_401(api_key):
 def test_key_configured_wrong_key_returns_401(api_key):
     with TestClient(app) as client:
         assert client.get("/articles", headers={"X-API-Key": "wrong"}).status_code == 401
-        assert (
-            client.get("/articles", headers={"Authorization": "Bearer wrong"}).status_code
-            == 401
-        )
+        assert client.get("/articles", headers={"Authorization": "Bearer wrong"}).status_code == 401
         # Non-bearer schemes are not accepted.
-        assert (
-            client.get("/articles", headers={"Authorization": f"Basic {KEY}"}).status_code
-            == 401
-        )
+        assert client.get("/articles", headers={"Authorization": f"Basic {KEY}"}).status_code == 401
 
 
 def test_key_accepted_via_x_api_key_header(api_key):

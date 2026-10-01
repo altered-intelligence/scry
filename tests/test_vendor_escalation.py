@@ -111,9 +111,7 @@ def make_ob(session, enrichment=None, *, value="198.51.100.9", risk_score=20.0, 
 
 
 def vendor_alerts(session) -> list[Alert]:
-    return [
-        a for a in session.scalars(select(Alert)).all() if a.trigger == "vendor_confirmed_malicious"
-    ]
+    return [a for a in session.scalars(select(Alert)).all() if a.trigger == "vendor_confirmed_malicious"]
 
 
 class TestVirusTotal:

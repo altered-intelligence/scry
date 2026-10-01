@@ -370,7 +370,9 @@ class TestThrottling:
         monkeypatch.setattr(sessions_mod, "utcnow", lambda: fake_now["now"])
         with TestClient(app) as client:
             for _ in range(4):
-                r = client.post("/login", data={"username": "alice", "password": "wrong"}, follow_redirects=False)
+                r = client.post(
+                    "/login", data={"username": "alice", "password": "wrong"}, follow_redirects=False
+                )
                 assert "locked" not in r.headers["location"]
             # 5th failure locks the account.
             r = client.post("/login", data={"username": "alice", "password": "wrong"}, follow_redirects=False)
@@ -451,10 +453,7 @@ class TestGating:
         with TestClient(app) as client:
             assert client.get("/articles").status_code == 401
             assert client.get("/articles", headers={"X-API-Key": "master-key"}).status_code == 200
-            assert (
-                client.get("/articles", headers={"Authorization": "Bearer master-key"}).status_code
-                == 200
-            )
+            assert client.get("/articles", headers={"Authorization": "Bearer master-key"}).status_code == 200
 
     def test_api_exemptions_open_when_users_exist(self):
         make_user()
@@ -474,7 +473,9 @@ class TestGating:
 
 class TestUsersCLI:
     def test_create_and_list(self):
-        r = runner.invoke(cli_app, ["users", "create", "alice", "--email", "alice@example.com", "--password", PASSWORD])
+        r = runner.invoke(
+            cli_app, ["users", "create", "alice", "--email", "alice@example.com", "--password", PASSWORD]
+        )
         assert r.exit_code == 0, r.output
         assert get_user("alice") is not None
         r = runner.invoke(cli_app, ["users", "list"])
@@ -484,18 +485,23 @@ class TestUsersCLI:
 
     def test_create_admin_flag_and_role(self):
         r = runner.invoke(
-            cli_app, ["users", "create", "boss", "--email", "boss@example.com", "--password", PASSWORD, "--admin"]
+            cli_app,
+            ["users", "create", "boss", "--email", "boss@example.com", "--password", PASSWORD, "--admin"],
         )
         assert r.exit_code == 0, r.output
         assert get_user("boss").role == "admin"
 
     def test_create_invalid_email_rejected(self):
-        r = runner.invoke(cli_app, ["users", "create", "alice", "--email", "not-an-email", "--password", PASSWORD])
+        r = runner.invoke(
+            cli_app, ["users", "create", "alice", "--email", "not-an-email", "--password", PASSWORD]
+        )
         assert r.exit_code == 2
 
     def test_create_duplicate_rejected(self):
         make_user()
-        r = runner.invoke(cli_app, ["users", "create", "ALICE", "--email", "x@example.com", "--password", PASSWORD])
+        r = runner.invoke(
+            cli_app, ["users", "create", "ALICE", "--email", "x@example.com", "--password", PASSWORD]
+        )
         assert r.exit_code == 1
 
     def test_promote_demote(self):

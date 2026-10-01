@@ -71,7 +71,9 @@ def _otx_pulses_job() -> None:
             for art in session.scalars(select(Article).where(Article.extractor_version == "0")):
                 pipeline.process_article(art)
                 processed += 1
-            logger.info("scheduler_otx_pulses_done", key_source=key_source, results=results, processed=processed)
+            logger.info(
+                "scheduler_otx_pulses_done", key_source=key_source, results=results, processed=processed
+            )
     except Exception as exc:
         logger.exception("scheduler_otx_pulses_failed", exc=str(exc))
 
