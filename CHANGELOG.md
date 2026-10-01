@@ -4,6 +4,40 @@ All notable changes to Scry are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 semantic versioning.
 
+## [0.8.0] — 2026-10-01
+
+### Added
+
+- **`scry backup` / `scry restore`** — one-command move of an install between
+  machines (code travels via git; this moves the data). tar.gz archive with a
+  `manifest.json` (version, table counts, sha256 checksums) containing the
+  SQLite database, `.env`, `.cti_secret`, and `config/*.yaml`. `--full` adds
+  `data/` and downloaded AI models; `--encrypt` Fernet-encrypts the archive
+  using the install's existing `.cti_secret`. Restore validates manifest +
+  checksums, blocks path-traversal entries, restores atomically, refuses to
+  overwrite an existing database or accept a newer-version archive without
+  `--force`, and prints a before/after table-count summary. Help text
+  documents running with the server stopped.
+- **EPSS enricher** — keyless FIRST.org EPSS for CVEs: populates `epss` +
+  new `epss_percentile` / `epss_enriched_at` columns (startup auto-migration),
+  batch queries (≤30 CVEs/request, 1 req/2 s), 7-day TTL refresh, oldest-first,
+  capped per run (`CTI_EPSS_MAX_PER_RUN`, `CTI_EPSS_REFRESH_DAYS`). Runs in
+  every batch enrichment via a new `epss` provider filter; CVE detail page
+  shows score, percentile, and age. Live-verified: 100 CVEs enriched with real
+  scores from api.first.org.
+- **crt.sh passive-DNS / certificate-transparency enricher** — keyless
+  subdomain discovery for domain observables from public CT logs (passive
+  only — no active scanning; stays inside SECURITY.md boundaries). Distinct
+  SAN count + up to 25 samples stored in the observable enrichment JSON,
+  14-day TTL (`CTI_PASSIVE_DNS_REFRESH_DAYS`, `CTI_PASSIVE_DNS_MAX_PER_RUN`),
+  one request per domain per run with a 2 s interval, empty-result sentinel
+  so unlogged domains aren't re-queried until TTL, timeouts skip rather than
+  fail. Observable detail page shows a "Certificate transparency" panel.
+  New `passive_dns` provider filter. Note: real-data landing was unverifiable
+  at release time because crt.sh itself was returning 502 — the error path
+  was live-verified and the next scheduled run backfills automatically once
+  the service recovers.
+
 ## [0.7.2] — 2026-10-01
 
 ### Fixed

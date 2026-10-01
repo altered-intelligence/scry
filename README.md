@@ -19,6 +19,12 @@ A defensive cyber threat intelligence platform that ingests public sources, extr
 
 ---
 
+## What's new in 0.8.0
+
+- **`scry backup` / `scry restore`** — move a whole install (database, `.env`, `.cti_secret`, config) between machines in one command: checksummed tar.gz archive with a manifest, optional `--full` (raw HTML + AI models) and `--encrypt` (Fernet, key already on your install); restore is atomic, refuses to clobber an existing database or a newer-version archive without `--force`, and prints a table-count diff.
+- **EPSS enricher** — keyless FIRST.org EPSS scores for every CVE: probability + percentile + 7-day freshness TTL, batched, wired into every enrichment run; CVE pages show "EPSS 0.197 (percentile 97%)".
+- **crt.sh passive-DNS enricher** — keyless certificate-transparency subdomain discovery for domain observables (passive only), 14-day TTL, shown on observable pages as a Certificate-transparency panel. (crt.sh was down during release testing — data backfills automatically on the next enrichment run once the service recovers.)
+
 ## What's new in 0.7.2
 
 - **Docs: corrected REST API paths** — the main REST API serves at root paths (`/articles`, `/observables`, `/ingest/*`, `/alerts`, `/exports/*`, …); only the AI routes (`/api/ai/*`), `/api/reports/brief`, and `/taxii2/*` carry a prefix. README references fixed to match (see `docs/api-reference.md` for the full, correct route table). No code changes.

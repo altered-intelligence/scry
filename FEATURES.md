@@ -285,11 +285,11 @@ design).
   public certificate transparency, no active scanning (SECURITY.md boundary).
   Store discovered-subdomain count + up to N sample names in observable
   infrastructure attributes; TTL 14d; one request per domain per run.
-- [ ] **Step 4 — Deploy + live verify.** Restart (touch). Backup the live
+- [x] **Step 4 — Deploy + live verify.** Restart (touch). Backup the live
   install, restore into a scratch dir, boot the restored copy on a spare port,
   `scry stats` counts match. Trigger EPSS enrichment on a handful of CVEs and
   confirm epss + percentile populate. Enrich a well-known domain via crt.sh
   and confirm passive-DNS attributes land.
-- [ ] **Step 5 — Release.** 0.7.2 → 0.8.0: CHANGELOG, README "What's new",
+- [x] **Step 5 — Release.** 0.7.2 → 0.8.0: CHANGELOG, README "What's new",
   HANDOFF.md current-state + build-journal row, tag, push, GitHub release via
   /opt/homebrew/bin/gh, confirm CI + secret-scan green on the release commit.
