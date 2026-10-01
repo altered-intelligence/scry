@@ -18,6 +18,14 @@ A defensive cyber threat intelligence platform that ingests public sources, extr
 
 ---
 
+## What's new in 0.7.0
+
+- **Source management** — Sources moved under the Intel Feeds menu, with per-source on/off checkboxes on /ui/sources. Toggling is admin-only (standard users see greyed checkboxes with an "Only admin users can toggle sources on/off" hint); collection is global across users, and the yaml→DB sync no longer overwrites runtime toggles on restart — `enabled` now applies at source creation only.
+- **9 new vendor-blog sources** — Cisco Talos, SOCRadar, The DFIR Report, Securelist, Krebs on Security, SentinelOne Labs, Red Canary, Rapid7, and Huntress, all enabled by default (6 of the requested 15 blogs were already present). Talos and Rapid7 use the feed URLs their homepages declare after the originally guessed URLs 404'd; Talos's CDN may 403 non-browser fetch clients.
+- **Collection window** — ingest now collects only feed entries from the last N days (default 1 = 24h), admin-configurable 1–7 days on /admin and shown read-only on the Sources page. Entries without dates are always kept, existing articles are untouched, and ingest results report a new `window_skipped` count.
+
+See [CHANGELOG.md](./CHANGELOG.md) for details.
+
 ## What's new in 0.6.0
 
 - **OTX pulse ingestion** — subscribe to AlienVault OTX pulses in `config/otx_pulses.yaml` (query, optional tags, max age, limit); pulses land as Articles and flow through extraction/enrichment, with idempotent re-pulls. `POST /api/ingest/otx-pulses`, `scry ingest otx-pulses`, scheduler + Threat Feeds pull-now; scheduled pulls use the system key, user pulls use your personal key.

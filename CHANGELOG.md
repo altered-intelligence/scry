@@ -4,6 +4,41 @@ All notable changes to Scry are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 semantic versioning.
 
+## [0.7.0] — 2026-09-30
+
+### Added
+
+- **Sources management under Intel Feeds** — the Sources page moved under the
+  Intel Feeds menu and now shows a per-source on/off checkbox for every
+  configured source. Toggling is admin-only: standard users see greyed,
+  disabled checkboxes reflecting current state with an "Only admin users can
+  toggle sources on/off" hover hint, and only admins can POST
+  `/ui/sources/{id}/toggle` (CSRF-guarded) to flip `Source.enabled`. Ingest
+  already skips disabled sources via `registry.enabled_sources()`; collection
+  is **global** — source toggles affect what everyone collects.
+- **9 new vendor-blog sources** — Cisco Talos, SOCRadar, The DFIR Report,
+  Securelist, Krebs on Security, SentinelOne Labs, Red Canary, Rapid7, and
+  Huntress added to `config/sources.yaml` (`type: vendor_blog`, enabled by
+  default), completing the requested 15 vendor blogs alongside the 6 already
+  present (CrowdStrike, Fortinet, Unit42, Check Point, Google/Mandiant,
+  Microsoft). Note: Talos and Rapid7 use the feed URLs their homepages declare
+  after the originally guessed URLs 404'd; Talos's CDN may 403 non-browser
+  fetch clients.
+- **Collection window (last N days)** — ingest now collects only feed entries
+  published within the last N days (default 1 = 24h) via the new
+  `collection_window_days` SystemSetting, admin-configurable 1–7 days on /admin
+  and displayed read-only on the Sources page. Entries without a published
+  date are always kept; the window applies to new collection only — existing
+  articles are untouched. Ingest results report a new `window_skipped` count.
+
+### Fixed
+
+- **yaml→DB sync no longer reverts runtime source toggles** —
+  `SourceRegistry.sync_from_yaml` previously overwrote `Source.enabled` from
+  yaml on every startup; it now keeps the DB value for existing sources (yaml
+  `enabled` applies at source creation only), so admin toggles survive
+  restarts.
+
 ## [0.6.0] — 2026-09-30
 
 ### Added

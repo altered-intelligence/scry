@@ -242,5 +242,5 @@ Conventions as before. Owner-approved 2026-09-30. Collection is GLOBAL
 - [x] **Step 3 — Deploy + live verify.** Restart (touch), verify sources page
   renders, toggle an off/on cycle via API as admin, run a limited ingest to
   confirm window filtering, confirm at least the new blogs' feeds fetch.
-- [ ] **Step 4 — Release.** 0.6.0 → 0.7.0, CHANGELOG, README, tag, push,
+- [x] **Step 4 — Release.** 0.6.0 → 0.7.0, CHANGELOG, README, tag, push,
   GitHub release via /opt/homebrew/bin/gh.
