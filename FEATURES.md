@@ -201,3 +201,46 @@ escalation, and OTX pulse ingestion as a first-class source.
   dry presence, enrichment run reports fresh_skipped on second pass.
 - [x] **Step 5 — Release.** 0.5.0 → 0.6.0 bump, CHANGELOG, README, tag,
   push, GitHub release via /opt/homebrew/bin/gh.
+
+---
+
+# scry v0.7.0 feature track — source management + collection window
+
+Conventions as before. Owner-approved 2026-09-30. Collection is GLOBAL
+(shared across all users) — source toggles affect what everyone collects.
+
+- [ ] **Step 1 — Sources under Intel Feeds with admin-only toggles.**
+  Move Sources into the Intel Feeds dropdown menu (base.html). Sources page
+  (sources.html): checkbox per source, ON by default. Admin POST
+  /ui/sources/{id}/toggle (CSRF) flips Source.enabled — ingest already skips
+  disabled via registry.enabled_sources(). Standard users: checkboxes rendered
+  disabled/greyed reflecting state, hover title "Only admin users can toggle
+  sources on/off". CRITICAL FIX: SourceRegistry.sync_from_yaml currently
+  overwrites existing.enabled from yaml on every startup — change to keep the
+  DB value on sync (yaml `enabled` applies only at source creation), else
+  runtime toggles revert on restart. ADD 9 missing blogs to
+  config/sources.yaml (type vendor_blog, enabled: true, high priority,
+  baseline_confidence 85-93, safe_public_web, independent true where apt —
+  validate each feed URL with a live HTTP check, 200 + XML; mark any
+  unverifiable one in notes and report it): Cisco Talos
+  (https://blog.talosintelligence.com/feeds/posts/default), SOCRadar
+  (https://socradar.io/blog/feed/), The DFIR Report
+  (https://thedfirreport.com/feed/), Securelist (https://securelist.com/feed/),
+  Krebs on Security (https://krebsonsecurity.com/feed/), SentinelOne Labs
+  (https://www.sentinelone.com/labs/feed/), Red Canary
+  (https://redcanary.com/feed/), Rapid7 (https://www.rapid7.com/blog/rss.xml),
+  Huntress (https://www.huntress.com/blog/rss.xml). Do not duplicate the 6
+  already present (CrowdStrike, Fortinet, Unit42, Check Point, Google/Mandiant,
+  Microsoft). Feed URLs (not page URLs) go in the `feed:` field; page URL in
+  `url:`.
+- [ ] **Step 2 — Collection window (1-7 days, admin-only).** New SystemSetting
+  `collection_window_days` (default 1 = last 24h). Admin-only control on
+  /admin (number input clamped 1-7, or select) + displayed (read-only) on the
+  Sources page. Enforced in ingest_engine/rss path: skip feed entries whose
+  published_at is older than the window (entries without a date are kept).
+  Applies to new collection only; existing articles untouched.
+- [ ] **Step 3 — Deploy + live verify.** Restart (touch), verify sources page
+  renders, toggle an off/on cycle via API as admin, run a limited ingest to
+  confirm window filtering, confirm at least the new blogs' feeds fetch.
+- [ ] **Step 4 — Release.** 0.6.0 → 0.7.0, CHANGELOG, README, tag, push,
+  GitHub release via /opt/homebrew/bin/gh.
