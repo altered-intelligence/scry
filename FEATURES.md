@@ -239,7 +239,7 @@ Conventions as before. Owner-approved 2026-09-30. Collection is GLOBAL
   Sources page. Enforced in ingest_engine/rss path: skip feed entries whose
   published_at is older than the window (entries without a date are kept).
   Applies to new collection only; existing articles untouched.
-- [ ] **Step 3 — Deploy + live verify.** Restart (touch), verify sources page
+- [x] **Step 3 — Deploy + live verify.** Restart (touch), verify sources page
   renders, toggle an off/on cycle via API as admin, run a limited ingest to
   confirm window filtering, confirm at least the new blogs' feeds fetch.
 - [ ] **Step 4 — Release.** 0.6.0 → 0.7.0, CHANGELOG, README, tag, push,
