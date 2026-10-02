@@ -2,9 +2,11 @@
 
 - Async via httpx
 - Per-host rate limit (simple token bucket)
-- Hard size cap from settings.max_fetch_bytes
+- Hard size cap from settings.max_fetch_bytes, enforced while STREAMING the
+  decompressed body (a gzip bomb never buffers whole in memory)
 - Timeout from settings.fetch_timeout_seconds
-- SSRF guard before any network call
+- SSRF guard before any network call — re-validated on EVERY redirect hop
+  (redirects are followed manually, bounded to 5 hops)
 - robots.txt advisory check (best-effort; fails closed only when policy says so)
 - Refuses file downloads / binary content unless policy allows
 """
@@ -15,7 +17,7 @@ import asyncio
 import hashlib
 import time
 from dataclasses import dataclass, field
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import httpx
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_attempt
@@ -33,6 +35,15 @@ logger = get_logger("fetcher")
 _RETRYABLE_STATUSES = {429, 503}
 _MAX_ATTEMPTS = 3
 _RETRY_AFTER_CAP = 30.0
+
+# Redirects are followed MANUALLY (never via httpx follow_redirects) so the
+# SSRF guard re-runs on every hop — a feed that 302s to a link-local /
+# metadata address is refused before any request goes out.
+_REDIRECT_STATUSES = {301, 302, 303, 307, 308}
+_MAX_REDIRECTS = 5
+
+# Chunk size for streamed body reads.
+_STREAM_CHUNK = 64 * 1024
 
 
 class _RetryableStatus(Exception):
@@ -101,7 +112,7 @@ class SafeFetcher:
     async def __aenter__(self) -> SafeFetcher:
         if self._client is None:
             self._client = httpx.AsyncClient(
-                follow_redirects=True,
+                follow_redirects=False,  # manual hops only — each one is SSRF-checked
                 timeout=httpx.Timeout(self._settings.fetch_timeout_seconds),
                 headers=default_browser_headers(),
                 http2=False,
@@ -115,7 +126,12 @@ class SafeFetcher:
             self._client = None
 
     async def _get_with_retry(self, url: str) -> httpx.Response:
-        """GET with exponential-backoff retry on 429/503 (max 3 attempts)."""
+        """GET with exponential-backoff retry on 429/503 (max 3 attempts).
+
+        The response is returned OPEN (streamed, body unread) — the caller
+        must read and close it. Retryable responses are closed before the
+        next attempt.
+        """
         assert self._client is not None
         async for attempt in AsyncRetrying(
             stop=stop_after_attempt(_MAX_ATTEMPTS),
@@ -124,7 +140,10 @@ class SafeFetcher:
             reraise=True,
         ):
             with attempt:
-                resp = await self._client.get(url)
+                resp = await self._client.send(
+                    self._client.build_request("GET", url),
+                    stream=True,
+                )
                 if resp.status_code in _RETRYABLE_STATUSES:
                     logger.warning(
                         "fetch_retryable_status",
@@ -132,8 +151,25 @@ class SafeFetcher:
                         status=resp.status_code,
                         attempt=attempt.retry_state.attempt_number,
                     )
+                    await resp.aclose()
                     raise _RetryableStatus(resp)
         return resp
+
+    async def _read_capped(self, resp: httpx.Response, max_bytes: int) -> bytes | None:
+        """Stream the (transparently decompressed) body, capped at max_bytes.
+
+        Returns None when the cap is exceeded — the full body is never
+        buffered, so a gzip bomb cannot exhaust memory. Chunks arrive
+        decompressed from httpx, so the cap applies to the real payload size.
+        """
+        chunks: list[bytes] = []
+        total = 0
+        async for chunk in resp.aiter_bytes(_STREAM_CHUNK):
+            total += len(chunk)
+            if total > max_bytes:
+                return None
+            chunks.append(chunk)
+        return b"".join(chunks)
 
     async def fetch(
         self, url: str, *, policy: PolicyDecision, rate_limit_per_minute: int = 10
@@ -141,57 +177,112 @@ class SafeFetcher:
         if not policy.allowed or policy.fetch_mode == "deny":
             return FetchResult(url=url, status_code=None, error=f"policy blocked: {policy.reason}")
 
-        ssrf = evaluate_url(url)
-        if not ssrf.allowed:
-            logger.warning("ssrf_block", url=url, reason=ssrf.reason)
-            return FetchResult(url=url, status_code=None, error=f"ssrf blocked: {ssrf.reason}")
-
-        host = urlparse(url).hostname or ""
-        await self._rate.acquire(host, rate_limit_per_minute)
-
         start = time.monotonic()
+        max_bytes = self._settings.max_fetch_bytes
+
+        # Resolve the redirect chain manually: every hop (original URL and
+        # each Location target) is SSRF-checked and rate-limited before the
+        # request goes out. Bodies of redirect responses are never read.
+        current_url = url
+        resp: httpx.Response | None = None
+        for hop in range(_MAX_REDIRECTS + 1):
+            ssrf = evaluate_url(current_url)
+            if not ssrf.allowed:
+                logger.warning("ssrf_block", url=current_url, reason=ssrf.reason, original_url=url, hop=hop)
+                return FetchResult(url=url, status_code=None, error=f"ssrf blocked: {ssrf.reason}")
+            host = urlparse(current_url).hostname or ""
+            await self._rate.acquire(host, rate_limit_per_minute)
+
+            try:
+                resp = await self._get_with_retry(current_url)
+            except _RetryableStatus as exc:
+                return FetchResult(
+                    url=url,
+                    status_code=exc.response.status_code,
+                    headers=dict(exc.response.headers),
+                    error=f"HTTP {exc.response.status_code} after {_MAX_ATTEMPTS} attempts",
+                    elapsed_ms=int((time.monotonic() - start) * 1000),
+                )
+            except httpx.HTTPError as exc:
+                return FetchResult(
+                    url=current_url,
+                    status_code=None,
+                    error=str(exc),
+                    elapsed_ms=int((time.monotonic() - start) * 1000),
+                )
+
+            location = resp.headers.get("location")
+            if resp.status_code in _REDIRECT_STATUSES and location:
+                next_url = urljoin(current_url, location)
+                await resp.aclose()
+                if hop == _MAX_REDIRECTS:
+                    return FetchResult(
+                        url=url,
+                        status_code=None,
+                        error=f"too many redirects (>{_MAX_REDIRECTS})",
+                        elapsed_ms=int((time.monotonic() - start) * 1000),
+                    )
+                logger.info("fetch_redirect_hop", from_url=current_url, to_url=next_url, hop=hop)
+                current_url = next_url
+                continue
+            break
+
+        assert resp is not None
         try:
-            resp = await self._get_with_retry(url)
-        except _RetryableStatus as exc:
-            return FetchResult(
-                url=url,
-                status_code=exc.response.status_code,
-                headers=dict(exc.response.headers),
-                error=f"HTTP {exc.response.status_code} after {_MAX_ATTEMPTS} attempts",
-                elapsed_ms=int((time.monotonic() - start) * 1000),
-            )
-        except httpx.HTTPError as exc:
-            return FetchResult(
-                url=url, status_code=None, error=str(exc), elapsed_ms=int((time.monotonic() - start) * 1000)
-            )
+            elapsed_ms = int((time.monotonic() - start) * 1000)
+            ct = resp.headers.get("content-type", "").lower()
 
-        elapsed_ms = int((time.monotonic() - start) * 1000)
-        ct = resp.headers.get("content-type", "").lower()
-        size = int(resp.headers.get("content-length", "0") or 0) or len(resp.content)
+            # Early gate on the declared length (cheap), but do not trust it:
+            # the streaming cap below is the real enforcement — gzip-compressed
+            # bodies decompress to far more than Content-Length claims.
+            declared = int(resp.headers.get("content-length", "0") or 0)
+            if declared > max_bytes:
+                return FetchResult(
+                    url=str(resp.url),
+                    status_code=resp.status_code,
+                    headers=dict(resp.headers),
+                    error=f"response too large ({declared} bytes)",
+                    elapsed_ms=elapsed_ms,
+                )
 
-        if size > self._settings.max_fetch_bytes:
-            return FetchResult(
-                url=str(resp.url),
-                status_code=resp.status_code,
-                headers=dict(resp.headers),
-                error=f"response too large ({size} bytes)",
-                elapsed_ms=elapsed_ms,
-            )
+            # Refuse binary/file downloads unless policy permits explicitly.
+            if (
+                not _looks_like_text(ct)
+                and not policy.allow_binary_download
+                and not policy.allow_file_download
+            ):
+                return FetchResult(
+                    url=str(resp.url),
+                    status_code=resp.status_code,
+                    headers=dict(resp.headers),
+                    error=f"refusing non-text content-type {ct!r}",
+                    elapsed_ms=elapsed_ms,
+                )
 
-        # Refuse binary/file downloads unless policy permits explicitly.
-        if not _looks_like_text(ct) and not policy.allow_binary_download and not policy.allow_file_download:
-            return FetchResult(
-                url=str(resp.url),
-                status_code=resp.status_code,
-                headers=dict(resp.headers),
-                error=f"refusing non-text content-type {ct!r}",
-                elapsed_ms=elapsed_ms,
-            )
+            try:
+                content = await self._read_capped(resp, max_bytes)
+            except httpx.HTTPError as exc:
+                return FetchResult(
+                    url=str(resp.url),
+                    status_code=resp.status_code,
+                    headers=dict(resp.headers),
+                    error=str(exc),
+                    elapsed_ms=int((time.monotonic() - start) * 1000),
+                )
+            if content is None:
+                return FetchResult(
+                    url=str(resp.url),
+                    status_code=resp.status_code,
+                    headers=dict(resp.headers),
+                    error=f"response too large (over {max_bytes} bytes decompressed)",
+                    elapsed_ms=int((time.monotonic() - start) * 1000),
+                )
+        finally:
+            await resp.aclose()
 
-        content = resp.content[: self._settings.max_fetch_bytes]
         sha = hashlib.sha256(content).hexdigest()
         try:
-            text = content.decode(resp.encoding or "utf-8", errors="replace")
+            text = content.decode(resp.charset_encoding or "utf-8", errors="replace")
         except LookupError:
             text = content.decode("utf-8", errors="replace")
         return FetchResult(
@@ -201,7 +292,7 @@ class SafeFetcher:
             text=text,
             headers=dict(resp.headers),
             content_hash=sha,
-            elapsed_ms=elapsed_ms,
+            elapsed_ms=int((time.monotonic() - start) * 1000),
         )
 
 

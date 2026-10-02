@@ -36,10 +36,10 @@ class IngestionEngine:
         self.registry = SourceRegistry(session)
 
     async def ingest_url(self, url: str, *, source_id: int | None = None) -> Article | None:
-        source = self.session.get(Source, source_id) if source_id else None
-        policy_name = source.collection_policy if source else "safe_public_web"
-        enabled = bool(source.enabled) if source else True
-        safety_mode = source.safety_mode if source else None
+        source = self.session.get(Source, source_id) if source_id else self._default_manual_source()
+        policy_name = source.collection_policy
+        enabled = bool(source.enabled)
+        safety_mode = source.safety_mode
         decision = self.policy.evaluate(
             policy_name=policy_name,
             source_enabled=enabled,
@@ -52,7 +52,7 @@ class IngestionEngine:
             result = await fetcher.fetch(
                 url,
                 policy=decision,
-                rate_limit_per_minute=source.rate_limit_per_minute if source else 10,
+                rate_limit_per_minute=source.rate_limit_per_minute,
             )
         return self._persist_fetch(source, result, decision, single_article=True)
 
@@ -91,12 +91,14 @@ class IngestionEngine:
             persisted = 0
             window_skipped = 0
             window_days = get_window_days(self.session)
+            seen_urls: set[str] = set()  # in-feed dupes: the DB check can't see pending rows (autoflush off)
             for entry in entries[:200]:
                 if not entry_in_window(entry.published_at, window_days, datetime.now(UTC)):
                     window_skipped += 1
                     continue
-                if self._is_duplicate_url(entry.url):
+                if entry.url in seen_urls or self._is_duplicate_url(entry.url):
                     continue
+                seen_urls.add(entry.url)
                 article = Article(
                     source_id=source.id,
                     title=entry.title or "(no title)",
@@ -200,6 +202,27 @@ class IngestionEngine:
         return {"updated": updated, "failed": failed, "skipped": skipped}
 
     # ----- helpers -----
+
+    def _default_manual_source(self) -> Source:
+        """Get-or-create the catch-all source for ad-hoc URL ingests.
+
+        ``POST /ingest/url`` without a source_id previously inserted an
+        Article with ``source_id=None`` against a non-nullable column (500).
+        Manual ingests get a low baseline confidence and the safest policy.
+        """
+        src = self.session.scalar(select(Source).where(Source.name == "Manual"))
+        if src is None:
+            src = Source(
+                name="Manual",
+                type="manual",
+                url="",
+                enabled=True,
+                baseline_confidence=50,
+                collection_policy="safe_public_web",
+            )
+            self.session.add(src)
+            self.session.commit()
+        return src
 
     def _persist_fetch(
         self, source: Source | None, fetch: FetchResult, policy: PolicyDecision, *, single_article: bool

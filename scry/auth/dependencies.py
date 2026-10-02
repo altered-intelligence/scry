@@ -11,7 +11,7 @@ master key, so step 3 only needs to implement this one function.
 
 from __future__ import annotations
 
-from fastapi import Request
+from fastapi import HTTPException, Request
 
 from scry.auth.sessions import SESSION_COOKIE, users_exist, validate_session
 from scry.db import session_scope
@@ -94,3 +94,16 @@ def validate_user_api_key(request: Request) -> User | None:
             api_key.last_used_at = now
             session.flush()
         return user
+
+
+def require_admin(request: Request) -> None:
+    """FastAPI dependency gating sensitive mutating endpoints to admin users.
+
+    Runs after ``require_api_key`` (which stashes the authenticated account
+    on ``request.state.api_user``). A resolved non-admin user gets 403.
+    Requests with no resolved user — master-key auth or the legacy zero-user
+    open mode — are allowed through so API-key automation keeps working.
+    """
+    user = getattr(request.state, "api_user", None)
+    if user is not None and user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin role required")

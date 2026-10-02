@@ -15,13 +15,19 @@ from scry.models import Entity
 
 
 def resolve_canonical(name: str, entity_type: str) -> tuple[str, list[str]]:
-    """Returns (canonical_name, aliases) using the local alias dictionary."""
+    """Returns (canonical_name, aliases) using the local alias dictionary.
+
+    Only threat actors and malware families have alias tables — other entity
+    types (tool, campaign, …) pass through unchanged rather than being
+    misresolved through the malware table.
+    """
     aliases = load_aliases()
-    section = (
-        aliases.get("threat_actors", {})
-        if entity_type == "threat_actor"
-        else aliases.get("malware_families", {})
-    )
+    if entity_type == "threat_actor":
+        section = aliases.get("threat_actors", {})
+    elif entity_type == "malware_family":
+        section = aliases.get("malware_families", {})
+    else:
+        return name, []
     needle = name.lower().replace("_", " ").strip()
     for canonical, info in (section or {}).items():
         canonical_pretty = canonical.replace("_", " ")

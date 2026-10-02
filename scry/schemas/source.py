@@ -26,6 +26,25 @@ class SourceOut(SourceIn):
     id: int
 
 
+class SourcePatch(BaseModel):
+    """Explicit allowlist for PATCH /sources/{id} — unknown fields (including
+    ``id``) are ignored instead of mass-assigned onto the ORM row."""
+
+    name: str | None = None
+    type: str | None = None
+    url: str | None = None
+    feed: str | None = None
+    enabled: bool | None = None
+    priority: str | None = None
+    baseline_confidence: int | None = None
+    collection_policy: str | None = None
+    safety_mode: str | None = None
+    independent: bool | None = None
+    rate_limit_per_minute: int | None = None
+    tags: list[str] | None = None
+    notes: str | None = None
+
+
 class SourceFetchOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int

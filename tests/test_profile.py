@@ -409,13 +409,16 @@ class TestEmailVerification:
 
 
 def create_key(client: TestClient, name: str = "widget", expiry_days: str = "") -> str:
+    """Create an API key; returns the rendered page HTML (200 — the key is
+    shown once on the page itself, never in a redirect query string)."""
     r = client.post(
         "/profile/api-keys",
         data={"csrf": csrf_for(client), "name": name, "expiry_days": expiry_days},
         follow_redirects=False,
     )
-    assert r.status_code == 303
-    return flash_of(r)
+    assert r.status_code == 200
+    assert 'id="new-api-key-value"' in r.text
+    return r.text
 
 
 def key_row() -> ApiKey:
@@ -424,17 +427,17 @@ def key_row() -> ApiKey:
 
 
 def raw_key_for(client: TestClient) -> str:
-    flash = create_key(client)
-    return re.search(r"shown only once: (sk-[A-Za-z0-9_\-]+)", flash).group(1)
+    page = create_key(client)
+    return re.search(r'id="new-api-key-value"[^>]*>(sk-[A-Za-z0-9_\-]+)<', page).group(1)
 
 
 class TestApiKeys:
     def test_create_shows_full_key_once(self):
         make_user()
         client = profile_client()
-        flash = create_key(client, name="dashboard")
-        m = re.search(r"shown only once: (sk-[A-Za-z0-9_\-]+)", flash)
-        assert m, flash
+        page = create_key(client, name="dashboard")
+        m = re.search(r'id="new-api-key-value"[^>]*>(sk-[A-Za-z0-9_\-]+)<', page)
+        assert m, page
         raw = m.group(1)
         row = key_row()
         assert row.name == "dashboard"
@@ -671,7 +674,7 @@ class TestReviewActor:
         client = profile_client()
         r = client.post(
             "/ui/reviews/bulk",
-            data={"review_ids": [str(rid)], "action": "approve"},
+            data={"csrf": csrf_for(client), "review_ids": [str(rid)], "action": "approve"},
             follow_redirects=False,
         )
         assert r.status_code == 303
@@ -690,7 +693,7 @@ class TestReviewActor:
         client = profile_client()
         client.post(
             f"/ui/reviews/{rid}",
-            data={"status": "closed", "disposition": "false_positive"},
+            data={"csrf": csrf_for(client), "status": "closed", "disposition": "false_positive"},
             follow_redirects=False,
         )
         with session_scope() as s:

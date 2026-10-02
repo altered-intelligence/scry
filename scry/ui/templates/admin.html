@@ -13,6 +13,21 @@
   <a class="btn secondary" href="#audit">Audit log</a>
 </div>
 
+{% if one_time_secret %}
+{# Shown exactly once, immediately after the action that generated the
+   secret. Rendered inline (never in a redirect query string) so the value
+   stays out of access logs and browser history. #}
+<div class="panel" id="one-time-secret" style="border-color: var(--good);">
+  <h2 style="margin-top: 0;">{{ one_time_secret.kind|capitalize }} for {{ one_time_secret.subject }} — shown once</h2>
+  <p class="muted">Copy it now. It is never stored in clear and will not be shown again.</p>
+  <p><code style="font-size: 16px; letter-spacing: 0.05em; user-select: all;">{{ one_time_secret.value }}</code></p>
+  {% if one_time_secret.note %}<p class="muted">{{ one_time_secret.note }}</p>{% endif %}
+  <form method="get" action="/admin" style="margin-top: 8px;">
+    <button type="submit" class="btn">I saved it — continue</button>
+  </form>
+</div>
+{% endif %}
+
 {# ------------------------- users ------------------------- #}
 <div class="panel" id="users">
   <h2 style="margin-top: 0;">Users</h2>

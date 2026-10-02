@@ -1,0 +1,32 @@
+# Version control
+.git
+.gitignore
+
+# Python environments / caches
+.venv
+.venv*
+__pycache__
+*.pyc
+*.egg-info
+.pytest_cache
+.ruff_cache
+.mypy_cache
+
+# Local data and databases
+data/
+*.sqlite
+*.sqlite-*
+
+# Secrets / local config
+.env
+.cti_secret
+.cti_cache/
+
+# Generated output
+reports/
+analytics_exports/
+*.log
+*.out
+
+# OS noise
+.DS_Store

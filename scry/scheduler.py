@@ -1,7 +1,8 @@
 """APScheduler-based recurring task scheduler.
 
-Default schedule:
-  ingest-all       every 30 min
+Default schedule (UTC, staggered so the two ingest jobs never collide):
+  ingest-all       every 30 min at :04/:34
+  otx-pulses       every 30 min at :19/:49
   decay            daily
   alert evaluation every 15 min
   cluster refresh  hourly
@@ -28,6 +29,9 @@ logger = get_logger("scheduler")
 
 
 def _ingest_all_job() -> None:
+    """Scheduled full ingest. Errors are logged, never raised — a failing
+    source or transient DB lock must not kill the scheduler thread."""
+
     async def _run():
         with session_scope() as session:
             res = await IngestionEngine(session).ingest_all()
@@ -36,7 +40,10 @@ def _ingest_all_job() -> None:
                 pipeline.process_article(art)
             logger.info("scheduler_ingest_done", result=res)
 
-    asyncio.run(_run())
+    try:
+        asyncio.run(_run())
+    except Exception as exc:
+        logger.exception("scheduler_ingest_failed", exc=str(exc))
 
 
 def _decay_job() -> None:
@@ -81,8 +88,10 @@ def _otx_pulses_job() -> None:
 def main() -> None:
     configure_logging()
     sched = BlockingScheduler(timezone="UTC")
-    sched.add_job(_ingest_all_job, "interval", minutes=30, id="ingest_all")
-    sched.add_job(_otx_pulses_job, "interval", minutes=30, id="otx_pulses")
+    # Staggered wall-clock minutes so the two 30-min ingest jobs never fire
+    # together and contend for the SQLite write lock.
+    sched.add_job(_ingest_all_job, "cron", minute="4,34", id="ingest_all")
+    sched.add_job(_otx_pulses_job, "cron", minute="19,49", id="otx_pulses")
     sched.add_job(_alerts_job, "interval", minutes=15, id="alerts")
     sched.add_job(_cluster_job, "interval", hours=1, id="cluster")
     sched.add_job(_decay_job, "interval", hours=24, id="decay")

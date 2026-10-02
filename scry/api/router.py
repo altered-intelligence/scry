@@ -23,9 +23,11 @@ from scry.alerting import AlertEngine
 from scry.alerting.channels import deliver_test
 from scry.api.deps import get_session
 from scry.audit import record as audit_record
+from scry.auth.dependencies import require_admin
 from scry.clustering import cluster_articles
 from scry.config import load_pirs, load_watchlists
 from scry.conflicts import detect_conflicts
+from scry.db import tag_filter
 from scry.enrichment import EnrichmentEngine
 from scry.enrichment.provider_settings import PROVIDER_META, load_provider_states
 from scry.enrichment.user_keys import keys_for_user
@@ -76,6 +78,7 @@ from scry.schemas import (
     SemanticQuery,
     SourceIn,
     SourceOut,
+    SourcePatch,
 )
 from scry.scoring.lifecycle import LifecycleEngine
 from scry.search import full_text_search, semantic_search
@@ -122,14 +125,18 @@ def get_source(source_id: int, session: Session = Depends(get_session)):
     return src
 
 
-@api_router.patch("/sources/{source_id}", response_model=SourceOut)
-def patch_source(source_id: int, payload: dict, session: Session = Depends(get_session)):
+@api_router.patch("/sources/{source_id}", response_model=SourceOut, dependencies=[Depends(require_admin)])
+def patch_source(source_id: int, payload: SourcePatch, session: Session = Depends(get_session)):
+    """Update a source — explicit field allowlist only (no mass assignment).
+
+    Admin-only when user accounts exist (collection is global state); the
+    master key and legacy zero-user mode keep working for automation.
+    """
     src = session.get(Source, source_id)
     if not src:
         raise HTTPException(404)
-    for k, v in payload.items():
-        if hasattr(src, k):
-            setattr(src, k, v)
+    for k, v in payload.model_dump(exclude_unset=True).items():
+        setattr(src, k, v)
     session.commit()
     return src
 
@@ -245,11 +252,14 @@ def enrichment_provider_list(session: Session = Depends(get_session)) -> dict[st
     return {"providers": [states[name].as_dict() for name in PROVIDER_META]}
 
 
-@api_router.put("/enrichment/providers")
+@api_router.put("/enrichment/providers", dependencies=[Depends(require_admin)])
 def enrichment_provider_configure(
     payload: EnrichmentProviderConfig, session: Session = Depends(get_session)
 ) -> dict[str, Any]:
-    """Create/update one enrichment provider's settings (key encrypted at rest)."""
+    """Create/update one enrichment provider's settings (key encrypted at rest).
+
+    Admin-only when user accounts exist — this stores system enrichment keys.
+    """
     from scry.crypto import encrypt
     from scry.models import ConnectorSetting
 
@@ -366,7 +376,7 @@ async def ingest_fetch_full(session: Session = Depends(get_session), limit: int 
 
 
 @api_router.get("/jobs")
-def list_jobs(session: Session = Depends(get_session), limit: int = 50):
+def list_jobs(session: Session = Depends(get_session), limit: int = Query(50, ge=1, le=500)):
     return [
         {
             "id": j.id,
@@ -387,13 +397,12 @@ def list_jobs(session: Session = Depends(get_session), limit: int = 50):
 def list_articles(
     session: Session = Depends(get_session),
     limit: int = Query(50, ge=1, le=500),
-    offset: int = 0,
+    offset: int = Query(0, ge=0),
     tag: str | None = None,
 ):
     stmt = select(Article).order_by(Article.id.desc())
     if tag:
-        # JSON column contains
-        stmt = stmt.where(Article.tags.contains([tag]))
+        stmt = stmt.where(tag_filter(Article.tags, tag))
     rows = session.scalars(stmt.limit(limit).offset(offset)).all()
     return rows
 
@@ -417,7 +426,7 @@ def list_observables(
     tag: str | None = None,
     status: str | None = None,
     limit: int = Query(100, ge=1, le=1000),
-    offset: int = 0,
+    offset: int = Query(0, ge=0),
 ):
     stmt = select(Observable).order_by(Observable.risk_score.desc(), Observable.id.desc())
     if type:
@@ -425,14 +434,14 @@ def list_observables(
     if min_risk is not None:
         stmt = stmt.where(Observable.risk_score >= min_risk)
     if tag:
-        stmt = stmt.where(Observable.tags.contains([tag]))
+        stmt = stmt.where(tag_filter(Observable.tags, tag))
     if status:
         stmt = stmt.where(Observable.status == status)
     return list(session.scalars(stmt.limit(limit).offset(offset)))
 
 
 @api_router.get("/observables/search", response_model=list[ObservableOut])
-def search_observables(q: str, session: Session = Depends(get_session), limit: int = 50):
+def search_observables(q: str, session: Session = Depends(get_session), limit: int = Query(50, ge=1, le=500)):
     needle = f"%{q.lower()}%"
     return list(
         session.scalars(select(Observable).where(Observable.normalized_value.ilike(needle)).limit(limit))
@@ -451,8 +460,12 @@ def get_observable(ob_id: int, session: Session = Depends(get_session)):
 
 
 @api_router.get("/entities", response_model=list[EntityOut])
-def list_entities(type: str | None = None, session: Session = Depends(get_session)):
-    stmt = select(Entity)
+def list_entities(
+    type: str | None = None,
+    session: Session = Depends(get_session),
+    limit: int = Query(500, ge=1, le=1000),
+):
+    stmt = select(Entity).limit(limit)
     if type:
         stmt = stmt.where(Entity.type == type)
     return list(session.scalars(stmt))
@@ -470,7 +483,11 @@ def get_entity(entity_id: int, session: Session = Depends(get_session)):
 
 
 @api_router.get("/claims", response_model=list[ClaimOut])
-def list_claims(claim_type: str | None = None, session: Session = Depends(get_session), limit: int = 100):
+def list_claims(
+    claim_type: str | None = None,
+    session: Session = Depends(get_session),
+    limit: int = Query(100, ge=1, le=500),
+):
     stmt = select(Claim).order_by(Claim.id.desc())
     if claim_type:
         stmt = stmt.where(Claim.claim_type == claim_type)
@@ -489,7 +506,7 @@ def get_claim(claim_id: int, session: Session = Depends(get_session)):
 
 
 @api_router.get("/relationships", response_model=list[RelationshipOut])
-def list_relationships(session: Session = Depends(get_session), limit: int = 100):
+def list_relationships(session: Session = Depends(get_session), limit: int = Query(100, ge=1, le=500)):
     return list(session.scalars(select(Relationship).order_by(Relationship.id.desc()).limit(limit)))
 
 
@@ -497,7 +514,11 @@ def list_relationships(session: Session = Depends(get_session), limit: int = 100
 
 
 @api_router.get("/cves")
-def list_cves(session: Session = Depends(get_session), only_kev: bool = False, limit: int = 100):
+def list_cves(
+    session: Session = Depends(get_session),
+    only_kev: bool = False,
+    limit: int = Query(100, ge=1, le=500),
+):
     stmt = select(CVE).order_by(CVE.updated_at.desc()).limit(limit)
     if only_kev:
         stmt = stmt.where(CVE.kev.is_(True))
@@ -525,31 +546,34 @@ def get_cve(cve_id: str, session: Session = Depends(get_session)):
 
 
 @api_router.get("/threat-actors")
-def list_threat_actors(session: Session = Depends(get_session)):
+def list_threat_actors(session: Session = Depends(get_session), limit: int = Query(500, ge=1, le=1000)):
     return [
         {"id": t.id, "canonical_name": t.canonical_name, "aliases": t.aliases}
-        for t in session.scalars(select(ThreatActor))
+        for t in session.scalars(select(ThreatActor).limit(limit))
     ]
 
 
 @api_router.get("/malware")
-def list_malware(session: Session = Depends(get_session)):
+def list_malware(session: Session = Depends(get_session), limit: int = Query(500, ge=1, le=1000)):
     return [
         {"id": m.id, "canonical_name": m.canonical_name, "type": m.malware_type, "aliases": m.aliases}
-        for m in session.scalars(select(MalwareFamily))
+        for m in session.scalars(select(MalwareFamily).limit(limit))
     ]
 
 
 @api_router.get("/campaigns")
-def list_campaigns(session: Session = Depends(get_session)):
-    return [{"id": c.id, "name": c.name, "objective": c.objective} for c in session.scalars(select(Campaign))]
+def list_campaigns(session: Session = Depends(get_session), limit: int = Query(500, ge=1, le=1000)):
+    return [
+        {"id": c.id, "name": c.name, "objective": c.objective}
+        for c in session.scalars(select(Campaign).limit(limit))
+    ]
 
 
 # ---------- Search ----------
 
 
 @api_router.get("/search", response_model=list[SearchHit])
-def search(q: str, session: Session = Depends(get_session), limit: int = 50):
+def search(q: str, session: Session = Depends(get_session), limit: int = Query(50, ge=1, le=500)):
     return full_text_search(session, q, limit=limit)
 
 
@@ -562,7 +586,7 @@ def semantic(query: SemanticQuery, session: Session = Depends(get_session)):
 
 
 @api_router.get("/alerts")
-def list_alerts(session: Session = Depends(get_session), limit: int = 100):
+def list_alerts(session: Session = Depends(get_session), limit: int = Query(100, ge=1, le=500)):
     return [
         {
             "id": a.id,
@@ -600,7 +624,7 @@ def pirs():
 
 
 @api_router.get("/clusters")
-def list_clusters(session: Session = Depends(get_session), limit: int = 100):
+def list_clusters(session: Session = Depends(get_session), limit: int = Query(100, ge=1, le=500)):
     return [
         {"id": c.id, "kind": c.kind, "method": c.method, "members": c.members, "description": c.description}
         for c in session.scalars(select(Cluster).order_by(Cluster.id.desc()).limit(limit))
@@ -614,7 +638,11 @@ def run_clusters(session: Session = Depends(get_session)):
 
 
 @api_router.get("/reviews", response_model=list[ReviewItemOut])
-def list_reviews(session: Session = Depends(get_session), limit: int = 100, offset: int = 0):
+def list_reviews(
+    session: Session = Depends(get_session),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+):
     return ReviewQueue(session).list_open(limit=limit, offset=offset)
 
 
@@ -634,7 +662,7 @@ def patch_review(review_id: int, payload: ReviewUpdate, session: Session = Depen
 
 
 @api_router.get("/conflicts")
-def list_conflicts(session: Session = Depends(get_session), limit: int = 100):
+def list_conflicts(session: Session = Depends(get_session), limit: int = Query(100, ge=1, le=500)):
     return [
         {
             "id": c.id,
@@ -792,7 +820,7 @@ def list_threat_feeds(
     threat_actor: str | None = None,
     sort: str = "date_desc",
     limit: int = Query(100, ge=1, le=1000),
-    offset: int = 0,
+    offset: int = Query(0, ge=0),
 ):
     stmt = select(ThreatFeedItem)
     if q:
@@ -901,7 +929,7 @@ def list_ransomware_feed(
     industry: str = "",
     sort: str = "discovered_desc",
     limit: int = Query(50, ge=1, le=500),
-    offset: int = 0,
+    offset: int = Query(0, ge=0),
 ):
     from sqlalchemy import or_ as _or
 

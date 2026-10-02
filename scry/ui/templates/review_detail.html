@@ -45,6 +45,7 @@
     <div class="panel">
       <h3>Update disposition</h3>
       <form method="post" action="/ui/reviews/{{ review.id }}" class="disposition">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
         <label>Status
           <select name="status">
             {% for s in ['open','in_progress','closed'] %}<option value="{{ s }}" {% if review.status == s %}selected{% endif %}>{{ s }}</option>{% endfor %}

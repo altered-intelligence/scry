@@ -508,7 +508,7 @@
             ? '<a class="chip" href="' + esc(s.link) + '">' + esc(label) + '</a>'
             : '<span class="chip">' + esc(label) + '</span>';
         });
-        html += ' <span class="muted" style="font-size:11px">' + res.data.model + ' · ' + res.data.elapsed_ms + ' ms</span>';
+        html += ' <span class="muted" style="font-size:11px">' + esc(res.data.model) + ' · ' + res.data.elapsed_ms + ' ms</span>';
         sourcesEl.innerHTML = html;
         sourcesEl.style.display = 'block';
       }

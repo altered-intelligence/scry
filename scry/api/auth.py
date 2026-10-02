@@ -11,9 +11,9 @@ calls) or a per-user API key (plug-in hook, step 3) also satisfies it. With
 zero users the API stays fully open, preserving legacy behavior for the MCP
 server and local automations.
 
-Exemptions: a small set of routes stays unauthenticated even when auth is
-enabled, so monitoring probes and the Search-page provider picker keep
-working:
+Exemptions: a small set of GET routes stays unauthenticated even when auth
+is enabled, so monitoring probes and the Search-page provider picker keep
+working (read-only only — mutations on the same paths require auth):
 
 - ``/api/health`` / ``/health`` — health probe (mounted without prefix)
 - ``/api/ai/status``, ``/api/ai/provider`` — Search-page provider picker
@@ -28,9 +28,15 @@ import hmac
 
 from fastapi import HTTPException, Request
 
-# Routes allowed without a key even when auth is enabled. ``/health`` covers
-# the api_router mount (no prefix); ``/api/health`` is kept for symmetry in
-# case the router is ever mounted under /api.
+# Read-only methods that may be answered without credentials on the exempt
+# paths below. Everything else (PUT/POST/DELETE/PATCH/…) requires auth —
+# e.g. PUT /api/ai/provider mutates stored LLM credentials and must never be
+# reachable anonymously.
+_UNAUTHENTICATED_METHODS = frozenset({"GET", "HEAD"})
+
+# Routes allowed without a key even when auth is enabled (read-only methods
+# only). ``/health`` covers the api_router mount (no prefix); ``/api/health``
+# is kept for symmetry in case the router is ever mounted under /api.
 _UNAUTHENTICATED_PATHS = frozenset(
     {
         "/api/health",
@@ -57,7 +63,7 @@ def require_api_key(request: Request) -> None:
     Settings and the user table are read lazily per request (local imports)
     so tests and runtime config changes take effect without re-importing.
     """
-    if request.url.path in _UNAUTHENTICATED_PATHS:
+    if request.url.path in _UNAUTHENTICATED_PATHS and request.method in _UNAUTHENTICATED_METHODS:
         return
 
     from scry.auth.dependencies import current_user, validate_user_api_key

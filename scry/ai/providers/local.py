@@ -29,6 +29,14 @@ class LocalLlamaProvider(LLMProvider):
     # Process-wide singleton — the model takes ~12s to load, so load once.
     _llama = None
     _load_lock = threading.Lock()
+    # llama.cpp contexts are NOT thread-safe: concurrent create_chat_completion
+    # calls on one Llama instance can corrupt state or crash the process.
+    # Inference is therefore serialized through this lock — concurrent asks
+    # queue up rather than run in parallel. Note: the endpoint-level timeout
+    # (asyncio.wait_for) abandons the awaiting coroutine but cannot kill the
+    # worker thread mid-inference; with the lock, subsequent asks block until
+    # the runaway call finishes instead of piling onto a live context.
+    _inference_lock = threading.Lock()
 
     def __init__(self, api_key: str = "", base_url: str = "", default_model: str = ""):
         super().__init__(api_key, base_url, default_model)
@@ -98,7 +106,10 @@ class LocalLlamaProvider(LLMProvider):
 
         def _run() -> str:
             llama = self._get_llama()
-            out = llama.create_chat_completion(messages=full_messages, max_tokens=max_tokens)
+            # Serialize inference: the shared Llama context is not safe for
+            # concurrent use (see the class-level note on _inference_lock).
+            with self._inference_lock:
+                out = llama.create_chat_completion(messages=full_messages, max_tokens=max_tokens)
             return out["choices"][0]["message"]["content"] or ""
 
         try:

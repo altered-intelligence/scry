@@ -22,6 +22,13 @@ def _isolated_db(monkeypatch, tmp_path: Path):
     # hermetic; tests that need a key set CTI_API_KEY explicitly.
     monkeypatch.setenv("CTI_API_KEY", "")
 
+    # Tests hash/verify a lot of passwords; 4 rounds keeps bcrypt correct but
+    # ~100x faster than the production default of 12 (auth tests still
+    # exercise the real hash/verify code paths, just with a cheap cost).
+    import scry.auth.passwords as _passwords
+
+    monkeypatch.setattr(_passwords, "BCRYPT_ROUNDS", 4)
+
     # Reset cached singletons
     from scry import config as _config
     from scry import db as _db

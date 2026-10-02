@@ -19,7 +19,7 @@ class Article(Base, IdMixin, TimestampMixin):
     canonical_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     author: Mapped[str | None] = mapped_column(String(255), nullable=True)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
-    ingested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ingested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     language: Mapped[str | None] = mapped_column(String(16), nullable=True)
     raw_html: Mapped[str | None] = mapped_column(Text, nullable=True)
     extracted_text: Mapped[str] = mapped_column(Text, default="")

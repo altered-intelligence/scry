@@ -16,6 +16,10 @@ htmlcov/
 .ruff_cache/
 *.sqlite
 *.sqlite3
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite3-shm
+*.sqlite3-wal
 *.db
 *.log
 *.out

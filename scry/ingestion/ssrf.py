@@ -3,6 +3,19 @@
 Blocks the most common SSRF foot-guns. Configurable via policies.yaml.
 We resolve the hostname before fetching and refuse loopback / RFC1918 /
 metadata service / link-local addresses by default. Onion is opt-in.
+
+Failure mode is CLOSED: a hostname that does not resolve is refused. (The
+fetch would fail at the transport layer anyway; allowing it through only
+opens a DNS-rebinding window where a name resolves to a public IP at check
+time and a private IP at connect time.)
+
+Known residual gap (documented, not fully closed): the check resolves the
+host and httpx then re-resolves it at connect time — a TOCTOU window a
+rebinding attacker with a controlled authoritative DNS server could exploit.
+Fully closing it requires pinning the validated IP into the connection
+(custom transport / Host-header URL rewrite), which breaks TLS SNI for
+HTTPS virtual hosts; the redirect-hop re-validation in the fetcher plus
+fail-closed resolution keep the practical exposure small for feed fetching.
 """
 
 from __future__ import annotations
@@ -74,10 +87,10 @@ def evaluate_url(url: str) -> SsrfDecision:
 
     ips = _resolve(host)
     if not ips:
-        # We don't trust unresolvable hosts but we do allow them through; the
-        # transport layer will fail. This avoids accidentally blocking sites
-        # in offline test environments.
-        return SsrfDecision(True, "host resolution failed; transport will gate")
+        # Fail closed: an unresolvable host is refused rather than waved
+        # through. Allowing it would only defer to the transport error AND
+        # leave a rebinding window (name resolves public now, private later).
+        return SsrfDecision(False, f"host resolution failed for {host!r}; refusing")
 
     for ip in ips:
         if ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_unspecified or ip.is_reserved:

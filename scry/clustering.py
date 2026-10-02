@@ -9,9 +9,12 @@ from __future__ import annotations
 
 from collections import defaultdict
 
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from scry.models import Article, Cluster, EntityMention, ObservableMention
+
+_METHOD = "shared_iocs_and_entities"
 
 
 def _uf_make(n: int) -> list[int]:
@@ -32,15 +35,21 @@ def _uf_union(p: list[int], a: int, b: int) -> None:
 
 
 def cluster_articles(session: Session) -> list[Cluster]:
-    article_ids = [aid for aid, in session.execute(__select_article_ids())]
+    # Clusters are recomputed from scratch each run: replace the previous set
+    # for this method in the same transaction so hourly runs never accumulate
+    # duplicate/stale Cluster rows.
+    session.execute(delete(Cluster).where(Cluster.method == _METHOD))
+
+    article_ids = [aid for aid, in session.execute(_select_article_ids())]
     if not article_ids:
+        session.commit()
         return []
     idx = {aid: i for i, aid in enumerate(article_ids)}
     p = _uf_make(len(article_ids))
 
     # Shared observables
     by_obs: defaultdict[int, list[int]] = defaultdict(list)
-    for ob_id, art_id in session.execute(__select_obs_mentions()):
+    for ob_id, art_id in session.execute(_select_obs_mentions()):
         by_obs[ob_id].append(art_id)
     for art_list in by_obs.values():
         if len(art_list) < 2:
@@ -51,7 +60,7 @@ def cluster_articles(session: Session) -> list[Cluster]:
 
     # Shared entities
     by_entity: defaultdict[int, list[int]] = defaultdict(list)
-    for ent_id, art_id in session.execute(__select_entity_mentions()):
+    for ent_id, art_id in session.execute(_select_entity_mentions()):
         by_entity[ent_id].append(art_id)
     for art_list in by_entity.values():
         if len(art_list) < 2:
@@ -71,7 +80,7 @@ def cluster_articles(session: Session) -> list[Cluster]:
         cluster = Cluster(
             name=None,
             kind="article_cluster",
-            method="shared_iocs_and_entities",
+            method=_METHOD,
             confidence=65,
             members={"article": members},
             description=f"{len(members)} related articles by shared IOCs/entities",
@@ -79,23 +88,17 @@ def cluster_articles(session: Session) -> list[Cluster]:
         clusters.append(cluster)
     if clusters:
         session.add_all(clusters)
-        session.commit()
+    session.commit()
     return clusters
 
 
-def __select_article_ids():  # type: ignore[no-untyped-def]
-    from sqlalchemy import select
-
+def _select_article_ids():
     return select(Article.id)
 
 
-def __select_obs_mentions():  # type: ignore[no-untyped-def]
-    from sqlalchemy import select
-
+def _select_obs_mentions():
     return select(ObservableMention.observable_id, ObservableMention.article_id)
 
 
-def __select_entity_mentions():  # type: ignore[no-untyped-def]
-    from sqlalchemy import select
-
+def _select_entity_mentions():
     return select(EntityMention.entity_id, EntityMention.article_id)

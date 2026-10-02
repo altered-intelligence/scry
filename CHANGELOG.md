@@ -4,6 +4,104 @@ All notable changes to Scry are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 semantic versioning.
 
+## [0.8.1] — 2026-10-01
+
+### Security
+
+- **Method-aware API key auth + admin gate on provider config.** API key
+  verification is now HTTP-method aware (read-only exemptions where intended,
+  writes always require a key), and `PUT /api/ai/provider` is admin-gated.
+  Provider config can no longer reuse a stored API key against a changed
+  `base_url` — the key must be re-entered, closing a stored-key exfiltration
+  path. Enrichment provider configuration and `PATCH /sources/{id}` are
+  admin-gated, and the sources PATCH endpoint only accepts an explicit field
+  allowlist (no mass assignment).
+- **XSS escape.** User-controlled content rendered in the UI is escaped.
+- **SSRF hardening in the fetcher.** Redirect targets are re-validated on
+  every hop, DNS resolution fails closed (unresolvable/bogus answers are
+  refused, not fetched), secrets are no longer propagated into redirect URLs,
+  and response bodies are capped while streaming (decompression bombs no
+  longer exhaust memory).
+- **CSRF tokens on UI POST forms** (the three state-changing UI POSTs).
+- **Serialized local-LLM inference** — concurrent asks no longer race the
+  single embedded model instance.
+
+### Fixed
+
+- **JSON tag filters on SQLite.** `Column.contains([tag])` compiles to a LIKE
+  pattern including the array brackets, so it only ever matched single-tag
+  rows. A shared `scry.db.tag_filter` helper (quoted-tag LIKE with `%`/`_`
+  escaping) now backs `/articles?tag=`, `/observables?tag=`, and the
+  ransomware-topic alert trigger — multi-tagged articles match and fire
+  alerts correctly.
+- **Pipeline reprocessing is idempotent.** `process_article` first deletes
+  the article's previously derived rows (observable/entity mentions, claims,
+  relationships, ATT&CK mappings, and orphaned open claim reviews), and
+  review routing skips creating a duplicate OPEN review for the same
+  (item_type, item_id). Re-runs (`fetch-full`, OTX pulse updates,
+  `scry extract`, extractor version bumps) no longer multiply derived rows.
+- **`Observable.last_reported` never moves backwards** when an older article
+  is re-ingested (max of existing/new, timezone-safe for SQLite's naive
+  round-trip).
+- **Feed ingest: one repeated URL no longer nukes the whole feed.** Duplicate
+  URLs within a single feed are skipped via an in-loop seen set; previously
+  the pending rows were invisible to the duplicate check and the single
+  commit failed with IntegrityError, dropping every new article in the feed.
+- **`POST /ingest/url` without `source_id` returns 200** instead of 500: a
+  get-or-create "Manual" source (type `manual`, baseline confidence 50,
+  `safe_public_web` policy) is attached to ad-hoc ingests.
+- **Clusters no longer duplicate every run** — the previous set for the
+  clustering method is replaced in the same transaction.
+- **Conflicts no longer duplicate every run** — existing (claim_a, claim_b)
+  pairs are loaded before detection. The same-attribution heuristic no longer
+  treats shared sentence-opener stopwords ("The", "According", "Researchers",
+  …) as actor agreement.
+- **Alembic/runtime migration paths converge.** `alembic upgrade head`
+  (0001_initial) now applies the same column ALTERs and index backfills as
+  the app's startup migrations (`scry.migrations.apply_migrations`), and the
+  migrations module docstring no longer claims alembic is absent. Migration
+  application is table/column-aware so partial legacy databases migrate
+  cleanly.
+- **Alias resolution restricted to `threat_actor` and `malware_family`** —
+  tools, campaigns, and other entity types pass through unchanged instead of
+  being misresolved through the malware alias table.
+- **Benign-infrastructure matching is boundary-safe** — `notamazonaws.com`
+  no longer matches the `amazonaws.com` allowlist entry (exact or dot-suffix
+  match only).
+- **AI Search prompt budgeting.** History is trimmed oldest-first (keeping
+  the newest exchange and user/assistant alternation) and source snippets are
+  capped to a char budget sized for a 4096-token context (~4 chars/token,
+  with headroom reserved for the system prompt and the answer). Long chats
+  no longer fail with a permanent 502.
+- **Pagination bounds.** `le=`/`ge=` caps on `/claims`, `/relationships`,
+  `/alerts`, `/clusters`, `/conflicts`, `/cves`, `/jobs`,
+  `/observables/search`, `/search`, `/reviews`, and offsets; `/entities`,
+  `/threat-actors`, `/malware`, `/campaigns` now take a bounded `limit`
+  instead of returning unbounded lists.
+- **Backup/restore is WAL-aware** — backups checkpoint the WAL before
+  archiving, and restores delete stale `-wal`/`-shm` sidecars so old rows
+  can't be replayed over a restored database.
+- **Housekeeping:** removed the duplicate `_check_owned` definition in
+  `scry/api/chat.py`, dropped the unused `orjson` dependency, added a
+  `.dockerignore`.
+
+### Performance
+
+- **SQLite runs in WAL mode with a 5 s busy timeout** (SQLite only;
+  Postgres untouched), so the API, scheduler, and CLI share the database
+  file without lock errors. Scheduler jobs were staggered (`ingest_all` at
+  :04/:34, `otx_pulses` at :19/:49 UTC) and `_ingest_all_job` failures are
+  caught and logged instead of killing the job.
+- **New indexes:** `observables.risk_score`, `observables.status`,
+  `cves.kev`, `articles.ingested_at`, `source_fetches.fetched_at` — declared
+  in the models for fresh databases and backfilled for existing ones via
+  idempotent `CREATE INDEX IF NOT EXISTS` migrations.
+- **Faster test suite** (prior pass): cheap bcrypt rounds and shared
+  fixtures cut the full run to well under a minute.
+
+Known issues (deferred, not regressions): FTS5 migration, persisted semantic
+embeddings, Dockerfile multi-stage rework, and LLM idle unload remain open.
+
 ## [0.8.0] — 2026-10-01
 
 ### Added

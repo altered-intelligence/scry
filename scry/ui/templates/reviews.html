@@ -25,6 +25,7 @@
 
 <div class="panel">
   <form method="post" action="/ui/reviews/bulk" id="bulk-form">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
     <table>
       <thead><tr>
         <th style="width:28px"><input type="checkbox" id="select-all" aria-label="Select all reviews"></th>

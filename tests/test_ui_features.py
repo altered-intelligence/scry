@@ -8,9 +8,13 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
 
+from scry.auth.passwords import hash_password
+from scry.auth.sessions import SESSION_COOKIE
 from scry.db import session_scope
-from scry.main import _timeago, app
-from scry.models import AnalystReview
+from scry.main import _admin_csrf_token, _timeago, app
+from scry.models import AnalystReview, User
+
+PASSWORD = "S3cure!pass"
 
 
 def _seed_reviews(n: int = 2, status: str = "open") -> list[int]:
@@ -29,6 +33,28 @@ def _seed_reviews(n: int = 2, status: str = "open") -> list[int]:
             ids.append(r.id)
         s.commit()
         return ids
+
+
+def review_client() -> TestClient:
+    """A logged-in analyst session — UI mutation POSTs require the
+    session-scoped CSRF token, so anonymous (zero-user) posting no longer
+    works."""
+    with session_scope() as s:
+        s.add(
+            User(
+                username="analyst",
+                email="analyst@example.com",
+                role="user",
+                password_hash=hash_password(PASSWORD),
+            )
+        )
+    client = TestClient(app)
+    client.post("/login", data={"username": "analyst", "password": PASSWORD})
+    return client
+
+
+def csrf_for(client: TestClient) -> str:
+    return _admin_csrf_token(client.cookies[SESSION_COOKIE])
 
 
 class TestTimeago:
@@ -64,14 +90,14 @@ class TestTimeago:
 class TestBulkReviews:
     def test_bulk_approve_closes_open_reviews(self):
         ids = _seed_reviews(2)
-        with TestClient(app) as client:
-            r = client.post(
-                "/ui/reviews/bulk",
-                data={"review_ids": [str(i) for i in ids], "action": "approve"},
-                follow_redirects=False,
-            )
-            assert r.status_code == 303
-            assert "flash=2+reviews+approved" in r.headers["location"]
+        client = review_client()
+        r = client.post(
+            "/ui/reviews/bulk",
+            data={"csrf": csrf_for(client), "review_ids": [str(i) for i in ids], "action": "approve"},
+            follow_redirects=False,
+        )
+        assert r.status_code == 303
+        assert "flash=2+reviews+approved" in r.headers["location"]
         with session_scope() as s:
             rows = [s.get(AnalystReview, i) for i in ids]
             assert all(row.status == "closed" for row in rows)
@@ -80,12 +106,12 @@ class TestBulkReviews:
 
     def test_bulk_reject(self):
         ids = _seed_reviews(1)
-        with TestClient(app) as client:
-            client.post(
-                "/ui/reviews/bulk",
-                data={"review_ids": [str(ids[0])], "action": "reject"},
-                follow_redirects=False,
-            )
+        client = review_client()
+        client.post(
+            "/ui/reviews/bulk",
+            data={"csrf": csrf_for(client), "review_ids": [str(ids[0])], "action": "reject"},
+            follow_redirects=False,
+        )
         with session_scope() as s:
             row = s.get(AnalystReview, ids[0])
             assert row.status == "closed"
@@ -93,33 +119,33 @@ class TestBulkReviews:
 
     def test_bulk_skips_closed_reviews(self):
         ids = _seed_reviews(1, status="closed")
-        with TestClient(app) as client:
-            r = client.post(
-                "/ui/reviews/bulk",
-                data={"review_ids": [str(ids[0])], "action": "approve"},
-                follow_redirects=False,
-            )
-            assert "flash=0+reviews+approved" in r.headers["location"]
+        client = review_client()
+        r = client.post(
+            "/ui/reviews/bulk",
+            data={"csrf": csrf_for(client), "review_ids": [str(ids[0])], "action": "approve"},
+            follow_redirects=False,
+        )
+        assert "flash=0+reviews+approved" in r.headers["location"]
 
     def test_bulk_unknown_id_is_graceful(self):
-        with TestClient(app) as client:
-            r = client.post(
-                "/ui/reviews/bulk",
-                data={"review_ids": ["999999"], "action": "approve"},
-                follow_redirects=False,
-            )
-            assert r.status_code == 303
-            assert "flash=0+reviews+approved" in r.headers["location"]
+        client = review_client()
+        r = client.post(
+            "/ui/reviews/bulk",
+            data={"csrf": csrf_for(client), "review_ids": ["999999"], "action": "approve"},
+            follow_redirects=False,
+        )
+        assert r.status_code == 303
+        assert "flash=0+reviews+approved" in r.headers["location"]
 
     def test_bulk_invalid_action_flashes_error(self):
-        with TestClient(app) as client:
-            r = client.post(
-                "/ui/reviews/bulk",
-                data={"review_ids": ["1"], "action": "nuke"},
-                follow_redirects=False,
-            )
-            assert r.status_code == 303
-            assert "flash_kind=error" in r.headers["location"]
+        client = review_client()
+        r = client.post(
+            "/ui/reviews/bulk",
+            data={"csrf": csrf_for(client), "review_ids": ["1"], "action": "nuke"},
+            follow_redirects=False,
+        )
+        assert r.status_code == 303
+        assert "flash_kind=error" in r.headers["location"]
 
     def test_review_queue_renders_checkbox_column(self):
         _seed_reviews(1)

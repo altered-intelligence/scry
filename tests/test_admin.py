@@ -10,6 +10,7 @@ session-scoped CSRF token on every admin POST.
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlparse
 
@@ -74,6 +75,17 @@ def csrf_for(client: TestClient) -> str:
 def flash_of(response) -> str:
     """Decode the flash message from a 303 Location header."""
     return parse_qs(urlparse(response.headers["location"]).query)["flash"][0]
+
+
+def one_time_secret_of(response) -> str:
+    """Extract the shown-once secret from a directly rendered admin page.
+
+    Secrets (temp passwords) are rendered inside the #one-time-secret panel
+    as a <code> element — never in redirect query strings.
+    """
+    m = re.search(r'id="one-time-secret".*?<code[^>]*>([^<]+)</code>', response.text, re.DOTALL)
+    assert m, "expected a one-time-secret panel on the rendered page"
+    return m.group(1).strip()
 
 
 # ------------------------- gate -------------------------
@@ -178,9 +190,10 @@ class TestUserCreate:
     def test_create_auto_generates_temp_password(self):
         client = admin_client()
         r = _create(client, csrf_for(client), password="")
-        flash = flash_of(r)
-        assert "temporary password" in flash
-        temp = flash.split("temporary password (shown once): ")[1]
+        # The temp password is rendered on a page (never in a redirect URL).
+        assert r.status_code == 200
+        assert 'id="one-time-secret"' in r.text
+        temp = one_time_secret_of(r)
         user = get_user("bob")
         assert verify_password(temp, user.password_hash)
         assert user.must_change_password is True
@@ -290,9 +303,11 @@ class TestResetPassword:
         r = client.post(
             f"/admin/users/{uid}/reset-password", data={"csrf": csrf_for(client)}, follow_redirects=False
         )
-        flash = flash_of(r)
-        assert "temporary password (shown once):" in flash
-        temp = flash.split("temporary password (shown once): ")[1]
+        # The temp password is rendered on a page (never in a redirect URL).
+        assert r.status_code == 200
+        assert 'id="one-time-secret"' in r.text
+        assert "session(s) revoked" in r.text
+        temp = one_time_secret_of(r)
         user = get_user("bob")
         assert verify_password(temp, user.password_hash)
         assert user.must_change_password is True

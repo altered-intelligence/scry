@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from scry.alerting.channels import deliver
 from scry.config import get_settings
+from scry.db import tag_filter
 from scry.logging import get_logger
 from scry.models import CVE, Alert, Article, Observable
 
@@ -154,7 +155,7 @@ class AlertEngine:
 
     def _ransomware_topic_alerts(self) -> list[AlertCandidate]:
         out: list[AlertCandidate] = []
-        rows = self.session.scalars(select(Article).where(Article.tags.contains(["ransomware"])))
+        rows = self.session.scalars(select(Article).where(tag_filter(Article.tags, "ransomware")))
         for art in rows:
             out.append(
                 AlertCandidate(

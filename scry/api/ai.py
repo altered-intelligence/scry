@@ -30,6 +30,7 @@ from scry.ai.registry import provider_model as _provider_model
 from scry.api.chat import load_chat_session, persist_exchange, recent_turns
 from scry.api.deps import get_session
 from scry.audit import record
+from scry.auth.dependencies import require_admin
 from scry.config import get_settings
 from scry.crypto import decrypt, encrypt, mask
 from scry.logging import get_logger
@@ -301,11 +302,15 @@ def ai_provider_list(session: Session = Depends(get_session)) -> dict[str, Any]:
     }
 
 
-@ai_router.put("/provider")
+@ai_router.put("/provider", dependencies=[Depends(require_admin)])
 async def ai_provider_configure(
     payload: ProviderConfig, session: Session = Depends(get_session)
 ) -> dict[str, Any]:
-    """Create/update one provider's settings (key encrypted at rest)."""
+    """Create/update one provider's settings (key encrypted at rest).
+
+    Admin-only (``require_admin``): this endpoint stores LLM credentials and
+    probes arbitrary base URLs with them.
+    """
     meta = _PROVIDER_META.get(payload.provider)
     if meta is None:
         raise HTTPException(404, detail=f"Unknown provider '{payload.provider}'")
@@ -314,6 +319,21 @@ async def ai_provider_configure(
     if row is None:
         row = LLMSetting(provider=payload.provider)
         session.add(row)
+
+    # Stored-key exfiltration guard: the connection check below POSTs the
+    # (decrypted) stored key to base_url. If the caller changes base_url
+    # without re-entering the key, refuse — otherwise an attacker could point
+    # the provider at their own server and harvest the stored key.
+    base_url_changing = payload.base_url is not None and (payload.base_url or None) != (row.base_url or None)
+    reusing_stored_key = not payload.api_key and not payload.clear_api_key and bool(row.api_key_encrypted)
+    if meta["needs_api_key"] and base_url_changing and reusing_stored_key:
+        raise HTTPException(
+            400,
+            detail=(
+                "Re-enter the API key when changing the base URL — "
+                "the stored key is never sent to a new endpoint."
+            ),
+        )
 
     if payload.clear_api_key:
         row.api_key_encrypted = None
@@ -377,6 +397,67 @@ with the new question and cite them as [1], [2], …
 """
 
 
+# ---- Prompt size budgeting ----
+# The bundled local model runs a 4096-token context; an unbounded history or
+# too many source snippets overflows it and the ask endpoint fails (permanent
+# 502 on long chats). Budget in characters (~4 chars/token heuristic) and
+# reserve room for the system prompt and the generated answer.
+_PROMPT_TOKEN_BUDGET = 4096
+_CHARS_PER_TOKEN = 4
+_SNIPPET_CHAR_CAP = 600
+_HISTORY_MSG_CHAR_CAP = 2000
+
+
+def _prompt_char_budget(question: str, max_answer_tokens: int) -> int:
+    """Characters available for sources + history in one ask request."""
+    fixed = (
+        len(AI_SEARCH_SYSTEM_PROMPT)
+        + len(_HISTORY_SYSTEM_SUFFIX)
+        + len(question)
+        + max_answer_tokens * _CHARS_PER_TOKEN
+    )
+    return max(1000, _PROMPT_TOKEN_BUDGET * _CHARS_PER_TOKEN - fixed)
+
+
+def _cap_sources(sources: list[dict[str, Any]], char_budget: int) -> list[dict[str, Any]]:
+    """Keep as many top-ranked sources as fit the budget, snippets truncated.
+
+    Sources are re-numbered afterwards so the [1], [2], … citations in the
+    answer still line up with the list returned to the caller.
+    """
+    kept: list[dict[str, Any]] = []
+    used = 0
+    for s in sources:
+        snippet = str(s.get("snippet") or "")
+        if len(snippet) > _SNIPPET_CHAR_CAP:
+            snippet = snippet[:_SNIPPET_CHAR_CAP] + "…"
+        entry_chars = len(str(s.get("title") or "")) + len(snippet) + 32
+        if kept and used + entry_chars > char_budget:
+            break
+        kept.append({**s, "snippet": snippet})
+        used += entry_chars
+    for i, s in enumerate(kept, start=1):
+        s["n"] = i
+    return kept
+
+
+def _trim_history(history: list[dict[str, str]], char_budget: int) -> list[dict[str, str]]:
+    """Keep the newest turns that fit the budget; drop the oldest pairs first.
+
+    History alternates user/assistant, so whole pairs are trimmed from the
+    front to preserve the alternation and the most recent exchange.
+    """
+    msgs: list[dict[str, str]] = []
+    for m in history:
+        content = str(m.get("content") or "")
+        if len(content) > _HISTORY_MSG_CHAR_CAP:
+            content = content[:_HISTORY_MSG_CHAR_CAP] + "…"
+        msgs.append({"role": str(m.get("role") or "user"), "content": content})
+    while len(msgs) > 2 and sum(len(m["content"]) for m in msgs) > char_budget:
+        del msgs[:2]
+    return msgs
+
+
 async def answer_question(
     session: Session,
     question: str,
@@ -420,12 +501,18 @@ async def answer_question(
         )
 
     question = question.strip()
-    sources = _collect_sources(session, question, settings.ai_search_max_sources)
+
+    # Budget the prompt against a 4096-token context: cap source snippets,
+    # then fit as much recent history as the remaining budget allows.
+    budget = _prompt_char_budget(question, settings.ai_search_max_tokens)
+    sources = _cap_sources(_collect_sources(session, question, settings.ai_search_max_sources), budget // 2)
+    used_by_sources = sum(len(str(s.get("title") or "")) + len(str(s.get("snippet") or "")) for s in sources)
+    history = _trim_history(history or [], max(0, budget - used_by_sources))
     user_prompt = build_ai_search_user_prompt(question, sources)
 
     # Conversation memory: prior turns precede the new user prompt as real
     # alternating messages (never concatenated into one prompt).
-    messages: list[dict[str, str]] = list(history or [])
+    messages: list[dict[str, str]] = list(history)
     system = AI_SEARCH_SYSTEM_PROMPT + (_HISTORY_SYSTEM_SUFFIX if history else "")
     messages.append({"role": "user", "content": user_prompt})
 

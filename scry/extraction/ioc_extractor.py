@@ -398,7 +398,11 @@ class IOCExtractor:
                     h = re.match(r"https?://([^/]+)", host)
                     host = h.group(1).split(":")[0] if h else host
                 root = ".".join(host.split(".")[-2:])
-                if root in self.benign_hosts or any(host.endswith(b) for b in self.benign_hosts):
+                # Boundary-safe suffix match: "notamazonaws.com" must NOT
+                # match the benign host "amazonaws.com".
+                if root in self.benign_hosts or any(
+                    host == b or host.endswith("." + b) for b in self.benign_hosts
+                ):
                     it.tags = list({*it.tags, "benign-shared-infrastructure"})
                     it.false_positive_risk = max(it.false_positive_risk, 0.7)
                     it.maliciousness_confidence = min(it.maliciousness_confidence, 30)

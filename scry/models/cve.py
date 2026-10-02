@@ -27,7 +27,7 @@ class CVE(Base, IdMixin, TimestampMixin):
     # v0.8.0 step 2 — FIRST.org EPSS percentile + enrichment timestamp (TTL refresh).
     epss_percentile: Mapped[float | None] = mapped_column(Float, nullable=True)
     epss_enriched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    kev: Mapped[bool] = mapped_column(Boolean, default=False)
+    kev: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     kev_added_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     exploited_in_the_wild: Mapped[bool] = mapped_column(Boolean, default=False)
     public_poc_available: Mapped[bool] = mapped_column(Boolean, default=False)

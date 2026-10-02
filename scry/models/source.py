@@ -38,7 +38,7 @@ class SourceFetch(Base, IdMixin, TimestampMixin):
     __tablename__ = "source_fetches"
 
     source_id: Mapped[int] = mapped_column(ForeignKey("sources.id", ondelete="CASCADE"), index=True)
-    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     status_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
     url: Mapped[str] = mapped_column(String(2048))
     content_hash: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)

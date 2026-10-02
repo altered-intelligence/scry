@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from scry.alias_resolution import resolve_canonical, upsert_entity
@@ -44,6 +44,11 @@ from scry.scoring.risk import RiskInputs, RiskScorer, expiration_from_ttl, recen
 logger = get_logger("pipeline")
 
 
+def _as_utc(dt: datetime) -> datetime:
+    """Treat naive datetimes (SQLite round-trip) as UTC for safe comparison."""
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
+
+
 class CTIPipeline:
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -54,6 +59,11 @@ class CTIPipeline:
         self.lifecycle = LifecycleEngine(session)
 
     def process_article(self, article: Article) -> ExtractionResult:
+        # Idempotent reprocessing: drop rows previously derived from this
+        # article's text so re-runs (fetch_full_content resets, OTX updates,
+        # `scry extract`, version bumps) never multiply mentions/claims/etc.
+        self._clear_derived_rows(article)
+
         # Redact secrets first — never index credentials.
         redaction = redact_secrets(article.extracted_text or "")
         if redaction.counts:
@@ -114,16 +124,14 @@ class CTIPipeline:
             self.session.add(row)
             self.session.flush()
             if row.needs_review:
-                self.session.add(
-                    AnalystReview(
-                        item_type="claim",
-                        item_id=row.id,
-                        reason=f"claim type {claim.claim_type} needs review",
-                        confidence=claim.confidence,
-                        article_id=article.id,
-                        evidence_text=claim.evidence_text,
-                        recommended_action="human_review",
-                    )
+                self._add_review_once(
+                    item_type="claim",
+                    item_id=row.id,
+                    reason=f"claim type {claim.claim_type} needs review",
+                    confidence=claim.confidence,
+                    article_id=article.id,
+                    evidence_text=claim.evidence_text,
+                    recommended_action="human_review",
                 )
 
         # Persist relationships once entity ids exist.
@@ -149,6 +157,46 @@ class CTIPipeline:
         return result
 
     # -------- helpers --------
+
+    def _clear_derived_rows(self, article: Article) -> None:
+        """Delete extraction products of a prior run for this article.
+
+        Observables themselves are upserted (shared across articles) so they
+        survive; only per-article rows are rebuilt. Open auto-routed claim
+        reviews for this article would dangle once their claims are replaced,
+        so they are dropped too — reviews an analyst already touched are kept
+        as an audit trail.
+        """
+        self.session.execute(delete(ObservableMention).where(ObservableMention.article_id == article.id))
+        self.session.execute(delete(EntityMention).where(EntityMention.article_id == article.id))
+        self.session.execute(delete(Claim).where(Claim.article_id == article.id))
+        self.session.execute(delete(Relationship).where(Relationship.article_id == article.id))
+        self.session.execute(
+            delete(AttackMapping).where(
+                AttackMapping.parent_type == "article", AttackMapping.parent_id == article.id
+            )
+        )
+        self.session.execute(
+            delete(AnalystReview).where(
+                AnalystReview.article_id == article.id,
+                AnalystReview.item_type == "claim",
+                AnalystReview.status == "open",
+            )
+        )
+
+    def _add_review_once(self, **fields) -> None:
+        """Route to the review queue unless an OPEN review for the same
+        (item_type, item_id) already exists — reprocessing must not pile up
+        duplicate open reviews for the same item."""
+        existing = self.session.scalar(
+            select(AnalystReview).where(
+                AnalystReview.item_type == fields["item_type"],
+                AnalystReview.item_id == fields["item_id"],
+                AnalystReview.status == "open",
+            )
+        )
+        if existing is None:
+            self.session.add(AnalystReview(**fields))
 
     @staticmethod
     def _slug(value: str) -> str:
@@ -206,7 +254,12 @@ class CTIPipeline:
             self.session.flush()
         else:
             ob.last_seen = now
-            ob.last_reported = article.published_at or now
+            # Never move last_reported backwards: re-ingesting an older
+            # article must not erase a newer sighting. (SQLite round-trips
+            # datetimes as naive, so normalize before comparing.)
+            new_reported = _as_utc(article.published_at or now)
+            if ob.last_reported is None or new_reported > _as_utc(ob.last_reported):
+                ob.last_reported = new_reported
             ob.extraction_confidence = max(ob.extraction_confidence, ioc.extraction_confidence)
             ob.tags = sorted(set([*ob.tags, *ioc.tags]))
 
@@ -268,16 +321,14 @@ class CTIPipeline:
         if (ob.enrichment or {}).get("benign_shared_infrastructure") or "benign-shared-infrastructure" in (
             ob.tags or []
         ):
-            self.session.add(
-                AnalystReview(
-                    item_type="observable",
-                    item_id=ob.id,
-                    reason="High risk score but benign shared infrastructure context",
-                    confidence=ob.maliciousness_confidence,
-                    article_id=article.id,
-                    evidence_text=ioc.evidence_text,
-                    recommended_action="human_review",
-                )
+            self._add_review_once(
+                item_type="observable",
+                item_id=ob.id,
+                reason="High risk score but benign shared infrastructure context",
+                confidence=ob.maliciousness_confidence,
+                article_id=article.id,
+                evidence_text=ioc.evidence_text,
+                recommended_action="human_review",
             )
 
     def _persist_relationships(self, rels: list[RelationshipCandidate], article: Article) -> None:

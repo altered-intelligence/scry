@@ -22,7 +22,8 @@ def detect_conflicts(session: Session) -> list[Conflict]:
         by_type[claim.claim_type].append(claim)
 
     out: list[Conflict] = []
-    seen: set[tuple[int, int]] = set()
+    # Seed with pairs already recorded so repeat runs don't duplicate rows.
+    seen: set[tuple[int, int]] = set(session.execute(select(Conflict.claim_a_id, Conflict.claim_b_id)).all())
 
     # Multiple attributions for visibly overlapping evidence → mark for review.
     for attr_claim in by_type.get("attribution", []):
@@ -57,8 +58,33 @@ def _evidence_overlaps(a: str, b: str, *, min_shared_tokens: int = 5) -> bool:
     return len(ta & tb) >= min_shared_tokens
 
 
+# Capitalized words that carry no attribution meaning — a shared one of these
+# must not count as "same actor". Sentence openers and reporting boilerplate.
+_ATTRIBUTION_STOPWORDS = {
+    "The",
+    "This",
+    "That",
+    "These",
+    "Those",
+    "A",
+    "An",
+    "In",
+    "On",
+    "At",
+    "It",
+    "According",
+    "Researchers",
+    "Analysts",
+    "Security",
+    "Report",
+    "Reports",
+    "New",
+}
+
+
 def _likely_same_attribution(a: str, b: str) -> bool:
     # Cheap heuristic — if both claims share a proper noun, treat as agreement.
-    a_caps = {w for w in a.split() if w[:1].isupper()}
-    b_caps = {w for w in b.split() if w[:1].isupper()}
+    # Stopword-filtered so a shared sentence opener ("The …") isn't a match.
+    a_caps = {w for w in a.split() if w[:1].isupper()} - _ATTRIBUTION_STOPWORDS
+    b_caps = {w for w in b.split() if w[:1].isupper()} - _ATTRIBUTION_STOPWORDS
     return len(a_caps & b_caps) >= 1

@@ -18,7 +18,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
-from sqlalchemy import String, cast, delete, func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from scry.api import api_router
@@ -44,7 +44,7 @@ from scry.auth.sessions import (
 )
 from scry.config import get_settings
 from scry.crypto import decrypt, encrypt, mask
-from scry.db import get_engine, session_scope
+from scry.db import get_engine, session_scope, tag_filter
 from scry.enrichment.engine import (
     _EXTERNAL_PROVIDERS,
     EnrichmentEngine,
@@ -748,16 +748,10 @@ def _collection_window_days(session: Session) -> int:
     return get_window_days(session)
 
 
-@app.get("/admin", response_class=HTMLResponse)
-def admin_page(request: Request, session: Session = Depends(get_session)):
-    admin = _admin_or_none(request)
-    if request.state.user is None:
-        # Zero users → /login links to the /setup page; otherwise middleware
-        # already redirected anonymous users here.
-        return RedirectResponse(url="/login", status_code=303)
-    if admin is None:
-        return templates.TemplateResponse(request, "403.html", {}, status_code=403)
-
+def _admin_context(request: Request, session: Session, admin: User) -> dict:
+    """Template context shared by GET /admin and the admin POST handlers that
+    render the page directly (one-time secrets must NOT ride redirect query
+    strings — they would land in access logs and browser history)."""
     users = list(session.scalars(select(User).order_by(User.id)))
     passkey_counts = {
         uid: count
@@ -783,25 +777,34 @@ def admin_page(request: Request, session: Session = Depends(get_session)):
         )
     )
     audit_entries = list(session.scalars(select(AuditLog).order_by(AuditLog.id.desc()).limit(100)))
-    return templates.TemplateResponse(
-        request,
-        "admin.html",
-        {
-            "admin": admin,
-            "csrf": _admin_csrf_token(request.cookies[SESSION_COOKIE]),
-            "users": users,
-            "passkey_counts": passkey_counts,
-            "user_counts": _admin_user_counts(session),
-            "stats": compute_stats(session),
-            "failed_logins": failed_logins,
-            "locked_users": [u for u in users if lockout_remaining(u) is not None],
-            "sessions": sessions_rows,
-            "audit_entries": audit_entries,
-            "smtp": _smtp_overview(session),
-            "enrichment_coverage": _enrichment_coverage(session),
-            "collection_window_days": _collection_window_days(session),
-        },
-    )
+    return {
+        "admin": admin,
+        "csrf": _admin_csrf_token(request.cookies[SESSION_COOKIE]),
+        "users": users,
+        "passkey_counts": passkey_counts,
+        "user_counts": _admin_user_counts(session),
+        "stats": compute_stats(session),
+        "failed_logins": failed_logins,
+        "locked_users": [u for u in users if lockout_remaining(u) is not None],
+        "sessions": sessions_rows,
+        "audit_entries": audit_entries,
+        "smtp": _smtp_overview(session),
+        "enrichment_coverage": _enrichment_coverage(session),
+        "collection_window_days": _collection_window_days(session),
+    }
+
+
+@app.get("/admin", response_class=HTMLResponse)
+def admin_page(request: Request, session: Session = Depends(get_session)):
+    admin = _admin_or_none(request)
+    if request.state.user is None:
+        # Zero users → /login links to the /setup page; otherwise middleware
+        # already redirected anonymous users here.
+        return RedirectResponse(url="/login", status_code=303)
+    if admin is None:
+        return templates.TemplateResponse(request, "403.html", {}, status_code=403)
+
+    return templates.TemplateResponse(request, "admin.html", _admin_context(request, session, admin))
 
 
 @app.post("/admin/users/create")
@@ -858,10 +861,16 @@ def admin_create_user(
         )
     _audit_admin(session, admin, "user.create", user, {"role": role, "email_verified": user.email_verified})
     if generated:
-        return _redirect_flash(
-            "/admin",
-            f"Created user {username!r} — temporary password (shown once): {password}{pin_note}",
-        )
+        # The temporary password is shown exactly once, on a rendered page —
+        # never in a redirect query string (access logs / browser history).
+        context = _admin_context(request, session, admin)
+        context["one_time_secret"] = {
+            "kind": "temporary password",
+            "subject": f"new user {username!r}",
+            "value": password,
+            "note": f"Created user {username!r} ({role}).{pin_note} They must change it at first login.",
+        }
+        return templates.TemplateResponse(request, "admin.html", context)
     return _redirect_flash("/admin", f"Created user {username!r} ({role}).{pin_note}")
 
 
@@ -956,11 +965,19 @@ def admin_reset_password(
     revoked = revoke_all_sessions(session, user.id)
     session.flush()
     _audit_admin(session, admin, "user.reset_password", user, {"revoked_sessions": revoked})
-    return _redirect_flash(
-        "/admin",
-        f"Password reset for {user.username!r} ({revoked} session(s) revoked) — "
-        f"temporary password (shown once): {temp}",
-    )
+    # The temporary password is shown exactly once, on a rendered page —
+    # never in a redirect query string (access logs / browser history).
+    context = _admin_context(request, session, admin)
+    context["one_time_secret"] = {
+        "kind": "temporary password",
+        "subject": f"user {user.username!r}",
+        "value": temp,
+        "note": (
+            f"Password reset for {user.username!r} ({revoked} session(s) revoked). "
+            "They must change it at first login."
+        ),
+    }
+    return templates.TemplateResponse(request, "admin.html", context)
 
 
 @app.post("/admin/users/{user_id}/delete")
@@ -1446,11 +1463,12 @@ def profile_create_api_key(
     )
     session.flush()
     _audit_profile(session, user, "api_key.create", {"name": name[:128], "expires_days": expiry_days or None})
-    # The full key is shown exactly once; afterwards only the prefix survives.
-    return _redirect_flash(
-        "/profile",
-        f"API key '{name[:128]}' created — copy it now, it is shown only once: {raw_key}",
-    )
+    # The full key is shown exactly once, on a rendered page — never in a
+    # redirect query string (access logs / browser history). Afterwards only
+    # the prefix survives.
+    context = _profile_context(request, session, user)
+    context["new_api_key"] = {"name": name[:128], "value": raw_key}
+    return templates.TemplateResponse(request, "profile.html", context)
 
 
 @app.post("/profile/api-keys/{key_id}/revoke")
@@ -1870,8 +1888,12 @@ def login_passkey_complete(request: Request, payload: dict = Body(default={})):
 
 
 def _tag_filter(column, tag: str):
-    """SQLite-safe filter: match a quoted tag inside a JSON array column."""
-    return cast(column, String).like(f'%"{tag}"%')
+    """SQLite-safe filter: match a quoted tag inside a JSON array column.
+
+    Shared implementation (with LIKE-metacharacter escaping) lives in
+    ``scry.db.tag_filter`` so the API router and alert engine use it too.
+    """
+    return tag_filter(column, tag)
 
 
 def _qs_extra(**kwargs) -> str:
@@ -1938,6 +1960,9 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
         ),
         default=None,
     )
+    # CSRF token for the Collect-now POST (empty in zero-user legacy mode —
+    # the POST then rejects, same as the other UI mutations).
+    raw_cookie = request.cookies.get(SESSION_COOKIE)
     return templates.TemplateResponse(
         request,
         "dashboard.html",
@@ -1948,16 +1973,23 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
             "recent_threats": recent_threats,
             "settings": settings,
             "last_collected": last_collected,
+            "csrf": _admin_csrf_token(raw_cookie) if raw_cookie else "",
         },
     )
 
 
 @app.post("/ui/ingest/run")
-async def ui_ingest_run(request: Request, session: Session = Depends(get_session)):
+async def ui_ingest_run(
+    request: Request,
+    session: Session = Depends(get_session),
+    csrf: str = Form(""),
+):
     """UI counterpart of POST /ingest/run — same services, browser-friendly redirect."""
     from scry.ingestion.ingest_engine import IngestionEngine
     from scry.pipeline import CTIPipeline
 
+    if not _check_admin_csrf(request, csrf):
+        return _redirect_flash("/", "Bad CSRF token — action rejected.", "error")
     try:
         engine = IngestionEngine(session)
         res = await engine.ingest_all()
@@ -2518,7 +2550,10 @@ def ui_reviews_bulk(
     session: Session = Depends(get_session),
     review_ids: list[int] = Form(default=[]),
     action: str = Form(default=""),
+    csrf: str = Form(""),
 ):
+    if not _check_admin_csrf(request, csrf):
+        return _redirect_flash("/ui/reviews", "Bad CSRF token — action rejected.", "error")
     disposition = _BULK_ACTIONS.get(action)
     if disposition is None:
         return _redirect_flash("/ui/reviews", f"Unknown bulk action: {action or '(none)'}", "error")
@@ -2581,8 +2616,16 @@ def ui_reviews(
         "offset": offset,
         "qs": _qs_extra(status=status, item_type=item_type),
     }
+    raw_cookie = request.cookies.get(SESSION_COOKIE)
     return templates.TemplateResponse(
-        request, "reviews.html", {"rows": rows, "total": total, "filters": filters}
+        request,
+        "reviews.html",
+        {
+            "rows": rows,
+            "total": total,
+            "filters": filters,
+            "csrf": _admin_csrf_token(raw_cookie) if raw_cookie else "",
+        },
     )
 
 
@@ -2601,10 +2644,16 @@ def ui_review_detail(review_id: int, request: Request, session: Session = Depend
     elif r.item_type == "entity":
         linked_url = f"/ui/entities/{r.item_id}"
     correction_json = json.dumps(r.correction or {}, indent=2, default=str) if r.correction else ""
+    raw_cookie = request.cookies.get(SESSION_COOKIE)
     return templates.TemplateResponse(
         request,
         "review_detail.html",
-        {"review": r, "linked_url": linked_url, "correction_json": correction_json},
+        {
+            "review": r,
+            "linked_url": linked_url,
+            "correction_json": correction_json,
+            "csrf": _admin_csrf_token(raw_cookie) if raw_cookie else "",
+        },
     )
 
 
@@ -2617,9 +2666,12 @@ def ui_review_patch(
     disposition: str | None = Form(None),
     analyst: str | None = Form(None),
     comments: str | None = Form(None),
+    csrf: str = Form(""),
 ):
     from scry.review import ReviewQueue
 
+    if not _check_admin_csrf(request, csrf):
+        return _redirect_flash(f"/ui/reviews/{review_id}", "Bad CSRF token — action rejected.", "error")
     actor = _acting_username(request)
     queue = ReviewQueue(session)
     queue.update(

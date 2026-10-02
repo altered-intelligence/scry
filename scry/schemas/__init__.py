@@ -28,4 +28,4 @@ from scry.schemas.relationship import RelationshipIn, RelationshipOut  # noqa: F
 from scry.schemas.review import ReviewItemOut, ReviewUpdate  # noqa: F401
 from scry.schemas.scoring import ConfidenceBreakdown, RiskScore  # noqa: F401
 from scry.schemas.search import SearchHit, SearchQuery, SemanticQuery  # noqa: F401
-from scry.schemas.source import SourceFetchOut, SourceIn, SourceOut  # noqa: F401
+from scry.schemas.source import SourceFetchOut, SourceIn, SourceOut, SourcePatch  # noqa: F401

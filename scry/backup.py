@@ -189,11 +189,28 @@ def _write_tar(files: list[tuple[Path, str]], manifest: dict[str, Any], output: 
             tf.add(src, arcname=arcname, recursive=False)
 
 
+def _checkpoint_wal(db_path: Path) -> None:
+    """Fold any WAL sidecar into the main DB file.
+
+    With ``PRAGMA journal_mode=WAL`` recent commits live in ``<db>-wal``; a
+    plain file copy of the main database would silently miss them. A no-op
+    on legacy rollback-journal databases.
+    """
+    engine = create_engine(f"sqlite+pysqlite:///{db_path}", future=True)
+    try:
+        with engine.connect() as conn:
+            conn.exec_driver_sql("PRAGMA wal_checkpoint(TRUNCATE)")
+    finally:
+        engine.dispose()
+
+
 def create_backup(output: Path | None, full: bool, encrypt: bool) -> Path:
     """Create a backup archive; returns the final archive path."""
     db_path = resolve_db_path()
     if not db_path.is_file():
         raise BackupError(f"Database file not found: {db_path} — nothing to back up.")
+
+    _checkpoint_wal(db_path)
 
     from scry.db import session_scope
 
@@ -351,6 +368,14 @@ def restore_backup(archive: Path, force: bool, target_dir: Path) -> dict[str, An
             )
         if db_target.is_file():
             counts_before = _table_counts_file(db_target)
+
+    # Stale WAL sidecars belong to the OLD database instance. Left in place,
+    # SQLite would replay them over the restored file and resurrect rows the
+    # backup never had.
+    for suffix in ("-wal", "-shm"):
+        sidecar = db_target.with_name(db_target.name + suffix)
+        if sidecar.exists():
+            sidecar.unlink()
 
     restored: list[str] = []
     for arcname in files_meta:

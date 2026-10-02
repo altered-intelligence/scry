@@ -286,6 +286,19 @@
 {# ------------------------- API keys ------------------------- #}
 <div class="panel" id="api-keys">
   <h2 style="margin-top: 0;">API keys</h2>
+  {% if new_api_key %}
+    {# Shown exactly once, immediately after creation. Rendered inline
+       (never in a redirect query string) so the key stays out of access
+       logs and browser history. #}
+    <div class="flash success" role="alert"><span>API key '{{ new_api_key.name }}' created.</span></div>
+    <h3>Copy your new API key — shown only once</h3>
+    <p class="muted">It is never stored in clear and will not be shown again.</p>
+    <p><code id="new-api-key-value"
+      style="font-size: 15px; letter-spacing: 0.05em; user-select: all;">{{ new_api_key.value }}</code></p>
+    <form method="get" action="/profile" style="margin: 8px 0 16px;">
+      <button type="submit" class="btn">I saved it — continue</button>
+    </form>
+  {% endif %}
   {% if api_keys %}
     <table>
       <thead>
