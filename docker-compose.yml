@@ -30,6 +30,15 @@ services:
       CTI_DATABASE_URL: postgresql+psycopg://cti:cti@postgres:5432/cti
       CTI_ENV: local
       CTI_LOG_LEVEL: INFO
+      # CONSCIOUS CHOICE — this compose bundle is a LOCAL, single-user demo:
+      # CTI_OPEN_ACCESS=true disables authentication entirely while no user
+      # account exists (legacy zero-user open mode, e.g. for MCP/automation).
+      # The container publishes 8000 on all interfaces, so anyone who can
+      # reach this host can use the instance. For any shared or exposed
+      # deployment, DELETE this line: the app then starts in setup-required
+      # mode and forces first-run admin creation at /setup before serving
+      # anything. (Alternatively set CTI_API_KEY to gate the REST API.)
+      CTI_OPEN_ACCESS: "true"
     command: >
       sh -c "alembic upgrade head && uvicorn scry.main:app --host 0.0.0.0 --port 8000"
     ports:

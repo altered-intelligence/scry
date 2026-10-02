@@ -21,6 +21,11 @@ def _isolated_db(monkeypatch, tmp_path: Path):
     # Neutralize any real master key from .env so "no key = open" tests stay
     # hermetic; tests that need a key set CTI_API_KEY explicitly.
     monkeypatch.setenv("CTI_API_KEY", "")
+    # Keep the legacy zero-user open mode for the existing suite — most tests
+    # predate the setup-required default and exercise routes without accounts.
+    # Tests that specifically cover setup-required mode override this to
+    # "false" (and clear the settings cache) locally.
+    monkeypatch.setenv("CTI_OPEN_ACCESS", "true")
 
     # Tests hash/verify a lot of passwords; 4 rounds keeps bcrypt correct but
     # ~100x faster than the production default of 12 (auth tests still

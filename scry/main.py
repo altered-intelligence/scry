@@ -119,6 +119,23 @@ def _ensure_db_ready() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _ensure_db_ready()
+    settings = get_settings()
+    with session_scope() as session:
+        has_users = users_exist(session)
+    if settings.open_access and not settings.api_key:
+        _log.warning(
+            "open_access_enabled",
+            msg=(
+                "CTI_OPEN_ACCESS=true — Scry serves ALL UI and API routes WITHOUT authentication "
+                "while no user accounts exist. Only use this for local-only bundles / MCP / "
+                "automation; never on a network-reachable instance."
+            ),
+        )
+    elif not has_users and not settings.api_key:
+        _log.info(
+            "setup_required",
+            msg="No user accounts and no CTI_API_KEY — setup-required mode: open /setup to create the first admin.",
+        )
     yield
 
 
@@ -184,26 +201,40 @@ def _redirect_flash(url: str, message: str, kind: str = "success") -> RedirectRe
 
 @app.middleware("http")
 async def ui_auth_middleware(request: Request, call_next):
-    """Gate browser UI behind a session once any user account exists.
+    """Gate browser UI behind a session; force first-run setup when unconfigured.
 
-    Legacy behavior is preserved exactly: zero users → everything stays open
-    (the MCP server and local automations depend on this). Gated paths: the
-    dashboard (``/``), ``/ui/*``, and the future ``/admin`` prefix. ``/login``
-    and ``/static`` are not under these prefixes, so they stay reachable.
+    - Users exist → a valid ``scry_session`` cookie is required (else /login).
+    - Zero users + master key set, or ``CTI_OPEN_ACCESS=true`` → legacy open
+      UI (MCP/local automations depend on this path).
+    - Zero users + no master key + no escape hatch → setup-required mode:
+      every gated path redirects to ``/setup`` until the first admin is
+      created. ``/setup`` itself, ``/login``, ``/logout``, and ``/static``
+      are not gated paths, so the setup flow stays reachable.
+
+    Gated paths: the dashboard (``/``), ``/ui/*``, ``/admin``, ``/profile``.
     """
     if not path_requires_ui_auth(request.url.path):
         return await call_next(request)
 
+    from scry.config import get_settings
     from scry.db import session_scope
 
     with session_scope() as session:
         has_users = users_exist(session)
-    request.state.auth_required = has_users
-    user = current_user(request) if has_users else None
+    if not has_users:
+        settings = get_settings()
+        if not settings.api_key and not settings.open_access:
+            return RedirectResponse(url="/setup", status_code=303)
+        request.state.auth_required = False
+        request.state.user = None
+        return await call_next(request)
+
+    request.state.auth_required = True
+    user = current_user(request)
     request.state.user = user
-    if has_users and user is None:
+    if user is None:
         return RedirectResponse(url="/login", status_code=303)
-    if user is not None and user.must_change_password and not _password_change_exempt(request.url.path):
+    if user.must_change_password and not _password_change_exempt(request.url.path):
         # Forced password change (first login / admin reset): everything
         # except the profile routes themselves, login/logout, and static
         # assets redirects back to /profile with the banner.

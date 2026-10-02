@@ -23,6 +23,31 @@ Every risky capability defaults to **off**.
 | `CTI_API_HOST` | `0.0.0.0` | Bind host (reference value; uvicorn flags also work). |
 | `CTI_API_PORT` | `8000` | Bind port (reference value). |
 
+### Authentication & first run
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `CTI_API_KEY` | _(empty)_ | Static master key for all REST API + `/taxii2` routes (`X-API-Key` / `Bearer`). |
+| `CTI_OPEN_ACCESS` | `false` | Explicit escape hatch for the legacy zero-user open mode. See below. |
+
+**First-run behavior.** Once any user account exists, all UI and API routes
+require authentication (session cookie, per-user API key, or the master
+`CTI_API_KEY`). With **zero users**:
+
+- No `CTI_API_KEY` and `CTI_OPEN_ACCESS=false` (the default) →
+  **setup-required mode**: every UI route redirects to `/setup` and every
+  API route returns 403 until the first administrator is created there
+  (`scry users seed` is the CLI equivalent). Only `/setup`, `/login`,
+  `/health`, and `/static` stay reachable. Once the account exists, normal
+  auth applies and setup mode can never return.
+- `CTI_API_KEY` set → the API requires the key; the UI stays open until the
+  first account exists (unchanged legacy behavior).
+- `CTI_OPEN_ACCESS=true` → the pre-hardening fully open mode, for local-only
+  bundles / MCP / automation. A loud warning is logged at startup. **Never
+  enable this on a network-reachable instance.** The `docker-compose.yml`
+  bundle sets it explicitly with a comment explaining the trade-off — delete
+  that line for any shared deployment.
+
 ### Safety guardrails (all default off)
 
 | Variable | Default | Purpose |

@@ -31,8 +31,18 @@ class Settings(BaseSettings):
     api_port: int = 8000
 
     # API auth: when set, all /api routes require this token (X-API-Key or
-    # Authorization: Bearer). Empty (default) keeps every endpoint open.
+    # Authorization: Bearer). Empty (default): setup-required mode until the
+    # first admin exists — see open_access below.
     api_key: str = ""
+
+    # Explicit escape hatch for the legacy zero-user open mode. With zero
+    # user accounts AND no master api_key, the app is in "setup required"
+    # mode by default: every UI route redirects to /setup and every API
+    # route 403s until the first admin is created. Setting this to true
+    # restores the pre-hardening behavior (everything reachable
+    # unauthenticated) for local-only bundles and MCP/automation setups.
+    # Never enable on a network-reachable instance.
+    open_access: bool = False
 
     # Safety
     enable_dark_web: bool = False

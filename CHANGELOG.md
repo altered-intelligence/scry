@@ -4,6 +4,24 @@ All notable changes to Scry are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 semantic versioning.
 
+## [0.8.2] — 2026-10-02
+
+### Security
+
+- **Closed the open-by-default auth gap.** A fresh install (zero user
+  accounts, no `CTI_API_KEY`) no longer serves anything unauthenticated:
+  the app starts in **setup-required mode** — every UI route redirects to
+  the first-run `/setup` page and every API route returns 403 until the
+  first administrator is created (only `/setup`, `/login`, `/health`, and
+  `/static` stay reachable). Once the account exists, normal auth applies
+  and the mode can never return. The legacy zero-user open mode survives
+  behind the explicit `CTI_OPEN_ACCESS=true` escape hatch (local-only
+  bundles / MCP / automation; a loud startup warning is logged). A master
+  `CTI_API_KEY` with zero users keeps its previous behavior. The
+  `docker-compose.yml` bundle now sets `CTI_OPEN_ACCESS=true` explicitly
+  with a comment spelling out the trade-off instead of silently shipping
+  open.
+
 ## [0.8.1] — 2026-10-01
 
 ### Security

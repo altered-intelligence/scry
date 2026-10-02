@@ -51,7 +51,7 @@ See [CHANGELOG.md](./CHANGELOG.md) for details.
 - **MFA & passkeys** — TOTP (Google Authenticator QR, verify-before-enable, 10 one-time recovery codes) and WebAuthn passkeys (register on /profile, username-first login, satisfies MFA; works on localhost and LAN/HTTPS).
 - **Admin panel** — /admin user management, stats, failed-login/lockout panel, session revocation, audit log, and DB-stored SMTP config with test button.
 - **/profile** — display name, password change with must-change enforcement, email verification (6-digit PIN via SMTP when configured), per-user scry API keys (masked, revocable, expiry, last-used).
-- **API auth** — once any user exists, the REST API (root paths like `/articles`, `/observables`, `/ingest/*`) + `/taxii2` require a session cookie, per-user API key, or master `CTI_API_KEY`; legacy-open when no users.
+- **API auth** — once any user exists, the REST API (root paths like `/articles`, `/observables`, `/ingest/*`) + `/taxii2` require a session cookie, per-user API key, or master `CTI_API_KEY`; with zero users, setup-required mode applies unless `CTI_OPEN_ACCESS=true`.
 - **Per-user feed keys** — personal VirusTotal/OTX keys on Threat Feeds (Test → Connected/Failed), live verdict lookup on observables, bulk enrich-unenriched, coverage stats on /admin.
 
 See [CHANGELOG.md](./CHANGELOG.md) for details.
@@ -130,7 +130,10 @@ scry report daily
 uvicorn scry.main:app --reload
 ```
 
-Then open <http://localhost:8000/>.
+Then open <http://localhost:8000/> — a fresh install redirects to `/setup`
+to create the first administrator account before anything else is served.
+(For a throwaway local instance without accounts, `export CTI_OPEN_ACCESS=true`
+restores the old unauthenticated mode.)
 
 ### Production-ish (Docker, Postgres + pgvector)
 
@@ -205,7 +208,7 @@ scry stats
 
 ## Users & authentication
 
-- **First run is open.** With no users in the database, the UI and API behave as before — everything is accessible. Start the server and open the app: you'll be offered a **first-run setup page** (`/setup`) to create the initial administrator account (username, password, optional email). Authentication turns on the moment that account exists. CLI alternative:
+- **First run requires setup.** With no users in the database and no `CTI_API_KEY`, the app starts in **setup-required mode**: every UI route redirects to the **first-run setup page** (`/setup`) and every API route returns 403 until the initial administrator account is created there (username, password, optional email). Authentication turns on the moment that account exists, and setup mode can never return. Running a local-only bundle, MCP server, or automation without accounts? Set the explicit escape hatch `CTI_OPEN_ACCESS=true` to restore the legacy unauthenticated mode (a loud startup warning is logged; never use it on a network-reachable instance). CLI alternative:
 
   ```bash
   scry users seed --username admin   # one-time bootstrap; prints a generated

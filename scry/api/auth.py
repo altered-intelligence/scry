@@ -7,9 +7,13 @@ default) and no user accounts exist, everything stays open.
 
 v0.5.0 addition: once ANY user account exists, ``/api/*`` requires auth even
 without a master key — a valid ``scry_session`` cookie (browser/UI fetch
-calls) or a per-user API key (plug-in hook, step 3) also satisfies it. With
-zero users the API stays fully open, preserving legacy behavior for the MCP
-server and local automations.
+calls) or a per-user API key (plug-in hook, step 3) also satisfies it.
+
+Setup-required default: with zero users, no master key, and
+``CTI_OPEN_ACCESS`` unset/false, every API route 403s until the first admin
+is created through ``/setup`` — a fresh install is never silently open.
+``CTI_OPEN_ACCESS=true`` restores the legacy zero-user open mode (local
+bundles / MCP / automation only — never on a network-reachable instance).
 
 Exemptions: a small set of GET routes stays unauthenticated even when auth
 is enabled, so monitoring probes and the Search-page provider picker keep
@@ -98,7 +102,15 @@ def require_api_key(request: Request) -> None:
                 detail="Authentication required (session cookie, user API key, or master key)",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        return  # no users and no master key — open by default (legacy behavior)
+        if not get_settings().open_access:
+            # Setup-required mode: zero users, no master key, and the
+            # open-access escape hatch is off — nothing is served until the
+            # first admin is created through /setup.
+            raise HTTPException(
+                status_code=403,
+                detail="Setup required: create the first administrator account at /setup",
+            )
+        return  # explicit open access (CTI_OPEN_ACCESS=true) — legacy zero-user mode
 
     provided = _provided_key(request)
     if provided is not None and hmac.compare_digest(provided.encode("utf-8"), expected.encode("utf-8")):
