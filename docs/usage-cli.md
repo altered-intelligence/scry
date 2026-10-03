@@ -126,6 +126,19 @@ Table of the 100 most recent alerts (id, trigger, severity, title).
 Apply IOC decay: expire indicators past their type-specific TTL and refresh
 last-seen ones. Prints `{"expired": …, "refreshed": …}`.
 
+### `scry prune-html [--days N] [--dry-run] [--no-vacuum]`
+
+Prune stored `raw_html` for articles older than the retention horizon
+(default: `CTI_RAW_HTML_RETENTION_DAYS`, 30; `0` keeps forever). Keeps the
+article row, `extracted_text`, and all derived data — a pruned article is
+re-fetched from its URL on demand. `--dry-run` reports counts + reclaimable
+bytes without writing; real runs VACUUM (SQLite) unless `--no-vacuum`.
+
+```bash
+scry prune-html --dry-run     # what would the retention horizon reclaim?
+scry prune-html --days 7      # prune anything older than a week
+```
+
 ## Diagnostics
 
 ### `scry stats`

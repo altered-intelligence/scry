@@ -1,7 +1,8 @@
 # Scheduling — unattended collection + daily digest email
 
 Scry's recurring work (feed ingestion every 30 min, OTX pulls, alert
-evaluation, clustering, IOC decay, and the optional daily digest email) runs
+evaluation, clustering, IOC decay, the weekly raw_html retention prune, and
+the optional daily digest email) runs
 in a single APScheduler process: `python -m scry.scheduler` (or
 `scry scheduler run`). This page covers running it unattended and getting
 the daily report delivered by email.
@@ -112,3 +113,22 @@ journalctl --user -u scry-scheduler -f
 The compose bundle already includes a `scheduler` service
 (`python -m scry.scheduler`); set the digest env vars on that service to get
 the email there.
+
+## 4. raw_html retention (weekly prune)
+
+Stored `raw_html` is the dominant share of database size and is only needed
+to re-parse an article — every consumer (FTS, embeddings, extraction,
+exports, UI) works off `extracted_text`. The scheduler prunes it for
+articles older than `CTI_RAW_HTML_RETENTION_DAYS` (default 30; `0` = keep
+forever) every **Sunday at 04:47 UTC**, logging `articles_pruned` and
+`bytes_reclaimed`; the job skips cleanly when retention is 0 and never
+raises. A pruned article that later needs its HTML is re-fetched from its
+URL by `fetch_full_content`.
+
+Manual runs (including a dry-run and file shrink via VACUUM):
+
+```bash
+scry prune-html --dry-run     # report counts + reclaimable bytes, no writes
+scry prune-html               # prune at the configured horizon + VACUUM
+scry prune-html --days 7      # custom horizon
+```

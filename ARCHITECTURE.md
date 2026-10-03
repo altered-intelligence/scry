@@ -98,6 +98,7 @@ scry/
 │
 ├── pipeline.py                 # Article → extract → enrich → score → persist → route
 ├── scheduler.py                # APScheduler recurring jobs
+├── retention.py                # raw_html retention pruning (weekly job + `scry prune-html`)
 ├── cli.py                      # scry commands
 └── main.py                     # FastAPI app + UI mount
 ```

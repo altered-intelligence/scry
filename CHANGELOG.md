@@ -4,6 +4,41 @@ All notable changes to Scry are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 semantic versioning.
 
+## [0.14.0] — 2026-10-03
+
+### Added
+
+- **raw_html retention pruning.** `Article.raw_html` — the dominant share of
+  database size, only ever needed to re-parse an article — is now pruned for
+  articles older than `raw_html_retention_days` (env
+  `CTI_RAW_HTML_RETENTION_DAYS`, default 30; `0` = keep forever). Age is
+  anchored on `ingested_at` (falling back to `published_at`); articles with
+  neither are never pruned. Pruning nulls ONLY `raw_html`: the row,
+  `extracted_text`, FTS/embedding indexes, and all derived data are kept
+  (reprocessing works off `extracted_text`, so the `extractor_version="0"`
+  backlog is unaffected), and a pruned article that later needs its HTML is
+  re-fetched from its URL by `fetch_full_content` — that path already
+  selects on `raw_html IS NULL` (regression-tested).
+- **Weekly scheduler job** `raw_html_prune` (Sunday 04:47 UTC, clear of the
+  :04/:34/:19/:49 ingest jobs and the HH:12 digest): logs `articles_pruned`
+  + `bytes_reclaimed`, skips cleanly when retention is 0, never raises.
+- **`scry prune-html [--days N] [--dry-run] [--no-vacuum]`** — manual runs;
+  dry-run reports counts + reclaimable bytes without writing; real runs
+  VACUUM (SQLite, best-effort) to shrink the database file.
+
+### Changed
+
+- **Settings:** the never-wired placeholder `retention_raw_html_days`
+  (default 14, referenced nowhere) is replaced by `raw_html_retention_days`
+  (default 30, env `CTI_RAW_HTML_RETENTION_DAYS`).
+
+Live-verified on the real 445-article DB (backed up first): dry-run at the
+30-day default truthfully reported 0 candidates (no HTML that old); a 1-day
+horizon pruned 80 articles / 613,642 B, and VACUUM + checkpoint shrank the
+file 7946K → 7268K. Embeddings (445), observables (746), and the semantic
+top-5 are unchanged; authenticated article API readers return
+`raw_html: None` with `extracted_text` intact.
+
 ## [0.13.0] — 2026-10-03
 
 ### Added
