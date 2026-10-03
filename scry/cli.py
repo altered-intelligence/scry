@@ -17,6 +17,10 @@ Commands:
   reviews list             List open analyst reviews
   alerts list              List recent alerts
   decay run                Apply IOC decay
+  scheduler run            Run the scheduler in the foreground
+  scheduler install        Write the macOS LaunchAgent plist (--load to activate, --dir to override)
+  scheduler uninstall      Remove the LaunchAgent plist
+  scheduler status         Show installed/loaded state + digest readiness
   stats                    Show DB counts
   backup                   Archive DB + config + secrets for a machine move
   restore <archive>        Restore a backup archive (refuses to clobber the DB)
@@ -33,6 +37,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
 import secrets
 import sys
@@ -407,6 +412,83 @@ def decay_run() -> None:
     with session_scope() as session:
         res = LifecycleEngine(session).apply_decay()
         console.print({"expired": res.expired, "refreshed": res.refreshed})
+
+
+# ------------------------- scheduler service (v0.11.0) -------------------------
+
+scheduler_app = typer.Typer(help="Scheduler process + launchd LaunchAgent (macOS)")
+app.add_typer(scheduler_app, name="scheduler")
+
+
+@scheduler_app.command("run")
+def scheduler_run() -> None:
+    """Run the scheduler in the foreground (same as `python -m scry.scheduler`)."""
+    from scry import scheduler as _sched
+
+    _sched.main()
+
+
+@scheduler_app.command("install")
+def scheduler_install(
+    agents_dir: Path = typer.Option(
+        None,
+        "--dir",
+        help="LaunchAgents directory (default ~/Library/LaunchAgents; override for testing).",
+    ),
+    load: bool = typer.Option(False, "--load", help="Also load the agent into launchd now."),
+) -> None:
+    """Write the launchd LaunchAgent plist for the scheduler (idempotent)."""
+    from scry import scheduler_agent
+
+    kwargs = {"agents_dir": agents_dir} if agents_dir else {}
+    res = scheduler_agent.install(**kwargs)
+    verbs = {"installed": "wrote", "updated": "rewrote (changed)", "unchanged": "already up to date"}
+    console.print(f"[green]{res.action}[/green]: {verbs[res.action]} {res.plist_path}")
+    console.print(f"[dim]logs: {res.log_dir / 'scheduler.log'} (+ .err.log)[/dim]")
+    uid = os.getuid()
+    if load:
+        import subprocess
+
+        r = subprocess.run(
+            ["launchctl", "bootstrap", f"gui/{uid}", str(res.plist_path)],
+            capture_output=True,
+            text=True,
+        )
+        if r.returncode != 0:
+            console.print(f"[red]launchctl bootstrap failed:[/red] {r.stderr.strip()}")
+            raise typer.Exit(1)
+        console.print("[green]loaded[/green]: launchctl bootstrap succeeded")
+    else:
+        console.print(f"[dim]load it with: launchctl bootstrap gui/{uid} {res.plist_path}[/dim]")
+
+
+@scheduler_app.command("uninstall")
+def scheduler_uninstall(
+    agents_dir: Path = typer.Option(None, "--dir", help="LaunchAgents directory override."),
+) -> None:
+    """Remove the launchd LaunchAgent plist."""
+    from scry import scheduler_agent
+
+    kwargs = {"agents_dir": agents_dir} if agents_dir else {}
+    removed = scheduler_agent.uninstall(**kwargs)
+    if removed is None:
+        console.print("[yellow]not installed[/yellow] — no plist found")
+        return
+    console.print(f"[green]removed[/green]: {removed}")
+    console.print(
+        f"[dim]if it was loaded, unload with: launchctl bootout gui/{os.getuid()}/{scheduler_agent.LABEL}[/dim]"
+    )
+
+
+@scheduler_app.command("status")
+def scheduler_status(
+    agents_dir: Path = typer.Option(None, "--dir", help="LaunchAgents directory override."),
+) -> None:
+    """Show installed/loaded state and digest readiness."""
+    from scry import scheduler_agent
+
+    kwargs = {"agents_dir": agents_dir} if agents_dir else {}
+    console.print_json(json.dumps(scheduler_agent.status(**kwargs), default=str))
 
 
 @app.command("stats")
