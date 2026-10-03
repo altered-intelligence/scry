@@ -93,6 +93,12 @@ class Settings(BaseSettings):
     smtp_starttls: bool = False
     notify_desktop: bool = False  # macOS desktop notifications via osascript
 
+    # Daily digest email (v0.11.0) — the scheduler emails the daily report.
+    # Off by default; needs SMTP configured (admin panel or smtp_* env).
+    digest_email_enabled: bool = False
+    digest_email_to: str = ""
+    digest_email_hour: int = 7  # local hour; fires at HH:12
+
     # Optional integrations (legacy fields for backwards compatibility)
     misp_key: str = ""
     opencti_key: str = ""

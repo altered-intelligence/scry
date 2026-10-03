@@ -124,8 +124,19 @@ def _deliver(config: SMTPConfig, msg: EmailMessage) -> None:
             smtp.quit()
 
 
-def send_mail(session: Session, subject: str, body: str, to: str, from_address: str | None = None) -> bool:
-    """Send a plain-text email. Returns False (logged) when unconfigured/failing."""
+def send_mail(
+    session: Session,
+    subject: str,
+    body: str,
+    to: str,
+    from_address: str | None = None,
+    markdown_body: str | None = None,
+) -> bool:
+    """Send an email. Returns False (logged) when unconfigured/failing.
+
+    Plain-text by default; with ``markdown_body`` the message becomes
+    multipart/alternative (text/plain fallback + text/markdown part).
+    """
     config = get_smtp_config(session)
     if config is None:
         logger.info("mail_skipped_unconfigured", subject=subject)
@@ -136,6 +147,8 @@ def send_mail(session: Session, subject: str, body: str, to: str, from_address: 
     msg["To"] = to
     msg["Subject"] = subject
     msg.set_content(body)
+    if markdown_body is not None:
+        msg.add_alternative(markdown_body, subtype="markdown")
     try:
         _deliver(config, msg)
     except Exception as exc:
