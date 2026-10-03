@@ -94,8 +94,12 @@ def get_schedule(session: Session) -> EnrichmentSchedule:
     providers_raw = _get(session, PREFIX + "providers").strip().lower()
     if providers_raw:
         sched.providers = [p for p in (x.strip() for x in providers_raw.split(",")) if p in ALL_PROVIDERS]
-    sched.otx_budget_seconds = _clamp_budget(_get(session, PREFIX + "otx_budget_seconds"), DEFAULT_OTX_BUDGET_SECONDS)
-    sched.vt_budget_seconds = _clamp_budget(_get(session, PREFIX + "vt_budget_seconds"), DEFAULT_VT_BUDGET_SECONDS)
+    sched.otx_budget_seconds = _clamp_budget(
+        _get(session, PREFIX + "otx_budget_seconds"), DEFAULT_OTX_BUDGET_SECONDS
+    )
+    sched.vt_budget_seconds = _clamp_budget(
+        _get(session, PREFIX + "vt_budget_seconds"), DEFAULT_VT_BUDGET_SECONDS
+    )
     last_run_raw = _get(session, LAST_RUN_KEY)
     if last_run_raw:
         try:
@@ -124,8 +128,16 @@ def save_schedule(
     clean = [p for p in dict.fromkeys(providers) if p in ALL_PROVIDERS]
     _set(session, PREFIX + "enabled", "true" if enabled else "false")
     _set(session, PREFIX + "providers", ",".join(clean))
-    _set(session, PREFIX + "otx_budget_seconds", str(_clamp_budget(otx_budget_seconds, DEFAULT_OTX_BUDGET_SECONDS)))
-    _set(session, PREFIX + "vt_budget_seconds", str(_clamp_budget(vt_budget_seconds, DEFAULT_VT_BUDGET_SECONDS)))
+    _set(
+        session,
+        PREFIX + "otx_budget_seconds",
+        str(_clamp_budget(otx_budget_seconds, DEFAULT_OTX_BUDGET_SECONDS)),
+    )
+    _set(
+        session,
+        PREFIX + "vt_budget_seconds",
+        str(_clamp_budget(vt_budget_seconds, DEFAULT_VT_BUDGET_SECONDS)),
+    )
     return get_schedule(session)
 
 

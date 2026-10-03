@@ -3000,7 +3000,11 @@ def ui_search(request: Request, q: str = "", session: Session = Depends(get_sess
 _PERSONAL_KEY_PROVIDERS = ("virustotal", "otx", "fortiguard")
 _FEED_DISPLAY_NAMES = {"virustotal": "VirusTotal", "otx": "AlienVault OTX", "fortiguard": "FortiGuard Labs"}
 # Result-count keys used by EnrichmentEngine.run_external_enrichment_batch.
-_PROVIDER_COUNT_KEYS = {"virustotal": "vt_enriched", "otx": "otx_enriched", "fortiguard": "fortiguard_enriched"}
+_PROVIDER_COUNT_KEYS = {
+    "virustotal": "vt_enriched",
+    "otx": "otx_enriched",
+    "fortiguard": "fortiguard_enriched",
+}
 _ENRICH_UNENRICHED_CAP = 50
 
 

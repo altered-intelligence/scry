@@ -241,7 +241,9 @@ def _fg_client() -> FortiGuardClient:
     with session_scope() as session:
         state = load_provider_states(session)["fortiguard"]
     if not state.api_key:
-        console.print("[red]FortiGuard API key not configured[/red] — set it in Intel Feeds → Enrichment Providers")
+        console.print(
+            "[red]FortiGuard API key not configured[/red] — set it in Intel Feeds → Enrichment Providers"
+        )
         raise typer.Exit(1)
     return FortiGuardClient(state.api_key)
 
@@ -251,7 +253,9 @@ def _fg_show(data) -> None:
 
 
 @fortiguard_app.command("search")
-def fg_search(indicator: str, type: str = typer.Option(None, "--type", help="ip|domain|url|filehash|email")) -> None:
+def fg_search(
+    indicator: str, type: str = typer.Option(None, "--type", help="ip|domain|url|filehash|email")
+) -> None:
     """Search all known FortiGuard intel on an indicator."""
     with _fg_client() as client:
         _fg_show(client.threat_intel_search(indicator, type))
@@ -265,14 +269,18 @@ def fg_related(indicator: str, type: str = typer.Option(None, "--type")) -> None
 
 
 @fortiguard_app.command("visits")
-def fg_visits(host: str, start: str = typer.Option(None, "--start"), end: str = typer.Option(None, "--end")) -> None:
+def fg_visits(
+    host: str, start: str = typer.Option(None, "--start"), end: str = typer.Option(None, "--end")
+) -> None:
     """Country visit counts for a domain or IP (optional YYYY-MM-DD range)."""
     with _fg_client() as client:
         _fg_show(client.country_visit_count(host, start, end))
 
 
 @fortiguard_app.command("url")
-def fg_url(values: list[str], fields: list[str] = typer.Option(["threatinfo", "riskinfo"], "--fields")) -> None:
+def fg_url(
+    values: list[str], fields: list[str] = typer.Option(["threatinfo", "riskinfo"], "--fields")
+) -> None:
     """Batch URL/domain/IP investigation. fields: threatinfo,riskinfo,countryvisitcounts,aisummary"""
     with _fg_client() as client:
         _fg_show(client.url_batch(values, fields))
@@ -286,7 +294,9 @@ def fg_url_summary(url: str) -> None:
 
 
 @fortiguard_app.command("ip")
-def fg_ip(ips: list[str], fields: list[str] = typer.Option(["geoip", "asn", "isdb", "ptr"], "--fields")) -> None:
+def fg_ip(
+    ips: list[str], fields: list[str] = typer.Option(["geoip", "asn", "isdb", "ptr"], "--fields")
+) -> None:
     """Batch IP investigation. fields: asn,geoip,isdb,ptr,whois,aisummary"""
     with _fg_client() as client:
         _fg_show(client.ip_batch(ips, fields))
@@ -306,7 +316,9 @@ def fg_ip_summary(ip: str) -> None:
 
 
 @fortiguard_app.command("domain")
-def fg_domain(domains: list[str], fields: list[str] = typer.Option(["whois"], "--fields", help="getips|whois")) -> None:
+def fg_domain(
+    domains: list[str], fields: list[str] = typer.Option(["whois"], "--fields", help="getips|whois")
+) -> None:
     """Batch domain investigation (passive-DNS IPs and/or WHOIS)."""
     with _fg_client() as client:
         _fg_show(client.domain_batch(domains, fields))
@@ -348,17 +360,23 @@ def fg_outbreak_telemetry(tag: str, date: str = typer.Option(None, "--date")) ->
 
 
 @fortiguard_app.command("submit")
-def fg_submit(subject: str, description: str, tags: str = typer.Option("", "--tags", help="comma-separated"),
-              category: str = typer.Option("ioc", "--category", help="ioc|fp"),
-              tlp: str = typer.Option("red", "--tlp", help="white|green|amber|red"),
-              cc_emails: str = typer.Option("", "--cc"),
-              upload_file: str = typer.Option("", "--file")) -> None:
+def fg_submit(
+    subject: str,
+    description: str,
+    tags: str = typer.Option("", "--tags", help="comma-separated"),
+    category: str = typer.Option("ioc", "--category", help="ioc|fp"),
+    tlp: str = typer.Option("red", "--tlp", help="white|green|amber|red"),
+    cc_emails: str = typer.Option("", "--cc"),
+    upload_file: str = typer.Option("", "--file"),
+) -> None:
     """Submit IOCs/false positives to FortiGuard analysts (returns ticket URL)."""
     with _fg_client() as client:
         url = client.submit_ioc(
-            subject, description,
+            subject,
+            description,
             tags=[t.strip() for t in tags.split(",") if t.strip()] or None,
-            category=category, tlp=tlp,
+            category=category,
+            tlp=tlp,
             cc_emails=[e.strip() for e in cc_emails.split(",") if e.strip()] or None,
             upload_file=upload_file or None,
         )
@@ -378,8 +396,10 @@ def fg_test() -> None:
     with _fg_client() as client:
         result = client.threat_intel_search("94.100.18.64", "ip")
     if result:
-        console.print(f"[green]Connected[/green] — sample lookup returned: wf_cate={result.get('wf_cate')!r}, "
-                      f"ioc_cate={result.get('ioc_cate')!r}, confidence={result.get('confidence')!r}")
+        console.print(
+            f"[green]Connected[/green] — sample lookup returned: wf_cate={result.get('wf_cate')!r}, "
+            f"ioc_cate={result.get('ioc_cate')!r}, confidence={result.get('confidence')!r}"
+        )
     else:
         console.print("[yellow]API reachable (200) but sample returned no data — key is valid[/yellow]")
 

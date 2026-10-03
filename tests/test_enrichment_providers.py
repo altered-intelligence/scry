@@ -239,9 +239,7 @@ class TestBatchRun:
         )
         respx.get(VT_IP.format(TEST_IP)).mock(return_value=httpx.Response(200, json=VT_PAYLOAD))
         respx.get(OTX_IP.format(TEST_IP)).mock(return_value=httpx.Response(200, json=OTX_PAYLOAD))
-        respx.get(FORTIGUARD_SEARCH).mock(
-            return_value=httpx.Response(200, json=FORTIGUARD_PAYLOAD)
-        )
+        respx.get(FORTIGUARD_SEARCH).mock(return_value=httpx.Response(200, json=FORTIGUARD_PAYLOAD))
 
         from scry.main import app
 

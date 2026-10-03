@@ -50,8 +50,8 @@ from scry.enrichment.schedule import (  # noqa: E402
 )
 from scry.models import Observable  # noqa: E402
 
-CHUNK = 100          # records per transaction (smaller when VT is in the pass)
-VT_CHUNK = 25        # VT paces at vt_rate_per_min; keep commits frequent
+CHUNK = 100  # records per transaction (smaller when VT is in the pass)
+VT_CHUNK = 25  # VT paces at vt_rate_per_min; keep commits frequent
 
 
 def run_pass(providers: list[str], budget_seconds: int, tag: str) -> dict:
@@ -66,21 +66,19 @@ def run_pass(providers: list[str], budget_seconds: int, tag: str) -> dict:
 
     while time.time() - t0 < budget_seconds:
         with session_scope() as s:
-            rows = (
-                s.scalars(
-                    select(Observable)
-                    .where(Observable.id > last_id)
-                    .order_by(Observable.id)
-                    .limit(chunk)
-                )
-                .all()
-            )
+            rows = s.scalars(
+                select(Observable).where(Observable.id > last_id).order_by(Observable.id).limit(chunk)
+            ).all()
             if not rows:
                 with session_scope() as s2:
                     set_progress(s2, tag, 0)  # pass complete; next run starts fresh
                 return {
-                    "pass": tag, "providers": providers, "complete": True,
-                    "records": records, "fresh_skipped": fresh_skips, "errors": errors,
+                    "pass": tag,
+                    "providers": providers,
+                    "complete": True,
+                    "records": records,
+                    "fresh_skipped": fresh_skips,
+                    "errors": errors,
                     "seconds": round(time.time() - t0),
                 }
             engine = EnrichmentEngine(s)
@@ -99,20 +97,30 @@ def run_pass(providers: list[str], budget_seconds: int, tag: str) -> dict:
         print(f"  [{tag}] committed through id={last_id} ({time.time()-t0:.0f}s)", flush=True)
 
     return {
-        "pass": tag, "providers": providers, "complete": False,
-        "records": records, "fresh_skipped": fresh_skips, "errors": errors,
-        "seconds": round(time.time() - t0), "resume_at_id": last_id,
+        "pass": tag,
+        "providers": providers,
+        "complete": False,
+        "records": records,
+        "fresh_skipped": fresh_skips,
+        "errors": errors,
+        "seconds": round(time.time() - t0),
+        "resume_at_id": last_id,
     }
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--providers", nargs="+", default=None,
-                    help="Override the configured provider list for this run.")
-    ap.add_argument("--budget-seconds", type=int, default=None,
-                    help="Override the per-pass time budget for this run.")
-    ap.add_argument("--ignore-db-config", action="store_true",
-                    help="Run even when the schedule is disabled, and ignore stored budgets.")
+    ap.add_argument(
+        "--providers", nargs="+", default=None, help="Override the configured provider list for this run."
+    )
+    ap.add_argument(
+        "--budget-seconds", type=int, default=None, help="Override the per-pass time budget for this run."
+    )
+    ap.add_argument(
+        "--ignore-db-config",
+        action="store_true",
+        help="Run even when the schedule is disabled, and ignore stored budgets.",
+    )
     args = ap.parse_args()
 
     with session_scope() as s:

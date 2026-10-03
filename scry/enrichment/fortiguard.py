@@ -88,18 +88,26 @@ class FortiGuardClient:
     def close(self) -> None:
         self._client.close()
 
-    def __enter__(self) -> "FortiGuardClient":
+    def __enter__(self) -> FortiGuardClient:
         return self
 
     def __exit__(self, *exc: object) -> None:
         self.close()
 
-    def _request(self, method: str, path: str, *, params: dict | None = None,
-                 json_body: dict | None = None, data: dict | None = None,
-                 files: dict | None = None) -> Any:
+    def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict | None = None,
+        json_body: dict | None = None,
+        data: dict | None = None,
+        files: dict | None = None,
+    ) -> Any:
         self.bucket.wait_slot()
-        r = self._client.request(method, f"{BASE_URL}{path}", params=params,
-                                 json=json_body, data=data, files=files)
+        r = self._client.request(
+            method, f"{BASE_URL}{path}", params=params, json=json_body, data=data, files=files
+        )
         if r.status_code == 404:
             return None  # NotFoundError — caller distinguishes "no data"
         if r.status_code == 429:
@@ -126,8 +134,7 @@ class FortiGuardClient:
             params["type"] = type
         return self._request("GET", "/v1/related_indicators_search", params=params)
 
-    def country_visit_count(self, host: str, start: str | None = None,
-                            end: str | None = None) -> dict | None:
+    def country_visit_count(self, host: str, start: str | None = None, end: str | None = None) -> dict | None:
         params: dict[str, Any] = {"host": host}
         if start:
             params["start"] = start
@@ -136,17 +143,26 @@ class FortiGuardClient:
         return self._request("GET", "/v1/country_visit_count", params=params)
 
     # --- Submission APIs ---------------------------------------------------
-    def submit_ioc(self, subject: str, description: str, *, tags: list[str] | None = None,
-                   category: str = "ioc", tlp: str = "red",
-                   cc_emails: list[str] | None = None,
-                   upload_file: str | Path | None = None) -> str:
+    def submit_ioc(
+        self,
+        subject: str,
+        description: str,
+        *,
+        tags: list[str] | None = None,
+        category: str = "ioc",
+        tlp: str = "red",
+        cc_emails: list[str] | None = None,
+        upload_file: str | Path | None = None,
+    ) -> str:
         if category not in {"ioc", "fp"}:
             raise ValueError("category must be 'ioc' or 'fp'")
         if tlp not in {"white", "green", "amber", "red"}:
             raise ValueError("tlp must be white/green/amber/red")
         data: dict[str, Any] = {
-            "subject": subject, "description": description,
-            "category": category, "tlp": tlp,
+            "subject": subject,
+            "description": description,
+            "category": category,
+            "tlp": tlp,
         }
         if tags:
             data["tags"] = ",".join(tags)
@@ -157,8 +173,9 @@ class FortiGuardClient:
             p = Path(upload_file)
             files = {"upload_file": (p.name, p.open("rb"))}
         try:
-            r = self._client.post(f"{BASE_URL}/v1/user_submission", data=data, files=files,
-                                  headers={"api_key": self.api_key})
+            r = self._client.post(
+                f"{BASE_URL}/v1/user_submission", data=data, files=files, headers={"api_key": self.api_key}
+            )
         finally:
             if files:
                 files["upload_file"][1].close()
@@ -181,8 +198,9 @@ class FortiGuardClient:
     def url_riskinfo(self, url: str) -> dict | None:
         return self._request("GET", "/v1/url/riskinfo", params={"url": url})
 
-    def url_country_visits(self, url: str, start_date: str | None = None,
-                           end_date: str | None = None) -> dict | None:
+    def url_country_visits(
+        self, url: str, start_date: str | None = None, end_date: str | None = None
+    ) -> dict | None:
         params: dict[str, Any] = {"url": url}
         if start_date:
             params["startDate"] = start_date
@@ -190,8 +208,9 @@ class FortiGuardClient:
             params["endDate"] = end_date
         return self._request("GET", "/v1/url/countryvisitcounts", params=params)
 
-    def url_aggregate_visits(self, urls: list[str], start_date: str | None = None,
-                             end_date: str | None = None) -> dict | None:
+    def url_aggregate_visits(
+        self, urls: list[str], start_date: str | None = None, end_date: str | None = None
+    ) -> dict | None:
         body: dict[str, Any] = {"urls": urls}
         if start_date:
             body["startDate"] = start_date
@@ -291,9 +310,7 @@ class FortiGuardEnricher(BaseEnricher):
     def __init__(self, api_key: str | None = None) -> None:
         s = get_settings()
         self.api_key = api_key if api_key is not None else s.fortiguard_api_key
-        self._client: FortiGuardClient | None = (
-            FortiGuardClient(self.api_key) if self.api_key else None
-        )
+        self._client: FortiGuardClient | None = FortiGuardClient(self.api_key) if self.api_key else None
 
     def close(self) -> None:
         if self._client is not None:
@@ -363,7 +380,13 @@ def _summarize(raw: Any) -> dict[str, Any]:
         return {"not_found": True}
     out: dict[str, Any] = {}
     for key in (
-        "wf_cate", "av_cate", "ioc_cate", "confidence", "reference_url", "created", "modified",
+        "wf_cate",
+        "av_cate",
+        "ioc_cate",
+        "confidence",
+        "reference_url",
+        "created",
+        "modified",
     ):
         if raw.get(key):
             out[key] = raw[key]
