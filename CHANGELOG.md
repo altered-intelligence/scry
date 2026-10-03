@@ -4,6 +4,35 @@ All notable changes to Scry are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 semantic versioning.
 
+## [0.12.0] — 2026-10-03
+
+### Added
+
+- **Persisted semantic embeddings.** Article vectors are now computed once
+  and stored in a new `article_embeddings` table (384-dim float32 packed
+  blobs, 1536 B/row) instead of being re-derived from full corpus text on
+  every search. Each row carries a `content_hash` (md5 over the embedded
+  text + dimension) so edits rewrite only rows that actually changed, and
+  a stored `dim` auto-invalidates vectors if the algorithm dimension ever
+  changes. Write-time sync hooks run at the same points as the FTS index
+  (feed ingestion, OTX pulses, full-content fetch, pipeline redaction),
+  and an idempotent batched startup migration backfills existing
+  databases (SQLite; Postgres keeps the legacy live-embedding path plus
+  the write hooks). Queries now embed only the query string, load stored
+  vectors columnar (no ORM row materialization), and score with numpy
+  when available (pure-Python fallback — numpy is not a base dependency);
+  articles missing a vector are embedded on the fly and persisted
+  (self-healing stragglers). Ranking is unchanged — parity with the
+  legacy path is covered by regression tests.
+
+### Performance
+
+- **Semantic search no longer re-embeds the whole corpus per query.**
+  Query-time work drops from O(N·text) CPU + O(N·dim) memory to one query
+  embedding + one matrix multiply over stored vectors; ~2× faster
+  end-to-end on the real 445-article DB (0.117s → 0.057s), with the gap
+  widening as the corpus grows.
+
 ## [0.11.0] — 2026-10-03
 
 ### Added

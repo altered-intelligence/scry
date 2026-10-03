@@ -19,6 +19,10 @@ A defensive cyber threat intelligence platform that ingests public sources, extr
 
 ---
 
+## What's new in 0.12.0
+
+- **Persisted semantic embeddings** — article vectors are now computed once and stored (`article_embeddings`: 384-dim float32, 1536 B/row) instead of re-embedding the entire corpus on every search. A per-row content hash rewrites only rows whose text actually changed, a stored dimension auto-invalidates on algorithm changes, and an idempotent batched startup migration backfills existing databases (SQLite; Postgres keeps the legacy path plus the new write hooks). Query time embeds only the query string and scores the stored vectors in one pass (numpy when present, pure-Python fallback; ranking unchanged and parity-tested) — ~2× faster on the real 445-article corpus (0.117s → 0.057s), with the gap widening as the corpus grows.
+
 ## What's new in 0.11.0
 
 - **Daily digest email** — the scheduler can now email the daily report every morning (default 07:12 local, `CTI_DIGEST_EMAIL_HOUR`) when `CTI_DIGEST_EMAIL_ENABLED=true` + `CTI_DIGEST_EMAIL_TO` are set; multipart plain-text + Markdown body, subject with article/high-risk counts. Off by default, and a clean logged skip (never a crash) when SMTP isn't configured.

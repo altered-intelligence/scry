@@ -76,7 +76,8 @@ scry search "ransomware" --limit 10
 ### `scry semantic-search QUERY [--limit N]`
 
 Semantic search over articles using the built-in offline hash embedding.
-Prints score / type / title.
+Article vectors are persisted (`article_embeddings`), so a search embeds only
+the query string and scores stored vectors. Prints score / type / title.
 
 ```bash
 scry semantic-search "Microsoft RCE exploited in the wild"

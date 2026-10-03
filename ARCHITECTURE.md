@@ -85,9 +85,10 @@ scry/
 │   └── opencti_stub.py
 │
 ├── search/
+│   ├── embeddings.py           # hash embedding + article_embeddings persistence (pack/unpack, content-hash sync, batched backfill)
 │   ├── fts.py                  # FTS5 index layer: create/backfill/rebuild + incremental upsert/delete (SQLite)
 │   ├── full_text.py            # FTS5 MATCH + bm25 + snippet, LIKE fallback (Postgres / no-FTS5)
-│   └── semantic.py             # deterministic hash embedding (offline) — pluggable
+│   └── semantic.py             # cosine over persisted vectors (numpy/pure-Python); legacy live-embedding fallback (Postgres)
 │
 ├── api/
 │   ├── deps.py

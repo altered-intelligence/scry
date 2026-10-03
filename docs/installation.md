@@ -70,7 +70,7 @@ Endpoints once running:
 | Setup | none | `docker compose up -d postgres` |
 | `CTI_DATABASE_URL` | `sqlite+pysqlite:///./cti.sqlite` | `postgresql+psycopg://cti:cti@localhost:5432/cti` |
 | Use for | local dev, tests, demos | production-ish deployments |
-| Semantic search | deterministic hash embedding (offline) | same; a pgvector adapter can replace `embed()` in `scry/search/semantic.py` |
+| Semantic search | persisted deterministic hash embeddings (offline) | legacy live-embedding path; a pgvector adapter can replace `embed()` in `scry/search/embeddings.py` |
 
 Tests always run against isolated per-test SQLite files; no Postgres is needed
 for the test suite.
