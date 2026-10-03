@@ -31,6 +31,7 @@ PROVIDER_META: dict[str, dict[str, Any]] = {
     "otx": {"display_name": "AlienVault OTX", "env_field": "otx_api_key"},
     "abuseipdb": {"display_name": "AbuseIPDB", "env_field": "abuseipdb_api_key"},
     "greynoise": {"display_name": "GreyNoise", "env_field": "greynoise_api_key"},
+    "fortiguard": {"display_name": "FortiGuard Labs (IOC Research API)", "env_field": "fortiguard_api_key"},
 }
 
 

@@ -19,8 +19,19 @@ ABUSEIPDB_CHECK = "https://api.abuseipdb.com/api/v2/check"
 GREYNOISE_COMMUNITY = "https://api.greynoise.io/v3/community/{}"
 VT_IP = "https://www.virustotal.com/api/v3/ip_addresses/{}"
 OTX_IP = "https://otx.alienvault.com/api/v1/indicators/IPv4/{}/general"
+FORTIGUARD_SEARCH = "https://ioc-api.fortiguard.com/v1/threat_intel_search"
 
 TEST_IP = "198.51.100.23"
+
+FORTIGUARD_PAYLOAD = {
+    "wf_cate": "Malicious Websites",
+    "ioc_cate": "Botnet",
+    "confidence": "High",
+    "reference_url": "https://www.fortiguard.com/encyclopedia?i=1",
+    "kill_chain_phases": ["delivery"],
+    "created": "2024-05-01T00:00:00Z",
+    "modified": "2024-05-02T00:00:00Z",
+}
 
 ABUSEIPDB_PAYLOAD = {
     "data": {
@@ -86,11 +97,12 @@ OTX_PAYLOAD = {
 def _tmp_caches(monkeypatch, tmp_path):
     """Keep provider disk caches out of the repo and out of other tests."""
     import scry.enrichment.abuseipdb as aipdb
+    import scry.enrichment.fortiguard as fg
     import scry.enrichment.greynoise as gn
     import scry.enrichment.otx as otx
     import scry.enrichment.virustotal as vt
 
-    for mod, name in [(aipdb, "abuseipdb"), (gn, "greynoise"), (otx, "otx"), (vt, "vt")]:
+    for mod, name in [(aipdb, "abuseipdb"), (fg, "fortiguard"), (gn, "greynoise"), (otx, "otx"), (vt, "vt")]:
         monkeypatch.setattr(mod, "CACHE_DIR", tmp_path / name)
 
 
@@ -217,7 +229,9 @@ class TestGreyNoise:
 
 class TestBatchRun:
     @respx.mock
-    def test_all_providers_run_when_keyed(self, all_keys, session):
+    def test_all_providers_run_when_keyed(self, all_keys, session, monkeypatch):
+        monkeypatch.setenv("CTI_FORTIGUARD_API_KEY", "fg-key")
+        get_settings.cache_clear()
         _seed_ip(session)
         respx.get(ABUSEIPDB_CHECK).mock(return_value=httpx.Response(200, json=ABUSEIPDB_PAYLOAD))
         respx.get(GREYNOISE_COMMUNITY.format(TEST_IP)).mock(
@@ -225,6 +239,9 @@ class TestBatchRun:
         )
         respx.get(VT_IP.format(TEST_IP)).mock(return_value=httpx.Response(200, json=VT_PAYLOAD))
         respx.get(OTX_IP.format(TEST_IP)).mock(return_value=httpx.Response(200, json=OTX_PAYLOAD))
+        respx.get(FORTIGUARD_SEARCH).mock(
+            return_value=httpx.Response(200, json=FORTIGUARD_PAYLOAD)
+        )
 
         from scry.main import app
 
@@ -236,6 +253,7 @@ class TestBatchRun:
         assert body["otx_enriched"] == 1
         assert body["abuseipdb_enriched"] == 1
         assert body["greynoise_enriched"] == 1
+        assert body["fortiguard_enriched"] == 1
         assert body["errors"] == 0
         assert body["skipped"] == {}
 
@@ -245,8 +263,10 @@ class TestBatchRun:
         ob = session.get(Observable, 1)
         assert "abuseipdb:malicious" in (ob.tags or [])
         assert "greynoise:malicious" in (ob.tags or [])
+        assert "fortiguard:malicious" in (ob.tags or [])
         assert "virustotal_checked_at" in ob.enrichment
         assert "greynoise_checked_at" in ob.enrichment
+        assert "fortiguard_checked_at" in ob.enrichment
 
     @respx.mock
     def test_no_key_providers_skipped_gracefully(self, session, monkeypatch):
@@ -255,6 +275,7 @@ class TestBatchRun:
             "CTI_OTX_API_KEY",
             "CTI_ABUSEIPDB_API_KEY",
             "CTI_GREYNOISE_API_KEY",
+            "CTI_FORTIGUARD_API_KEY",
         ]:
             # empty env var overrides any .env fallback value
             monkeypatch.setenv(var, "")
@@ -273,6 +294,7 @@ class TestBatchRun:
             "otx": "no api key",
             "abuseipdb": "no api key",
             "greynoise": "no api key",
+            "fortiguard": "no api key",
         }
         assert len(respx.calls) == 0
 
@@ -395,7 +417,7 @@ class TestProviderSettingsEndpoints:
             r = client.get("/enrichment/providers")
         assert r.status_code == 200
         ids = [p["id"] for p in r.json()["providers"]]
-        assert ids == ["virustotal", "otx", "abuseipdb", "greynoise"]
+        assert ids == ["virustotal", "otx", "abuseipdb", "greynoise", "fortiguard"]
         vt = r.json()["providers"][0]
         assert vt["key_present"] is True
         assert vt["api_key_source"] == "env"
@@ -485,7 +507,9 @@ class TestProviderSettingsEndpoints:
 
 
 class TestAlertsPagePanel:
-    def test_panel_renders_provider_state(self, all_keys):
+    def test_panel_renders_provider_state(self, all_keys, monkeypatch):
+        monkeypatch.setenv("CTI_FORTIGUARD_API_KEY", "fg-key")
+        get_settings.cache_clear()
         from scry.main import app
 
         with TestClient(app) as client:
@@ -495,6 +519,7 @@ class TestAlertsPagePanel:
         assert "VirusTotal" in r.text
         assert "AbuseIPDB" in r.text
         assert "GreyNoise" in r.text
+        assert "FortiGuard" in r.text
         # all_keys fixture sets every env key → no missing-key badges
         assert '<span class="badge dim">no key</span>' not in r.text
 

@@ -4,6 +4,40 @@ All notable changes to Scry are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 semantic versioning.
 
+## [0.15.0] — 2026-10-03
+
+### Added
+
+- **FortiGuard Labs enrichment provider** — full FortiGuard IOC Research API
+  v1.6 surface behind `scry/enrichment/fortiguard.py`: `FortiGuardClient`
+  (threat-intel search, related indicators, country visit counts, user
+  submissions + ticket status, URL/IP/Domain/File batch + atomic
+  investigation endpoints including whois/ASN/geoip/AI summaries, outbreak
+  tags/IOCs/telemetry) and a `FortiGuardEnricher` wired into the enrichment
+  engine with domain/url/ipv4/ipv6/md5/sha1/sha256/email/onion support
+  (onions looked up as URLs) and a 7-day refresh TTL
+  (`enrichment_refresh_days_fortiguard`). Registered in the provider
+  settings panel (Intel Feeds → Enrichment Providers) with the standard
+  toggle + Fernet-encrypted key + test-button treatment. `scry fortiguard`
+  CLI group with 17 subcommands. Onions are now also routed to the
+  VirusTotal and OTX enrichers as URL lookups.
+- **Scheduled enrichment pass** — `scripts/enrichment_runner.py`: a
+  resumable, time-boxed external-enrichment sweep over the observable table
+  (non-VT providers in one pass; VirusTotal in its own 4/min-paced pass
+  under the 480/day quota), progress persisted per pass in
+  `system_settings`, staleness markers skipping fresh records without
+  burning quota, last-run stats recorded. New `scry/enrichment/schedule.py`
+  module holds the `enrichment.schedule.*` settings; admins configure the
+  pass on /admin → **Scheduled enrichment** (enabled toggle, provider
+  checkboxes, per-pass time budgets) via the new
+  `POST /admin/enrichment-schedule/save` route, with an audit entry per
+  change. The runner exits immediately when disabled, so a system cron or
+  scheduled agent job can invoke it unconditionally.
+
+### Changed
+
+- VirusTotal and OTX enricher type sets now include `onion`.
+
 ## [0.14.0] — 2026-10-03
 
 ### Added

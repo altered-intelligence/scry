@@ -10,6 +10,7 @@
   <a class="btn secondary" href="#sessions">Sessions</a>
   <a class="btn secondary" href="#smtp">SMTP</a>
   <a class="btn secondary" href="#collection-window">Collection window</a>
+  <a class="btn secondary" href="#enrichment-schedule">Scheduled enrichment</a>
   <a class="btn secondary" href="#audit">Audit log</a>
 </div>
 
@@ -285,6 +286,56 @@
     <button type="submit" class="btn">Save</button>
   </form>
   <p class="muted">Collection is global — the window applies to every source for all users.</p>
+</div>
+
+{# ------------------------- scheduled enrichment (v0.15.0) ------------------------- #}
+<div class="panel" id="enrichment-schedule">
+  <h2 style="margin-top: 0;">Scheduled enrichment</h2>
+  <p>
+    Daily, resumable external-enrichment pass over the observable table, executed by
+    <code>scripts/enrichment_runner.py</code> (via a system cron or scheduled agent job).
+    Only providers with an API key configured and enabled on the Intel Feeds page actually
+    fire; VirusTotal runs in its own slower pass (4 lookups/min, 480/day cap) and covers
+    the rest of the table over subsequent days. Records already checked within a provider's
+    refresh window are skipped without using quota.
+  </p>
+  <form method="post" action="/admin/enrichment-schedule/save" class="filters" style="align-items: end;">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label style="display: flex; gap: 6px; align-items: center;">
+      <input type="checkbox" name="enabled" {% if enrichment_schedule.enabled %}checked{% endif %}>
+      Enabled
+    </label>
+    <fieldset style="border: none; padding: 0; margin: 0;">
+      <legend class="muted" style="font-size: 0.85em;">Providers</legend>
+      {% for p in enrichment_schedule.all_providers %}
+        <label style="display: inline-flex; gap: 4px; align-items: center; margin-right: 10px;">
+          <input type="checkbox" name="providers" value="{{ p }}"
+                 {% if p in enrichment_schedule.providers %}checked{% endif %}>
+          {{ p }}
+        </label>
+      {% endfor %}
+    </fieldset>
+    <label>Non-VT pass budget (sec)
+      <input type="number" name="otx_budget_seconds" min="30" max="3600" step="10"
+             value="{{ enrichment_schedule.otx_budget_seconds }}" style="min-width: 90px;">
+    </label>
+    <label>VirusTotal pass budget (sec)
+      <input type="number" name="vt_budget_seconds" min="30" max="3600" step="10"
+             value="{{ enrichment_schedule.vt_budget_seconds }}" style="min-width: 90px;">
+    </label>
+    <button type="submit" class="btn">Save</button>
+  </form>
+  <p class="muted">
+    {% if enrichment_schedule.last_run_at %}
+      Last run: {{ enrichment_schedule.last_run_at }} —
+      {% for pass in enrichment_schedule.last_run_summary.get('passes', []) %}
+        {{ pass.pass }}: {{ pass.records|format_number }} records
+        ({{ pass.fresh_skipped|format_number }} fresh-skipped, {{ pass.errors }} errors){% if not pass.complete %}, resuming at id {{ pass.resume_at_id }}{% else %}, pass complete{% endif %}{{ "; " if not loop.last }}
+      {% endfor %}
+    {% else %}
+      No run recorded yet.
+    {% endif %}
+  </p>
 </div>
 
 {# ------------------------- audit log ------------------------- #}

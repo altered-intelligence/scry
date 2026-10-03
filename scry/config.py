@@ -115,6 +115,11 @@ class Settings(BaseSettings):
     urlscan_api_key: str = ""
     abuseipdb_api_key: str = ""
 
+    # FortiGuard Labs IOC Research API (v1, beta) — research-only endpoints at
+    # https://ioc-api.fortiguard.com, auth via `api_key` HTTP header.
+    fortiguard_api_key: str = ""
+    fortiguard_rate_per_sec: int = 2  # research API: stay conservative
+
     # Enrichment refresh TTLs (v0.6.0 step 3): a provider re-checks an
     # observable only when its `{provider}_checked_at` marker is older than
     # this many days (or missing/unparseable). CTI_ENRICHMENT_REFRESH_DAYS_*.
@@ -122,6 +127,7 @@ class Settings(BaseSettings):
     enrichment_refresh_days_otx: int = 14
     enrichment_refresh_days_abuseipdb: int = 7
     enrichment_refresh_days_greynoise: int = 3
+    enrichment_refresh_days_fortiguard: int = 7
 
     # Vendor-verdict alert escalation (v0.6.0 step 2): when an enrichment
     # provider confirms an observable malicious, AlertEngine raises it.

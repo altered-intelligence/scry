@@ -54,6 +54,8 @@ from scry.ai.errors import AskError
 from scry.auth.passwords import hash_password
 from scry.db import get_engine, session_scope
 from scry.enrichment import EnrichmentEngine
+from scry.enrichment.fortiguard import FortiGuardClient
+from scry.enrichment.provider_settings import load_provider_states
 from scry.ingestion import IngestionEngine
 from scry.ingestion.source_registry import SourceRegistry
 from scry.logging import configure_logging
@@ -226,6 +228,163 @@ def cli_sem(query: str, limit: int = 20) -> None:
         for h in hits:
             table.add_row(f"{h.score:.3f}", h.object_type, str(h.title or ""))
         console.print(table)
+
+
+# ---------- FortiGuard IOC Research API toolkit (v0.15.0) -------------------
+# Full-surface CLI over the FortiGuard Labs IOC Research API (guide v1.6):
+# general search/related/visit-counts, submission tickets, investigation
+# batch+atomic endpoints for URL/IP/Domain/File, outbreak alerts, AI summaries.
+fortiguard_app = typer.Typer(help="FortiGuard Labs IOC Research API tools")
+
+
+def _fg_client() -> FortiGuardClient:
+    with session_scope() as session:
+        state = load_provider_states(session)["fortiguard"]
+    if not state.api_key:
+        console.print("[red]FortiGuard API key not configured[/red] — set it in Intel Feeds → Enrichment Providers")
+        raise typer.Exit(1)
+    return FortiGuardClient(state.api_key)
+
+
+def _fg_show(data) -> None:
+    console.print_json(json.dumps(data, indent=2, default=str))
+
+
+@fortiguard_app.command("search")
+def fg_search(indicator: str, type: str = typer.Option(None, "--type", help="ip|domain|url|filehash|email")) -> None:
+    """Search all known FortiGuard intel on an indicator."""
+    with _fg_client() as client:
+        _fg_show(client.threat_intel_search(indicator, type))
+
+
+@fortiguard_app.command("related")
+def fg_related(indicator: str, type: str = typer.Option(None, "--type")) -> None:
+    """Indicators related to the given indicator."""
+    with _fg_client() as client:
+        _fg_show(client.related_indicators(indicator, type))
+
+
+@fortiguard_app.command("visits")
+def fg_visits(host: str, start: str = typer.Option(None, "--start"), end: str = typer.Option(None, "--end")) -> None:
+    """Country visit counts for a domain or IP (optional YYYY-MM-DD range)."""
+    with _fg_client() as client:
+        _fg_show(client.country_visit_count(host, start, end))
+
+
+@fortiguard_app.command("url")
+def fg_url(values: list[str], fields: list[str] = typer.Option(["threatinfo", "riskinfo"], "--fields")) -> None:
+    """Batch URL/domain/IP investigation. fields: threatinfo,riskinfo,countryvisitcounts,aisummary"""
+    with _fg_client() as client:
+        _fg_show(client.url_batch(values, fields))
+
+
+@fortiguard_app.command("url-summary")
+def fg_url_summary(url: str) -> None:
+    """AI summary for a URL/domain."""
+    with _fg_client() as client:
+        _fg_show(client.url_ai_summary(url))
+
+
+@fortiguard_app.command("ip")
+def fg_ip(ips: list[str], fields: list[str] = typer.Option(["geoip", "asn", "isdb", "ptr"], "--fields")) -> None:
+    """Batch IP investigation. fields: asn,geoip,isdb,ptr,whois,aisummary"""
+    with _fg_client() as client:
+        _fg_show(client.ip_batch(ips, fields))
+
+
+@fortiguard_app.command("ip-whois")
+def fg_ip_whois(ip: str) -> None:
+    with _fg_client() as client:
+        _fg_show(client.ip_whois(ip))
+
+
+@fortiguard_app.command("ip-summary")
+def fg_ip_summary(ip: str) -> None:
+    """AI summary for an IP."""
+    with _fg_client() as client:
+        _fg_show(client.ip_ai_summary(ip))
+
+
+@fortiguard_app.command("domain")
+def fg_domain(domains: list[str], fields: list[str] = typer.Option(["whois"], "--fields", help="getips|whois")) -> None:
+    """Batch domain investigation (passive-DNS IPs and/or WHOIS)."""
+    with _fg_client() as client:
+        _fg_show(client.domain_batch(domains, fields))
+
+
+@fortiguard_app.command("file")
+def fg_file(hashes: list[str]) -> None:
+    """Batch file-hash threat info."""
+    with _fg_client() as client:
+        _fg_show(client.file_batch(hashes, ["threatinfo"]))
+
+
+@fortiguard_app.command("file-summary")
+def fg_file_summary(file_hash: str) -> None:
+    """AI summary for a file hash."""
+    with _fg_client() as client:
+        _fg_show(client.file_ai_summary(file_hash))
+
+
+@fortiguard_app.command("outbreak-tags")
+def fg_outbreak_tags(tag: str = typer.Option(None, "--tag")) -> None:
+    """List outbreak alert tags, or check one tag exists."""
+    with _fg_client() as client:
+        _fg_show(client.outbreak_tags(tag))
+
+
+@fortiguard_app.command("outbreak-iocs")
+def fg_outbreak_iocs(tag: str) -> None:
+    """IOCs associated with an outbreak alert tag."""
+    with _fg_client() as client:
+        _fg_show(client.outbreak_iocs(tag))
+
+
+@fortiguard_app.command("outbreak-telemetry")
+def fg_outbreak_telemetry(tag: str, date: str = typer.Option(None, "--date")) -> None:
+    """Visit-count telemetry for an outbreak alert tag."""
+    with _fg_client() as client:
+        _fg_show(client.outbreak_telemetry(tag, date))
+
+
+@fortiguard_app.command("submit")
+def fg_submit(subject: str, description: str, tags: str = typer.Option("", "--tags", help="comma-separated"),
+              category: str = typer.Option("ioc", "--category", help="ioc|fp"),
+              tlp: str = typer.Option("red", "--tlp", help="white|green|amber|red"),
+              cc_emails: str = typer.Option("", "--cc"),
+              upload_file: str = typer.Option("", "--file")) -> None:
+    """Submit IOCs/false positives to FortiGuard analysts (returns ticket URL)."""
+    with _fg_client() as client:
+        url = client.submit_ioc(
+            subject, description,
+            tags=[t.strip() for t in tags.split(",") if t.strip()] or None,
+            category=category, tlp=tlp,
+            cc_emails=[e.strip() for e in cc_emails.split(",") if e.strip()] or None,
+            upload_file=upload_file or None,
+        )
+    console.print(f"[green]Submission accepted:[/green] {url}")
+
+
+@fortiguard_app.command("submission-status")
+def fg_submission_status(submission_id: str) -> None:
+    """Check the status of a FortiGuard submission ticket."""
+    with _fg_client() as client:
+        _fg_show(client.submission_status(submission_id))
+
+
+@fortiguard_app.command("test")
+def fg_test() -> None:
+    """Connectivity check: look up a known-live FortiGuard indicator."""
+    with _fg_client() as client:
+        result = client.threat_intel_search("94.100.18.64", "ip")
+    if result:
+        console.print(f"[green]Connected[/green] — sample lookup returned: wf_cate={result.get('wf_cate')!r}, "
+                      f"ioc_cate={result.get('ioc_cate')!r}, confidence={result.get('confidence')!r}")
+    else:
+        console.print("[yellow]API reachable (200) but sample returned no data — key is valid[/yellow]")
+
+
+app.add_typer(fortiguard_app, name="fortiguard")
 
 
 # Default AI-Search model: Qwen2.5-1.5B-Instruct Q4_K_M (~1.0 GB, ~2 GB RAM at

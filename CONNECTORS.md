@@ -27,6 +27,15 @@ This document describes the available third-party enrichment connectors for Scry
 - **Rate Limit**: 1000 requests/day (free tier)
 - **Documentation**: https://docs.abuseipdb.com/
 
+#### FortiGuard Labs (IOC Research API)
+- **Purpose**: Verdicts, categories, confidence, related indicators, and outbreak intel from FortiGuard Labs — the widest-coverage provider Scry ships (domains, URLs, IPs, hashes, emails, onions-as-URLs)
+- **API Key**: Set `CTI_FORTIGUARD_API_KEY` environment variable, or enter it on the Intel Feeds → Enrichment Providers page (Fernet-encrypted, DB-stored, masked)
+- **Supported Types**: Domain, URL, IPv4, IPv6, MD5, SHA1, SHA256, email, onion
+- **Rate Limit**: Research API — Scry paces at 2 req/s (`CTI_FORTIGUARD_RATE_PER_SEC`); 429 = quota exhausted
+- **Refresh TTL**: 7 days (`CTI_ENRICHMENT_REFRESH_DAYS_FORTIGUARD`)
+- **CLI**: `scry fortiguard search|related|visits|submit|outbreak-tags|test|…` (17 subcommands — full API v1.6 surface)
+- **Documentation**: FortiGuard IOC Research API guide (v1.6)
+
 ### Infrastructure Discovery
 
 #### Censys

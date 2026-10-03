@@ -23,6 +23,7 @@ from scry.enrichment.attack_mapping import AttackMappingEnricher
 from scry.enrichment.base import EnrichmentError
 from scry.enrichment.email import EmailEnricher
 from scry.enrichment.epss import EpsEnricher
+from scry.enrichment.fortiguard import FortiGuardEnricher
 from scry.enrichment.greynoise import GreyNoiseEnricher
 from scry.enrichment.infrastructure import InfrastructureEnricher
 from scry.enrichment.otx import OTXEnricher
@@ -38,9 +39,10 @@ from scry.models import CVE, Observable, SystemSetting
 logger = get_logger("enrichment")
 
 # Observable types supported by external enrichers
-_VT_TYPES = {"domain", "url", "ipv4", "ipv6", "sha256", "sha1", "md5"}
-_OTX_TYPES = {"domain", "hostname", "ipv4", "ipv6", "url", "md5", "sha1", "sha256"}
+_VT_TYPES = {"domain", "url", "ipv4", "ipv6", "sha256", "sha1", "md5", "onion"}
+_OTX_TYPES = {"domain", "hostname", "ipv4", "ipv6", "url", "md5", "sha1", "sha256", "onion"}
 _IP_TYPES = {"ipv4", "ipv6"}
+_FG_TYPES = {"domain", "url", "ipv4", "ipv6", "md5", "sha1", "sha256", "email", "onion"}
 
 # External provider registry: name → supported types + result-count key.
 # The per-provider "checked" marker in observable.enrichment is
@@ -50,6 +52,7 @@ _EXTERNAL_PROVIDERS: dict[str, dict[str, Any]] = {
     "otx": {"types": _OTX_TYPES, "count_key": "otx_enriched"},
     "abuseipdb": {"types": _IP_TYPES, "count_key": "abuseipdb_enriched"},
     "greynoise": {"types": _IP_TYPES, "count_key": "greynoise_enriched"},
+    "fortiguard": {"types": _FG_TYPES, "count_key": "fortiguard_enriched"},
 }
 
 _DOMAIN_RE = re.compile(r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$")
@@ -156,6 +159,10 @@ class EnrichmentEngine:
         self.otx = OTXEnricher(api_key=otx_key)
         self.abuseipdb = AbuseIPDBEnricher(api_key=self.provider_states["abuseipdb"].api_key)
         self.greynoise = GreyNoiseEnricher(api_key=self.provider_states["greynoise"].api_key)
+        # v0.15.0 — FortiGuard Labs IOC Research API: system-chain key (like
+        # AbuseIPDB/GreyNoise), supports domains/URLs/IPs/hashes/emails/onions
+        # via /v1/threat_intel_search.
+        self.fortiguard = FortiGuardEnricher(api_key=self.provider_states["fortiguard"].api_key)
         # v0.8.0 step 2 — FIRST.org EPSS for CVEs: keyless global enrichment,
         # no per-user key concept, always runs during batch enrichment.
         self.epss = EpsEnricher()
@@ -168,6 +175,7 @@ class EnrichmentEngine:
             "otx": self.otx,
             "abuseipdb": self.abuseipdb,
             "greynoise": self.greynoise,
+            "fortiguard": self.fortiguard,
         }
 
     def enrich_observable(

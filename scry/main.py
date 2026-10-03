@@ -145,7 +145,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Scry",
-    version="0.14.0",
+    version="0.15.0",
     description="Defensive CTI collection, extraction, enrichment, correlation, search, and reporting.",
     lifespan=lifespan,
 )
@@ -783,6 +783,14 @@ def _collection_window_days(session: Session) -> int:
     return get_window_days(session)
 
 
+def _enrichment_schedule_overview(session: Session) -> dict:
+    """Scheduled-enrichment config + last-run stats for the admin page."""
+    from scry.enrichment.schedule import ALL_PROVIDERS, get_schedule
+
+    sched = get_schedule(session)
+    return {"all_providers": ALL_PROVIDERS, **sched.as_dict()}
+
+
 def _admin_context(request: Request, session: Session, admin: User) -> dict:
     """Template context shared by GET /admin and the admin POST handlers that
     render the page directly (one-time secrets must NOT ride redirect query
@@ -825,6 +833,7 @@ def _admin_context(request: Request, session: Session, admin: User) -> dict:
         "audit_entries": audit_entries,
         "smtp": _smtp_overview(session),
         "enrichment_coverage": _enrichment_coverage(session),
+        "enrichment_schedule": _enrichment_schedule_overview(session),
         "collection_window_days": _collection_window_days(session),
     }
 
@@ -1244,6 +1253,53 @@ def admin_collection_window_save(
     saved = set_window_days(session, requested)
     _audit_admin(session, admin, "collection_window.set", detail={"days": saved, "requested": requested})
     return _redirect_flash("/admin", f"Collection window set to last {saved} day(s).")
+
+
+@app.post("/admin/enrichment-schedule/save")
+def admin_enrichment_schedule_save(
+    request: Request,
+    session: Session = Depends(get_session),
+    csrf: str = Form(""),
+    enabled: str | None = Form(None),
+    providers: list[str] = Form(default=[]),
+    otx_budget_seconds: str = Form("240"),
+    vt_budget_seconds: str = Form("240"),
+):
+    """Configure the scheduled external-enrichment pass — admin-only (v0.15.0).
+
+    The pass is executed by ``scripts/enrichment_runner.py`` (system cron or
+    scheduled agent job); these settings gate and shape each run.
+    """
+    admin = _admin_or_none(request)
+    if admin is None:
+        raise HTTPException(403)
+    if not _check_admin_csrf(request, csrf):
+        return _redirect_flash("/admin", "Bad CSRF token — action rejected.", "error")
+    from scry.enrichment.schedule import save_schedule
+
+    try:
+        otx_budget = int(otx_budget_seconds)
+        vt_budget = int(vt_budget_seconds)
+    except ValueError:
+        return _redirect_flash("/admin", "Budgets must be whole seconds.", "error")
+    sched = save_schedule(
+        session,
+        enabled=enabled == "on",
+        providers=providers,
+        otx_budget_seconds=otx_budget,
+        vt_budget_seconds=vt_budget,
+    )
+    _audit_admin(
+        session,
+        admin,
+        "enrichment_schedule.update",
+        detail={"enabled": sched.enabled, "providers": sched.providers},
+    )
+    state = "enabled" if sched.enabled else "disabled"
+    return _redirect_flash(
+        "/admin",
+        f"Scheduled enrichment {state} — providers: {', '.join(sched.providers) or 'none'}.",
+    )
 
 
 # ------------------------- profile (v0.5.0 step 3) -------------------------
