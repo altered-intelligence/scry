@@ -53,6 +53,7 @@ from scry.enrichment.engine import (
     _marker_age_seconds,
     _provider_refresh_ttls,
 )
+from scry.enrichment.fortiguard import FortiGuardEnricher
 from scry.enrichment.otx import OTXEnricher
 from scry.enrichment.user_keys import (
     delete_key,
@@ -145,7 +146,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Scry",
-    version="0.15.0",
+    version="0.15.1",
     description="Defensive CTI collection, extraction, enrichment, correlation, search, and reporting.",
     lifespan=lifespan,
 )
@@ -2334,7 +2335,7 @@ def ui_observable_detail(ob_id: int, request: Request, session: Session = Depend
     enrichment_now = ob.enrichment or {}
     provider_ages = {
         name: _humanize_checked_age(enrichment_now, name, now)
-        for name in ("virustotal", "otx", "abuseipdb", "greynoise")
+        for name in ("virustotal", "otx", "abuseipdb", "greynoise", "fortiguard")
     }
 
     # v0.8.0 step 3 — age of the certificate-transparency (passive DNS) data
@@ -2373,6 +2374,14 @@ def ui_observable_detail(ob_id: int, request: Request, session: Session = Depend
             "pulse_count": otx_data.get("pulse_count"),
             "reputation": otx_data.get("reputation"),
         }
+    fg_data = (ob.enrichment or {}).get("fortiguard") or {}
+    fg_verdict = None
+    if fg_data and not fg_data.get("not_found"):
+        fg_verdict = {
+            "wf_cate": fg_data.get("wf_cate"),
+            "ioc_cate": fg_data.get("ioc_cate"),
+            "confidence": fg_data.get("confidence"),
+        }
 
     return templates.TemplateResponse(
         request,
@@ -2386,9 +2395,11 @@ def ui_observable_detail(ob_id: int, request: Request, session: Session = Depend
             "passive_dns_age": passive_dns_age,
             "can_lookup_vt": "virustotal" in personal_keys,
             "can_lookup_otx": "otx" in personal_keys,
+            "can_lookup_fortiguard": "fortiguard" in personal_keys,
             "lookup_csrf": _admin_csrf_token(raw_cookie) if raw_cookie else "",
             "vt_verdict": vt_verdict,
             "otx_verdict": otx_verdict,
+            "fg_verdict": fg_verdict,
         },
     )
 
@@ -2427,9 +2438,11 @@ def ui_observable_lookup(
             "error",
         )
     if provider == "virustotal":
-        enricher: VirusTotalEnricher | OTXEnricher = VirusTotalEnricher(api_key=key)
-    else:
+        enricher: VirusTotalEnricher | OTXEnricher | FortiGuardEnricher = VirusTotalEnricher(api_key=key)
+    elif provider == "otx":
         enricher = OTXEnricher(api_key=key)
+    else:
+        enricher = FortiGuardEnricher(api_key=key)
     try:
         result = enricher.lookup(ob.normalized_value, ob.type, bypass_cache=True)
     finally:
@@ -2438,7 +2451,8 @@ def ui_observable_lookup(
     if result.ok:
         merged = dict(ob.enrichment or {})
         merged[provider] = result.fields
-        merged[f"_{'vt' if provider == 'virustotal' else 'otx'}_status"] = "ok"
+        status_key = {"virustotal": "_vt_status", "otx": "_otx_status"}.get(provider, "_fortiguard_status")
+        merged[status_key] = "ok"
         merged[f"{provider}_checked_at"] = datetime.now(UTC).isoformat()
         ob.enrichment = merged
         session.commit()
@@ -2893,8 +2907,15 @@ def ui_tag_detail(tag: str, request: Request, session: Session = Depends(get_ses
 
 @app.get("/ui/sources", response_class=HTMLResponse)
 def ui_sources(request: Request, session: Session = Depends(get_session)):
+    # `local://` rows are one-time bulk-import origins (e.g. WEF Atlas workbooks),
+    # not recurring feeds — they stay in the DB for data lineage but are hidden
+    # here so the Sources page lists only real collection sources.
     sources = list(
-        session.scalars(select(Source).order_by(Source.enabled.desc(), Source.baseline_confidence.desc()))
+        session.scalars(
+            select(Source)
+            .where(or_(Source.url.is_(None), ~Source.url.like("local://%")))
+            .order_by(Source.enabled.desc(), Source.baseline_confidence.desc())
+        )
     )
     enabled_count = sum(1 for s in sources if s.enabled)
     user = getattr(request.state, "user", None)
@@ -2976,10 +2997,10 @@ def ui_search(request: Request, q: str = "", session: Session = Depends(get_sess
 # (env/DB chain, managed on the Alerts page). A user without a personal key
 # cannot run that provider but sees all shared enriched data.
 
-_PERSONAL_KEY_PROVIDERS = ("virustotal", "otx")
-_FEED_DISPLAY_NAMES = {"virustotal": "VirusTotal", "otx": "AlienVault OTX"}
+_PERSONAL_KEY_PROVIDERS = ("virustotal", "otx", "fortiguard")
+_FEED_DISPLAY_NAMES = {"virustotal": "VirusTotal", "otx": "AlienVault OTX", "fortiguard": "FortiGuard Labs"}
 # Result-count keys used by EnrichmentEngine.run_external_enrichment_batch.
-_PROVIDER_COUNT_KEYS = {"virustotal": "vt_enriched", "otx": "otx_enriched"}
+_PROVIDER_COUNT_KEYS = {"virustotal": "vt_enriched", "otx": "otx_enriched", "fortiguard": "fortiguard_enriched"}
 _ENRICH_UNENRICHED_CAP = 50
 
 

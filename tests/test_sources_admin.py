@@ -126,6 +126,28 @@ class TestSourcesPageRendering:
         # read-only page still shows state + global hint
         assert "Collection is global" in r.text
 
+    def test_local_import_origins_hidden_from_page_but_kept_in_db(self):
+        """v0.15.0 — one-time bulk-import origins (local:// URLs, e.g. WEF Atlas
+        workbooks) are not recurring feeds: hidden from the Sources GUI, kept
+        in the DB for data lineage (articles/observables stay intact)."""
+        client = client_as("carol", role="admin")
+        with session_scope() as s:
+            s.add(
+                Source(
+                    name="WEF Atlas Test Hunt (Local Import)",
+                    type="local_file",
+                    url="local://wef-atlas-test",
+                    enabled=False,
+                )
+            )
+        r = client.get("/ui/sources")
+        assert r.status_code == 200
+        assert "WEF Atlas Test Hunt" not in r.text
+        with session_scope() as s:
+            row = s.scalar(select(Source).where(Source.url == "local://wef-atlas-test"))
+            assert row is not None  # lineage row survives
+            s.delete(row)
+
 
 # ------------------------- toggle route -------------------------
 

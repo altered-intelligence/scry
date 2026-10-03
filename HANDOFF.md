@@ -1,6 +1,6 @@
 # Scry — Project Handbook & AI Handoff Document
 
-**Version:** 0.15.0 · **Repo:** https://github.com/altered-intelligence/scry · **License:** Apache-2.0
+**Version:** 0.15.1 · **Repo:** https://github.com/altered-intelligence/scry · **License:** Apache-2.0
 **Purpose of this document:** Explain what this project is, how it was built ("vibe coding" methodology), how it's organized, how GitHub is used as a backup, and — most importantly — provide a **master prompt** that lets any AI coding assistant (Claude Code, Codex, DeepSeek, Kimi, etc.) pick up development or recreate the project from scratch in any environment.
 
 ---
@@ -183,7 +183,7 @@ Server config: host/port via `CTI_API_HOST`/`CTI_API_PORT` (default 8000; a loca
 
 ## 7. Current State & Active Roadmap
 
-**Current:** v0.15.0 released (tag + GitHub release) — FortiGuard Labs provider (full IOC Research API v1.6 surface) + scheduled external-enrichment pass (admin-configurable, resumable; `scripts/enrichment_runner.py` + /admin → Scheduled enrichment). Prior: v0.14.0 raw_html retention pruning (track item 6, FINAL: the v0.9.x "scale & ops" track is COMPLETE). 788 tests green (~52s suite). CI + secret scanning green. Open follow-ups: passive-DNS real-data verification — crt.sh was returning 502; the next `POST /enrichment/run?providers=passive_dns` backfills automatically once the service recovers. Docker: no daemon on the release machine — image verified by container simulation + static checks; run `docker build` once on a daemon-equipped host as the final check.
+**Current:** v0.15.1 released — FortiGuard joins the Threat Feeds "My API keys" card (personal keys + live lookup + verdict panel) and bulk-import origins (`local://` sources) are hidden from the Sources page while their data stays in the DB. Prior: v0.15.0 FortiGuard Labs provider + scheduled external-enrichment pass. 793 tests green (~60s suite). CI + secret scanning green. Open follow-ups: passive-DNS real-data verification — crt.sh was returning 502; the next `POST /enrichment/run?providers=passive_dns` backfills automatically once the service recovers. Docker: no daemon on the release machine — image verified by container simulation + static checks; run `docker build` once on a daemon-equipped host as the final check.
 
 **TRACK COMPLETE — v0.9.x "scale & ops" (owner-approved 2026-10-02; all six items shipped as minor releases 2026-10-02 → 2026-10-03):**
 
@@ -224,7 +224,7 @@ Copy everything in the fenced block below verbatim. It contains everything a mod
 You are working on "scry" — a self-hosted threat-intelligence platform (defensive
 security OSINT collector/extractor/enricher with web UI, REST API, MCP server,
 STIX 2.1/TAXII 2.1 export, and multi-user auth). Public repo:
-https://github.com/altered-intelligence/scry (Apache-2.0). Current version: 0.15.0.
+https://github.com/altered-intelligence/scry (Apache-2.0). Current version: 0.15.1.
 
 If the repo is not present, clone it and set up:
     python3 -m venv .venv && source .venv/bin/activate

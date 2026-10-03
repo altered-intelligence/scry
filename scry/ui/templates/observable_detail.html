@@ -63,7 +63,7 @@
       </div>
     {% endif %}
 
-    {% if can_lookup_vt or can_lookup_otx %}
+    {% if can_lookup_vt or can_lookup_otx or can_lookup_fortiguard %}
     <div class="panel">
       <h3>Live lookup</h3>
       <p class="muted">Re-checks now with <em>your</em> personal API key, bypassing both the disk cache and the freshness check — the verdict reflects the provider right now, at the cost of one real API call against your quota. The result is stored in the shared enrichment and resets the provider's staleness timer.</p>
@@ -79,10 +79,16 @@
         <button class="btn" type="submit">Re-check OTX now (uses your quota)</button>
       </form>
       {% endif %}
+      {% if can_lookup_fortiguard %}
+      <form method="post" action="/ui/observables/{{ observable.id }}/lookup/fortiguard" style="display:inline">
+        <input type="hidden" name="csrf" value="{{ lookup_csrf }}">
+        <button class="btn" type="submit">Re-check FortiGuard now (uses your quota)</button>
+      </form>
+      {% endif %}
     </div>
     {% endif %}
 
-    {% if vt_verdict or otx_verdict %}
+    {% if vt_verdict or otx_verdict or fg_verdict %}
     <div class="panel">
       <h3>Verdict</h3>
       {% if vt_verdict %}
@@ -110,6 +116,20 @@
         <dl class="kv">
           <dt>pulse count</dt><dd>{{ otx_verdict.pulse_count if otx_verdict.pulse_count is not none else '—' }}</dd>
           <dt>reputation</dt><dd>{{ otx_verdict.reputation if otx_verdict.reputation is not none else '—' }}</dd>
+        </dl>
+      </div>
+      {% endif %}
+      {% if fg_verdict %}
+      <div class="enrich-card">
+        <div class="enrich-head"><b>FortiGuard verdict</b>
+          {% if fg_verdict.confidence|lower == 'high' %}<span class="badge bad">confidence high</span>
+          {% elif fg_verdict.confidence|lower == 'medium' %}<span class="badge warn">confidence medium</span>
+          {% elif fg_verdict.confidence %}<span class="badge dim">confidence {{ fg_verdict.confidence|lower }}</span>
+          {% endif %}
+        </div>
+        <dl class="kv">
+          <dt>web category</dt><dd>{{ fg_verdict.wf_cate or '—' }}</dd>
+          <dt>ioc category</dt><dd>{{ fg_verdict.ioc_cate or '—' }}</dd>
         </dl>
       </div>
       {% endif %}

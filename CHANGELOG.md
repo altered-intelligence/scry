@@ -4,6 +4,28 @@ All notable changes to Scry are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 semantic versioning.
 
+## [0.15.1] — 2026-10-03
+
+### Added
+
+- **FortiGuard personal feed keys** — FortiGuard Labs joins VirusTotal and
+  AlienVault OTX on the Threat Feeds "My API keys" card: per-user
+  Fernet-encrypted key with save / test / remove. The test performs an
+  authenticated indicator lookup (200 = found, 404 = auth accepted — both
+  report Connected; 401/403/429 reported as failures). Observable detail
+  pages get a "Re-check FortiGuard now" live-lookup button and a FortiGuard
+  verdict panel (web category / IOC category / confidence badge), and the
+  enrichment sidebar shows FortiGuard's last-checked age.
+
+### Changed
+
+- **Bulk-import origins hidden from the Sources page** — one-time local
+  imports (sources with `local://` URLs, e.g. WEF Atlas workbooks) are not
+  recurring feeds: they no longer render on /ui/sources and can no longer
+  be mistaken for collection sources, while the rows (and every article /
+  observable extracted from them) stay in the database for data lineage.
+- The Sources page counts now reflect visible collection sources only.
+
 ## [0.15.0] — 2026-10-03
 
 ### Added

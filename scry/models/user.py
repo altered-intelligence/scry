@@ -124,19 +124,19 @@ class PasskeyCredential(Base, IdMixin):
 class UserFeedKey(Base, IdMixin, TimestampMixin):
     """Per-user personal threat-feed API key (v0.5.0 step 6).
 
-    Only VirusTotal and AlienVault OTX support personal keys; background /
-    scheduled jobs keep using the SYSTEM keys from the env/DB chain
-    (``connector_settings``). One row per (user_id, provider) — upsert via
-    ``scry.enrichment.user_keys.set_key``. The key is stored Fernet-encrypted;
+    VirusTotal, AlienVault OTX, and FortiGuard Labs support personal keys;
+    background / scheduled jobs keep using the SYSTEM keys from the env/DB
+    chain (``connector_settings``). One row per (user_id, provider) — upsert
+    via ``scry.enrichment.user_keys.set_key``. The key is stored Fernet-encrypted;
     only ``scry.crypto.mask`` output is ever displayed.
     """
 
     __tablename__ = "user_feed_keys"
 
-    PROVIDERS = ("virustotal", "otx")
+    PROVIDERS = ("virustotal", "otx", "fortiguard")
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    provider: Mapped[str] = mapped_column(String(32), nullable=False)  # virustotal | otx
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)  # virustotal | otx | fortiguard
     api_key_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
     last_test_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_test_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)

@@ -42,6 +42,8 @@ GREYNOISE_COMMUNITY = "https://api.greynoise.io/v3/community/{}"
 
 VT_KEY = "personal-vt-key-0123"
 OTX_KEY = "personal-otx-key-4567"
+FG_KEY = "personal-fg-key-89ab"
+FG_SEARCH = "https://ioc-api.fortiguard.com/v1/threat_intel_search"
 SYS_VT_KEY = "system-vt-key"
 SYS_OTX_KEY = "system-otx-key"
 
@@ -250,6 +252,33 @@ class TestTestKey:
         assert route.calls[0].request.headers["X-OTX-API-KEY"] == OTX_KEY
 
     @respx.mock
+    def test_fortiguard_ok_found_and_not_found(self):
+        """FortiGuard has no whoami: 200 (found) and 404 (auth OK, unknown
+        indicator) both count as Connected; 401/403/429 fail."""
+        from scry.enrichment.user_keys import test_key
+
+        route = respx.get(FG_SEARCH).mock(return_value=httpx.Response(200, json={"wf_cate": "Botnet"}))
+        ok, error = test_key("fortiguard", FG_KEY)
+        assert ok and error == ""
+        assert route.calls[0].request.headers["api_key"] == FG_KEY
+        assert route.calls[0].request.url.params["indicator"] == "94.100.18.64"
+
+        route.mock(return_value=httpx.Response(404))
+        ok, error = test_key("fortiguard", FG_KEY)
+        assert ok and error == ""
+
+    @respx.mock
+    @pytest.mark.parametrize("status", [401, 403, 429])
+    def test_fortiguard_failures(self, status):
+        from scry.enrichment.user_keys import test_key
+
+        respx.get(FG_SEARCH).mock(return_value=httpx.Response(status))
+        ok, error = test_key("fortiguard", FG_KEY)
+        assert not ok
+        assert f"HTTP {status}" in error
+        assert FG_KEY not in error
+
+    @respx.mock
     @pytest.mark.parametrize("status", [401, 403, 500])
     def test_failures_report_status_not_key(self, status):
         from scry.enrichment.user_keys import test_key
@@ -282,6 +311,7 @@ class TestMyKeysUi:
         assert "My API keys" in r.text
         assert "VirusTotal" in r.text
         assert "AlienVault OTX" in r.text
+        assert "FortiGuard" in r.text
 
     def test_saved_key_masked_in_page(self):
         from scry.enrichment.user_keys import set_key

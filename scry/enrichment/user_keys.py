@@ -28,10 +28,14 @@ from scry.models import UserFeedKey
 
 VT_USER_URL = "https://www.virustotal.com/api/v3/users/current"
 OTX_USER_URL = "https://otx.alienvault.com/api/v1/users/me"
+# FortiGuard has no "whoami" endpoint — the authenticated check is a known-live
+# indicator lookup (200 = found, 404 = auth OK but indicator unknown; both fine).
+FG_TEST_URL = "https://ioc-api.fortiguard.com/v1/threat_intel_search"
 
 _PROVIDER_TEST_URL = {
     "virustotal": VT_USER_URL,
     "otx": OTX_USER_URL,
+    "fortiguard": FG_TEST_URL,
 }
 
 
@@ -107,10 +111,31 @@ def test_key(provider: str, api_key: str, *, timeout: float = 15.0) -> tuple[boo
     """Cheap authenticated check that a personal key works.
 
     VT: GET /api/v3/users/current (200 = ok). OTX: GET /api/v1/users/me
-    (200 = ok). Returns (ok, error). The error is sanitized — it can never
-    contain the key.
+    (200 = ok). FortiGuard: GET /v1/threat_intel_search on a known-live
+    sample (200 = found, 404 = auth accepted but sample not in intel — both
+    count as connected). Returns (ok, error). The error is sanitized — it
+    can never contain the key.
     """
     validate_provider(provider)
+    if provider == "fortiguard":
+        try:
+            with httpx.Client(timeout=httpx.Timeout(timeout)) as client:
+                r = client.get(
+                    FG_TEST_URL,
+                    params={"indicator": "94.100.18.64", "type": "ip"},
+                    headers={"api_key": api_key, "User-Agent": "Scry/0.1"},
+                )
+        except httpx.HTTPError as exc:
+            return False, _sanitize(f"connection error: {exc}", api_key)
+        if r.status_code in (200, 404):
+            return True, ""
+        if r.status_code == 401:
+            return False, "HTTP 401: key rejected"
+        if r.status_code == 403:
+            return False, "HTTP 403: key forbidden"
+        if r.status_code == 429:
+            return False, "HTTP 429: quota exceeded"
+        return False, _sanitize(f"HTTP {r.status_code}", api_key)
     headers = {
         "virustotal": {"x-apikey": api_key, "User-Agent": "Scry/0.1"},
         "otx": {"X-OTX-API-KEY": api_key, "User-Agent": "Scry/0.1"},
