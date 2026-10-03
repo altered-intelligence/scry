@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from scry.models.article import Article
+from scry.models.article import Article, ArticleEmbedding
 from scry.models.base import Base
 from scry.models.chat import ChatMessage, ChatSession
 from scry.models.claim import Claim
@@ -49,6 +49,7 @@ __all__ = [
     "AnalystReview",
     "ApiKey",
     "Article",
+    "ArticleEmbedding",
     "AttackMapping",
     "AuditLog",
     "Base",

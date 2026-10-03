@@ -116,6 +116,23 @@ def apply_migrations(conn: Connection) -> None:
             continue
         conn.execute(text(ddl))
     _apply_fts(conn)
+    _apply_embeddings(conn)
+
+
+def _apply_embeddings(conn: Connection) -> None:
+    """Backfill persisted article embeddings (best-effort, idempotent).
+
+    v0.12.0: semantic search scores stored vectors instead of re-embedding
+    the whole corpus per query. The table itself comes from create_all
+    (fresh + existing databases); this only embeds rows that are missing or
+    whose content changed. Batched and safe to resume.
+    """
+    try:
+        from scry.search.embeddings import backfill_embeddings
+
+        backfill_embeddings(conn)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("embeddings_migration_failed", exc=str(exc))
 
 
 def _apply_fts(conn: Connection) -> None:

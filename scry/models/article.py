@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, LargeBinary, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from scry.models.base import Base, IdMixin, TimestampMixin
@@ -32,3 +32,20 @@ class Article(Base, IdMixin, TimestampMixin):
     extractor_version: Mapped[str] = mapped_column(String(32), default="0")
 
     source: Mapped[Source] = relationship(back_populates="articles")  # noqa: F821
+
+
+class ArticleEmbedding(Base):
+    """Persisted semantic-search vector for one article (v0.12.0).
+
+    ``vector`` packs the 384-dim hash embedding as little-endian float32;
+    ``content_hash`` (MD5 over dim + embedded text) drives invalidation.
+    See ``scry/search/embeddings.py``.
+    """
+
+    __tablename__ = "article_embeddings"
+
+    article_id: Mapped[int] = mapped_column(ForeignKey("articles.id", ondelete="CASCADE"), primary_key=True)
+    vector: Mapped[bytes] = mapped_column(LargeBinary)
+    dim: Mapped[int] = mapped_column(Integer)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
