@@ -19,6 +19,10 @@ A defensive cyber threat intelligence platform that ingests public sources, extr
 
 ---
 
+## What's new in 0.10.0
+
+- **LLM idle-unload** — the embedded local model (~2 GB RSS) no longer stays resident forever: after `CTI_AI_IDLE_UNLOAD_S` seconds without inference (default 15 min; `0` disables) a background reaper releases it, and the next question transparently reloads (~12s). Unload can never fire mid-inference (it takes the inference lock and re-checks idleness under it), and `/api/ai/status` now shows `idle_seconds` / `idle_unload_s` next to `model_loaded`.
+
 ## What's new in 0.9.0
 
 - **FTS5 full-text search** — `/search`, the UI search box, MCP `scry_search`, and AI retrieval now run on SQLite FTS5 indexes (one per searchable object type) with `porter unicode61` tokenization, `bm25()` relevance ranking, and `snippet()` match excerpts, replacing the leading-wildcard LIKE full-table scans. Queries are sanitized into quoted AND-joined MATCH terms — operator characters can never break a query — and any failure falls back to the legacy LIKE scan (which is still the whole story on Postgres). Existing databases are indexed automatically by an idempotent, batched startup migration, and the write paths (feed ingestion, OTX pulses, full-content fetches, pipeline extraction) keep the index in sync incrementally. Entity **alias** search works now, too.

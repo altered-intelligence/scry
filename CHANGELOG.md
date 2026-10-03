@@ -4,6 +4,21 @@ All notable changes to Scry are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 semantic versioning.
 
+## [0.10.0] — 2026-10-03
+
+### Added
+
+- **LLM idle-unload.** The embedded local model (llama.cpp, ~2 GB RSS) is
+  now released after `CTI_AI_IDLE_UNLOAD_S` seconds without inference
+  (default 900; `0` disables). A daemon reaper thread — started on load,
+  exiting on unload, never lingering — performs the release; the next ask
+  transparently reloads (~12s, same as the first load). Unload takes the
+  inference lock first, so it can never fire mid-inference, and the idle
+  timestamp is refreshed at the *end* of each inference so long answers
+  don't count as idle. The model is also released on app shutdown via the
+  FastAPI lifespan. `/api/ai/status` now reports `idle_seconds` and
+  `idle_unload_s` alongside `model_loaded`.
+
 ## [0.9.0] — 2026-10-02
 
 ### Added

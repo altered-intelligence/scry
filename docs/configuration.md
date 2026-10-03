@@ -70,6 +70,7 @@ require authentication (session cookie, per-user API key, or the master
 | `CTI_AI_SEARCH_MAX_TOKENS` | `512` | Answer length cap — keeps latency sane on small machines. |
 | `CTI_AI_SEARCH_MAX_SOURCES` | `8` | Top search hits fed to the model as grounded context. |
 | `CTI_AI_SEARCH_TIMEOUT_S` | `120` | Hard timebox for one answer (the first answer includes ~10s model load). |
+| `CTI_AI_IDLE_UNLOAD_S` | `900` | Release the embedded model after this many idle seconds (frees ~2 GB RSS); the next question transparently reloads. `0` keeps the model resident forever. |
 
 ### Retention
 
