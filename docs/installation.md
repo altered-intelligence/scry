@@ -55,6 +55,44 @@ scheduler outside Docker — launchd on macOS (`scry scheduler install`),
 systemd on Linux — and the optional daily digest email, see
 [scheduling.md](./scheduling.md).
 
+### Image hardening (v0.13.0)
+
+The image is a **multi-stage build**: a `builder` stage installs the pinned
+dependency set (`requirements.lock`) into a virtualenv, and the
+`python:3.12-slim` runtime stage copies only that venv — no compilers,
+headers, or pip caches in the final image. Runtime dependencies are
+self-contained wheels (`psycopg[binary]` bundles libpq; cryptography/lxml/
+pillow link statically), so the final stage installs zero system packages.
+
+The container runs as a **non-root `scry` user** (uid/gid 1000) with `/app`
+as the only writable tree: the SQLite default DB, `.cti_cache/`, and
+`reports/` land in the working directory, and the auto-generated Fernet key
+is relocated to `/app/data/.cti_secret` via `CTI_SECRET_FILE` (the package
+itself sits in read-only site-packages). A `HEALTHCHECK` probes `/health`
+every 30 s using python urllib (no curl in the image).
+
+**Persistence:** mount `/app/data` to keep the encryption key across
+rebuilds — without it, re-creating the container generates a new key and
+previously stored (encrypted) API keys become unreadable. The compose bundle
+wires this as the `cti_data` named volume on `api` and `scheduler`. For a
+standalone SQLite container:
+
+```bash
+docker build -t scry .
+docker run -p 8000:8000 -v scry_data:/app/data \
+  -e CTI_DATABASE_URL=sqlite+pysqlite:////app/data/cti.sqlite \
+  scry
+```
+
+**Reproducible builds:** dependencies are pinned by `requirements.lock`
+(exact versions, generated from a clean `pip install .`). Refresh after
+dependency changes with:
+
+```bash
+python3.12 -m venv /tmp/lock && /tmp/lock/bin/pip install . \
+  && /tmp/lock/bin/pip freeze | grep -v '^scry' > requirements.lock
+```
+
 Endpoints once running:
 
 - Dashboard: <http://localhost:8000/>

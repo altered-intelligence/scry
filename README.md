@@ -19,6 +19,10 @@ A defensive cyber threat intelligence platform that ingests public sources, extr
 
 ---
 
+## What's new in 0.13.0
+
+- **Docker hardening** — the image is now a multi-stage build on `python:3.12-slim`: a builder stage installs the pinned dependency set (new `requirements.lock` — exact versions instead of a floating `pip install .`) into a virtualenv, and the runtime stage ships only that venv: no compilers, headers, or pip caches, and zero runtime system packages (deps are self-contained wheels; `psycopg[binary]` bundles libpq). The container runs as a non-root `scry` user (uid 1000), gains a `/health` `HEALTHCHECK` (python urllib — curl removed), and the auto-generated Fernet key moves to `/app/data/.cti_secret` via the new `CTI_SECRET_FILE` setting so it can live on a volume — compose now mounts a `cti_data` named volume for exactly that (previously, re-creating the container silently made stored encrypted API keys unreadable). `.dockerignore` tightened (tests/docs/logs/coverage/secrets out of the build context). Verified without a Docker daemon on the release machine: full container simulation (fresh venv installed from the lock only, booted from a clean directory — `/health` 200, UI rendered from the wheel, key written 0600 at the override path) plus static compose/`.dockerignore` validation; `docker build` on a daemon-equipped host remains the final check.
+
 ## What's new in 0.12.0
 
 - **Persisted semantic embeddings** — article vectors are now computed once and stored (`article_embeddings`: 384-dim float32, 1536 B/row) instead of re-embedding the entire corpus on every search. A per-row content hash rewrites only rows whose text actually changed, a stored dimension auto-invalidates on algorithm changes, and an idempotent batched startup migration backfills existing databases (SQLite; Postgres keeps the legacy path plus the new write hooks). Query time embeds only the query string and scores the stored vectors in one pass (numpy when present, pure-Python fallback; ranking unchanged and parity-tested) — ~2× faster on the real 445-article corpus (0.117s → 0.057s), with the gap widening as the corpus grows.

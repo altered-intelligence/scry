@@ -1,6 +1,6 @@
 # Scry — Project Handbook & AI Handoff Document
 
-**Version:** 0.12.0 · **Repo:** https://github.com/altered-intelligence/scry · **License:** Apache-2.0
+**Version:** 0.13.0 · **Repo:** https://github.com/altered-intelligence/scry · **License:** Apache-2.0
 **Purpose of this document:** Explain what this project is, how it was built ("vibe coding" methodology), how it's organized, how GitHub is used as a backup, and — most importantly — provide a **master prompt** that lets any AI coding assistant (Claude Code, Codex, DeepSeek, Kimi, etc.) pick up development or recreate the project from scratch in any environment.
 
 ---
@@ -66,6 +66,7 @@ Track conventions:
 | **v0.10.0** | 2026-10-03 | **LLM idle-unload** (v0.9.x track item 2): embedded llama.cpp model (~2 GB RSS) released after `CTI_AI_IDLE_UNLOAD_S` idle seconds (default 900, 0=never); daemon reaper thread (starts on load, exits on unload); unload takes the inference lock + re-checks idleness under it → never mid-inference; next ask transparently reloads (~12s); lifespan shutdown unload; `/api/ai/status` gains `idle_seconds`/`idle_unload_s`. Live-verified: loaded → idle-flip at ~24s (TTL=20) → transparent reload, real answers both asks. 740 tests. |
 | **v0.11.0** | 2026-10-03 | **Scheduled collection + email digest** (v0.9.x track item 3): scheduler digest job emails the daily report at HH:12 local (`CTI_DIGEST_EMAIL_ENABLED/TO/HOUR`, off by default; registered only when enabled+addressed; clean skip without SMTP; never raises; multipart plain+`text/markdown`; subject carries 24h article/high-risk counts). `scry scheduler install/uninstall/status/run` — launchd LaunchAgent writer (idempotent; venv python + repo cwd + absolute `CTI_DATABASE_URL`; `logs/` gitignored; loads only with `--load`); systemd example in `docs/scheduling.md`. Live-verified: SMTP-missing skip on real DB, plist correct in temp dir, real launchd untouched. 752 tests. |
 | **v0.12.0** | 2026-10-03 | **Persisted semantic embeddings** (v0.9.x track item 4): article vectors computed once → new `article_embeddings` table (384-dim float32 packed, 1536 B/row; per-row `content_hash` rewrites only changed rows; stored `dim` auto-invalidates on algorithm change); write-time sync at the same hooks as FTS (ingest/OTX/full-fetch/pipeline-redaction); idempotent batched startup backfill (SQLite; Postgres keeps the legacy live path + write hooks); query path embeds only the query string, columnar vector load, numpy scoring with pure-Python fallback (numpy is not a base dep), self-healing stragglers; ranking unchanged (parity regression tests). Live-verified on the real 445-article DB: backfill 445/445, legacy↔persisted parity exact (REST top-5 ids [216, 154, 1, 323, 344] on both paths), 0.117s → 0.057s (~2×; per-query scaling O(N·text)→O(dim)). Isolation note: a full clean suite run provably never touches `./cti.sqlite` (canary experiment) — embeddings rows in the real DB came from an intentional mid-dev migration smoke-test against it (harmless: idempotent, hash-verified). 764 tests. |
+| **v0.13.0** | 2026-10-03 | **Docker hardening** (v0.9.x track item 5): multi-stage Dockerfile — `builder` installs the pinned dep set into a venv, `python:3.12-slim` runtime copies only that venv (no toolchain/pip caches; zero runtime system packages — deps are self-contained wheels, `psycopg[binary]` bundles libpq); non-root `scry` user (uid 1000, `/app` the only writable tree); `HEALTHCHECK` probes `/health` via python urllib (curl dropped); new `requirements.lock` (104 exact pins; refresh recipe in `docs/installation.md`) replaces floating `pip install .`; unused `AS base` alias gone; base 3.11 → 3.12; `.dockerignore` += tests/docs/logs/coverage/`.github`/non-README Markdown. New `CTI_SECRET_FILE` setting relocates the auto-generated Fernet key (default path is read-only site-packages in installs) — Dockerfile sets `/app/data/.cti_secret`, compose mounts a new `cti_data` volume there on api+scheduler (previously container re-creation silently orphaned stored encrypted secrets). No Docker daemon on the release machine → verified by full container simulation (venv built **from the lock only** + `--no-deps .`, booted from a clean cwd: `/health` 200 in 6s, UI rendered from the wheel 22 KB, crypto roundtrip with key at `CTI_SECRET_FILE` mode 0600) + static compose/lock/`.dockerignore` assertions; `docker build` on a daemon host remains the final check. +3 crypto tests. 767 tests. |
 
 **Session pattern that worked:** research/plan → implement step → run tests → live-verify on a running dev server → commit → repeat → release. Large features (auth, sources admin) were always split into 4–7 steps so progress survived session limits.
 
@@ -82,8 +83,8 @@ Track conventions:
 | Scheduling | APScheduler (in-process; optional separate compose service) |
 | AI | Provider abstraction in `scry/ai/providers/` (local GGUF via llama-cpp-python, Ollama, OpenAI, Anthropic, Google, xAI); persisted offline hash-embedding semantic search (pgvector planned) |
 | Auth | bcrypt, DB-backed sessions (sliding 7-day), TOTP (pyotp + qrcode), WebAuthn (webauthn ≥2.0), per-user API keys |
-| Crypto | Fernet (cryptography ≥42) for at-rest secrets; key file `.cti_secret` (gitignored) |
-| Quality | pytest (764 tests), ruff, black, mypy; CI matrix on push/PR; gitleaks secret scanning |
+| Crypto | Fernet (cryptography ≥42) for at-rest secrets; key file `.cti_secret` (gitignored; relocatable via `CTI_SECRET_FILE`) |
+| Quality | pytest (767 tests), ruff, black, mypy; CI matrix on push/PR; gitleaks secret scanning |
 | Integrations | Feedparser/trafilatura/readability/bs4 (parsing), httpx + tenacity (fetch), structlog, orjson |
 
 ### Key subpackages (`scry/`)
@@ -156,7 +157,7 @@ uvicorn scry.main:app --reload     # http://localhost:8000  (/docs = OpenAPI)
 # First visit with zero users → /setup creates the first admin
 
 # Everyday verification loop
-.venv/bin/pytest -q                # 764 tests must pass
+.venv/bin/pytest -q                # 767 tests must pass
 .venv/bin/ruff check scry tests
 scry ingest-source "CISA Advisories" && scry stats
 
@@ -180,7 +181,7 @@ Server config: host/port via `CTI_API_HOST`/`CTI_API_PORT` (default 8000; a loca
 
 ## 7. Current State & Active Roadmap
 
-**Current:** v0.12.0 released (tag + GitHub release) — persisted semantic embeddings shipped (track item 4, after FTS5 v0.9.0, LLM idle-unload v0.10.0, scheduled digest v0.11.0). 764 tests green (~50s suite). CI + secret scanning green. Open follow-up: passive-DNS real-data verification — crt.sh was returning 502; the next `POST /enrichment/run?providers=passive_dns` backfills automatically once the service recovers.
+**Current:** v0.13.0 released (tag + GitHub release) — Docker hardening shipped (track item 5, after FTS5 v0.9.0, LLM idle-unload v0.10.0, scheduled digest v0.11.0, persisted embeddings v0.12.0). 767 tests green (~50s suite). CI + secret scanning green. Open follow-ups: passive-DNS real-data verification — crt.sh was returning 502; the next `POST /enrichment/run?providers=passive_dns` backfills automatically once the service recovers. Docker: no daemon on the release machine — image verified by container simulation + static checks; run `docker build` once on a daemon-equipped host as the final check.
 
 **ACTIVE TRACK — v0.9.x "scale & ops" (owner-approved 2026-10-02, execute IN ORDER; ship each as its own minor release with docs + GitHub release):**
 
@@ -190,7 +191,7 @@ Server config: host/port via `CTI_API_HOST`/`CTI_API_PORT` (default 8000; a loca
 | 2 | **LLM idle-unload** (release the ~2 GB local-model RSS after ~15 min idle; `CTI_AI_IDLE_UNLOAD_S`; reload on next ask) | ✅ shipped as **v0.10.0** |
 | 3 | **Scheduled collection + email digest** (ensure scheduler runs daily — launchd/systemd docs or in-app; daily report delivered via existing mail.py SMTP) | ✅ shipped as **v0.11.0** |
 | 4 | **Persisted semantic embeddings** (embed at ingest, store vectors, query-time cosine instead of re-embedding the corpus per search) | ✅ shipped as **v0.12.0** |
-| 5 | **Docker hardening** (multi-stage build, non-root user, healthcheck, slim image) | ⬜ not started → **v0.13.0** |
+| 5 | **Docker hardening** (multi-stage build, non-root user, healthcheck, slim image) | ✅ shipped as **v0.13.0** |
 | 6 | **`raw_html` retention pruning** (configurable retention; raw HTML only needed for re-extraction; lifecycle job) | ⬜ not started → **v0.14.0** |
 
 Known issues accepted in v0.8.1 (from deep review, do not re-report): DNS-rebinding IP pinning documented-only (TLS SNI trade-off); FTS5/embeddings were the accepted deferral now scheduled as items 1+4 above.
@@ -221,7 +222,7 @@ Copy everything in the fenced block below verbatim. It contains everything a mod
 You are working on "scry" — a self-hosted threat-intelligence platform (defensive
 security OSINT collector/extractor/enricher with web UI, REST API, MCP server,
 STIX 2.1/TAXII 2.1 export, and multi-user auth). Public repo:
-https://github.com/altered-intelligence/scry (Apache-2.0). Current version: 0.12.0.
+https://github.com/altered-intelligence/scry (Apache-2.0). Current version: 0.13.0.
 
 If the repo is not present, clone it and set up:
     python3 -m venv .venv && source .venv/bin/activate
@@ -236,7 +237,7 @@ Python ≥3.11 · FastAPI + uvicorn · SQLAlchemy 2.0 (SQLite default, Postgres+
 optional) · Alembic · Jinja2 server-rendered UI · Typer CLI (`scry`) · APScheduler ·
 provider-based AI (local GGUF llama-cpp-python / Ollama / OpenAI / Anthropic / Google /
 xAI) · bcrypt + TOTP + WebAuthn auth · Fernet at-rest secret encryption (key file
-.cti_secret) · pytest (764 tests) · ruff/black/mypy · gitleaks CI.
+.cti_secret) · pytest (767 tests) · ruff/black/mypy · gitleaks CI.
 
 # GOLDEN RULES (non-negotiable)
 1. DEFENSIVE-ONLY: never weaken SECURITY.md boundaries — SSRF guard, fail-closed

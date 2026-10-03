@@ -4,6 +4,42 @@ All notable changes to Scry are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 semantic versioning.
 
+## [0.13.0] — 2026-10-03
+
+### Added
+
+- **`CTI_SECRET_FILE` setting** — relocates the auto-generated Fernet key
+  from its default next-to-the-package location. Required for
+  container/installed deployments where site-packages is read-only; the
+  Dockerfile sets it to `/app/data/.cti_secret`. An empty value falls back
+  to the default.
+
+### Changed
+
+- **Docker hardening.** The image is now a multi-stage build: a `builder`
+  stage installs the pinned dependency set into a virtualenv, and the
+  `python:3.12-slim` runtime stage copies only that venv — no
+  `build-essential`/`libpq-dev`, no pip caches, and zero runtime system
+  packages (runtime deps are self-contained wheels; `psycopg[binary]`
+  bundles libpq). The container runs as a dedicated non-root `scry` user
+  (uid/gid 1000) with `/app` as the only writable tree, and gains a
+  `HEALTHCHECK` probing `/health` via python urllib (curl removed).
+  Dependencies are pinned by a new `requirements.lock` (exact versions;
+  refresh recipe in `docs/installation.md`) instead of a floating
+  `pip install .`. The unused `AS base` alias is gone; base image moved
+  3.11 → 3.12. `.dockerignore` additionally excludes tests/, docs/, logs/,
+  coverage artifacts, `.github/`, and all Markdown except README.md.
+  Verified without a Docker daemon on the release machine — full container
+  simulation (fresh venv installed from the lock only, booted from a clean
+  directory: `/health` 200, UI rendered from the wheel, Fernet key written
+  0600 at the override path) plus static compose/lock/`.dockerignore`
+  checks; `docker build` on a daemon-equipped host remains the final check.
+- **docker-compose** gains a `cti_data` named volume at `/app/data` on
+  `api` and `scheduler`, persisting the relocated Fernet key across
+  container re-creation (previously stored encrypted secrets silently
+  became unreadable on rebuild). Postgres/redis services unchanged; the
+  deliberate `CTI_OPEN_ACCESS=true` local-demo comment is kept.
+
 ## [0.12.0] — 2026-10-03
 
 ### Added
