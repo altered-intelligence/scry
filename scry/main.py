@@ -2907,9 +2907,9 @@ def ui_tag_detail(tag: str, request: Request, session: Session = Depends(get_ses
 
 @app.get("/ui/sources", response_class=HTMLResponse)
 def ui_sources(request: Request, session: Session = Depends(get_session)):
-    # `local://` rows are one-time bulk-import origins (e.g. WEF Atlas workbooks),
-    # not recurring feeds — they stay in the DB for data lineage but are hidden
-    # here so the Sources page lists only real collection sources.
+    # `local://` rows are one-time bulk-import origins, not recurring feeds —
+    # they stay in the DB for data lineage but are hidden here so the Sources
+    # page lists only real collection sources.
     sources = list(
         session.scalars(
             select(Source)

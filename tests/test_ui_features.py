@@ -262,8 +262,13 @@ class TestSourcesPage:
             SourceRegistry(s).sync_from_yaml()
             sophos = s.scalar(select(Source).where(Source.name == "Sophos X-Ops"))
             ais = s.scalar(select(Source).where(Source.name == "CISA AIS (TAXII)"))
-            assert sophos is not None and sophos.enabled is False
+            cvemon = s.scalar(select(Source).where(Source.name == "CVEmon"))
+            # v0.15.1 — Sophos re-enabled at its post-migration URL
+            # (sophos.com/blog/en-us/feed/); AIS stays a placeholder stub.
+            assert sophos is not None and sophos.enabled is True
+            assert sophos.feed == "https://www.sophos.com/blog/en-us/feed/"
             assert ais is not None and ais.enabled is False
+            assert cvemon is not None and cvemon.enabled is False
 
     def test_nav_contains_sources_link_in_intel_feeds_dropdown(self):
         with TestClient(app) as client:

@@ -201,15 +201,16 @@ sources:
 
   - name: Sophos X-Ops
     type: vendor_blog
-    url: https://news.sophos.com/en-us/
-    enabled: false
+    url: https://www.sophos.com/blog/en-us/
+    feed: https://www.sophos.com/blog/en-us/feed/
+    enabled: true
     priority: medium
     baseline_confidence: 88
     collection_policy: safe_public_web
     independent: true
     rate_limit_per_minute: 10
     tags: [vendor, threat-research]
-    notes: "Disabled: RSS endpoint broke after Sophos site migration (news.sophos.com feeds now redirect to 404). Re-enable once a working feed URL is confirmed."
+    notes: "Post-migration (2025) Sophos blog lives at sophos.com/blog; news.sophos.com 301-redirects there. Feed URL confirmed via redirect target. Sophos CDN may throttle non-browser clients — failures retry on the normal schedule."
 
   # ---------- News & media ----------
   - name: SecurityWeek

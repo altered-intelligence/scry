@@ -20,10 +20,10 @@ semantic versioning.
 ### Changed
 
 - **Bulk-import origins hidden from the Sources page** — one-time local
-  imports (sources with `local://` URLs, e.g. WEF Atlas workbooks) are not
-  recurring feeds: they no longer render on /ui/sources and can no longer
-  be mistaken for collection sources, while the rows (and every article /
-  observable extracted from them) stay in the database for data lineage.
+  imports (sources with `local://` URLs) are not recurring feeds: they no
+  longer render on /ui/sources and can no longer be mistaken for collection
+  sources, while the rows (and every article / observable extracted from
+  them) stay in the database for data lineage.
 - The Sources page counts now reflect visible collection sources only.
 
 ## [0.15.0] — 2026-10-03

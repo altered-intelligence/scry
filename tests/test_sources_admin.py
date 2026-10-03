@@ -127,24 +127,24 @@ class TestSourcesPageRendering:
         assert "Collection is global" in r.text
 
     def test_local_import_origins_hidden_from_page_but_kept_in_db(self):
-        """v0.15.0 — one-time bulk-import origins (local:// URLs, e.g. WEF Atlas
-        workbooks) are not recurring feeds: hidden from the Sources GUI, kept
-        in the DB for data lineage (articles/observables stay intact)."""
+        """One-time bulk-import origins (local:// URLs) are not recurring
+        feeds: hidden from the Sources GUI, kept in the DB for data lineage
+        (articles/observables stay intact)."""
         client = client_as("carol", role="admin")
         with session_scope() as s:
             s.add(
                 Source(
-                    name="WEF Atlas Test Hunt (Local Import)",
+                    name="Local File Import (Test)",
                     type="local_file",
-                    url="local://wef-atlas-test",
+                    url="local://test-import",
                     enabled=False,
                 )
             )
         r = client.get("/ui/sources")
         assert r.status_code == 200
-        assert "WEF Atlas Test Hunt" not in r.text
+        assert "Local File Import (Test)" not in r.text
         with session_scope() as s:
-            row = s.scalar(select(Source).where(Source.url == "local://wef-atlas-test"))
+            row = s.scalar(select(Source).where(Source.url == "local://test-import"))
             assert row is not None  # lineage row survives
             s.delete(row)
 
@@ -175,7 +175,7 @@ class TestSourceToggle:
 
     def test_admin_toggle_back_on(self):
         client = client_as("root", role="admin")
-        sid = source_id("Sophos X-Ops")
+        sid = source_id("CVEmon")  # ships disabled in config/sources.yaml
         assert enabled_in_db(sid) is False
         r = client.post(f"/ui/sources/{sid}/toggle", data={"csrf": csrf_for(client)}, follow_redirects=False)
         assert r.status_code == 303
