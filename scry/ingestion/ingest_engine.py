@@ -24,7 +24,7 @@ from scry.ingestion.source_registry import SourceRegistry
 from scry.logging import get_logger
 from scry.models import CVE, Article, Source, SourceFetch
 from scry.parsing.article_parser import parse_article
-from scry.search import fts
+from scry.search import embeddings, fts
 
 logger = get_logger("ingest_engine")
 PARSER_VERSION = "0.1"
@@ -209,7 +209,7 @@ class IngestionEngine:
         return {"updated": updated, "failed": failed, "skipped": skipped}
 
     def _index_fts(self, article_ids: list[int]) -> None:
-        """Refresh FTS5 entries for newly ingested/updated articles.
+        """Refresh FTS5 entries + embeddings for newly ingested/updated articles.
 
         Best-effort: a search-index hiccup must never fail an ingest.
         """
@@ -217,6 +217,7 @@ class IngestionEngine:
             return
         try:
             fts.index_rows(self.session, "article", article_ids)
+            embeddings.sync_article_embeddings(self.session, article_ids)
             self.session.commit()
         except Exception as exc:  # pragma: no cover - defensive
             self.session.rollback()

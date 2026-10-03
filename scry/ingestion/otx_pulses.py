@@ -31,7 +31,7 @@ from sqlalchemy.orm import Session
 from scry.config import load_otx_pulse_subscriptions
 from scry.logging import get_logger
 from scry.models import Article, Source, SystemSetting
-from scry.search import fts
+from scry.search import embeddings, fts
 
 logger = get_logger("otx_pulses")
 
@@ -325,9 +325,10 @@ def pull_subscription(client: OTXPulseClient, sub: PulseSubscription, session: S
         counts["added"] += 1
 
     session.commit()
-    # Keep the FTS5 index in sync for new/changed pulse articles (best-effort).
+    # Keep the FTS5 index + embeddings in sync for new/changed pulse articles (best-effort).
     try:
         fts.index_rows(session, "article", touched_ids)
+        embeddings.sync_article_embeddings(session, touched_ids)
         session.commit()
     except Exception as exc:  # pragma: no cover - defensive
         session.rollback()

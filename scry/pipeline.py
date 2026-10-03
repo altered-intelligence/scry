@@ -40,7 +40,7 @@ from scry.scoring import SCORING_MODEL_VERSION
 from scry.scoring.confidence import ConfidenceInputs, ConfidenceScorer
 from scry.scoring.lifecycle import LifecycleEngine
 from scry.scoring.risk import RiskInputs, RiskScorer, expiration_from_ttl, recency_days
-from scry.search import fts
+from scry.search import embeddings, fts
 
 logger = get_logger("pipeline")
 
@@ -167,16 +167,19 @@ class CTIPipeline:
     def _sync_fts(
         self, article_id: int, observable_ids: list[int], entity_ids: list[int], claim_ids: list[int]
     ) -> None:
-        """Refresh FTS5 index entries for everything this run touched.
+        """Refresh search-side derived data (FTS5 + embeddings) this run touched.
 
         Runs after the main commit so index values read committed content;
         failures never break the pipeline (LIKE fallback keeps search alive).
+        The article embedding matters here because redaction may have
+        rewritten ``extracted_text`` during this run.
         """
         try:
             fts.index_rows(self.session, "article", [article_id])
             fts.index_rows(self.session, "observable", observable_ids)
             fts.index_rows(self.session, "entity", entity_ids)
             fts.index_rows(self.session, "claim", claim_ids)
+            embeddings.sync_article_embeddings(self.session, [article_id])
             self.session.commit()
         except Exception as exc:  # pragma: no cover - defensive
             self.session.rollback()
