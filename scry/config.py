@@ -77,8 +77,8 @@ class Settings(BaseSettings):
     ai_idle_unload_s: int = 900  # release the local model after this many idle seconds (0 = never unload)
 
     # Retention
-    retention_raw_html_days: int = 14
-    retention_article_text_days: int = 365
+    raw_html_retention_days: int = 30  # prune Article.raw_html older than this (0 = keep forever)
+    retention_article_text_days: int = 365  # reserved — not yet enforced
 
     # Alert channels (off until explicitly enabled)
     slack_webhook_url: str = ""
