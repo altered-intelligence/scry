@@ -45,6 +45,10 @@ services:
       - "8000:8000"
     volumes:
       - ./config:/app/config:ro
+      # Persists the auto-generated Fernet key (CTI_SECRET_FILE) and any
+      # container-local data across rebuilds. Without it, re-creating the
+      # container makes previously stored (encrypted) secrets unreadable.
+      - cti_data:/app/data
 
   scheduler:
     build: .
@@ -58,6 +62,8 @@ services:
     profiles: ["optional"]
     volumes:
       - ./config:/app/config:ro
+      - cti_data:/app/data
 
 volumes:
   cti_pgdata: {}
+  cti_data: {}
