@@ -17,6 +17,7 @@ Commands:
   reviews list             List open analyst reviews
   alerts list              List recent alerts
   decay run                Apply IOC decay
+  prune-html               Prune stored raw_html older than the retention horizon (--days, --dry-run)
   scheduler run            Run the scheduler in the foreground
   scheduler install        Write the macOS LaunchAgent plist (--load to activate, --dir to override)
   scheduler uninstall      Remove the LaunchAgent plist
@@ -412,6 +413,46 @@ def decay_run() -> None:
     with session_scope() as session:
         res = LifecycleEngine(session).apply_decay()
         console.print({"expired": res.expired, "refreshed": res.refreshed})
+
+
+@app.command("prune-html")
+def prune_html(
+    days: int = typer.Option(
+        -1, "--days", help="Retention horizon in days (default: the raw_html_retention_days setting)."
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Report counts + bytes without writing."),
+    vacuum: bool = typer.Option(
+        True, "--vacuum/--no-vacuum", help="VACUUM after a real prune (SQLite) to shrink the DB file."
+    ),
+) -> None:
+    """Prune stored raw_html for articles older than the retention horizon.
+
+    Keeps the article row, extracted_text, and all derived data; a pruned
+    article is re-fetched from its URL on demand by fetch_full_content.
+    0 days = keep forever (no-op).
+    """
+    from scry.config import get_settings
+    from scry.retention import human_bytes, prune_raw_html, vacuum_sqlite
+
+    retention = days if days >= 0 else get_settings().raw_html_retention_days
+    with session_scope() as session:
+        res = prune_raw_html(session, retention, dry_run=dry_run)
+
+    if not res["enabled"]:
+        console.print("[yellow]raw_html retention disabled (0 = keep forever) — nothing to do[/yellow]")
+        return
+    n = res["candidates"] if dry_run else res["pruned"]
+    verb = "Would prune" if dry_run else "Pruned"
+    prefix = "[yellow]DRY RUN[/yellow] " if dry_run else ""
+    console.print(
+        f"{prefix}{verb} raw_html for [bold]{n}[/bold] article(s) older than "
+        f"{retention}d — ~{human_bytes(res['bytes_reclaimed'])} reclaimable"
+    )
+    if not dry_run and res["pruned"] and vacuum:
+        if vacuum_sqlite(get_engine()):
+            console.print("[green]VACUUM done — database file shrunk[/green]")
+        else:
+            console.print("[yellow]VACUUM skipped (non-SQLite backend or database locked)[/yellow]")
 
 
 # ------------------------- scheduler service (v0.11.0) -------------------------

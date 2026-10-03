@@ -8,6 +8,8 @@ Default schedule (UTC, staggered so the two ingest jobs never collide):
   cluster refresh  hourly
   digest email     daily at HH:12 LOCAL time (only when
                    digest_email_enabled + digest_email_to are set)
+  raw_html prune   weekly, Sunday 04:47 UTC (skips cleanly when
+                   raw_html_retention_days is 0 = keep forever)
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ from scry.mail import send_mail, smtp_configured
 from scry.models import Article, Observable
 from scry.pipeline import CTIPipeline
 from scry.reporting import generate_daily_report
+from scry.retention import prune_raw_html
 from scry.scoring.lifecycle import LifecycleEngine
 
 logger = get_logger("scheduler")
@@ -134,6 +137,23 @@ def _digest_job() -> None:
         logger.exception("digest_failed", exc=str(exc))
 
 
+def _prune_raw_html_job() -> None:
+    """Weekly raw_html retention prune. Skips cleanly when the retention is
+    0 (keep forever); errors are logged, never raised — the scheduler must
+    stay up either way."""
+    try:
+        settings = get_settings()
+        with session_scope() as session:
+            res = prune_raw_html(session, settings.raw_html_retention_days)
+            logger.info(
+                "raw_html_prune_done",
+                articles_pruned=res["pruned"],
+                bytes_reclaimed=res["bytes_reclaimed"],
+            )
+    except Exception as exc:
+        logger.exception("raw_html_prune_failed", exc=str(exc))
+
+
 def _build_scheduler(settings) -> BlockingScheduler:
     """Assemble the scheduler with all jobs (digest only when enabled)."""
     sched = BlockingScheduler(timezone="UTC")
@@ -144,6 +164,9 @@ def _build_scheduler(settings) -> BlockingScheduler:
     sched.add_job(_alerts_job, "interval", minutes=15, id="alerts")
     sched.add_job(_cluster_job, "interval", hours=1, id="cluster")
     sched.add_job(_decay_job, "interval", hours=24, id="decay")
+    # Weekly retention prune — off-peak minute, clear of the :04/:34/:19/:49
+    # ingest jobs and the HH:12 digest.
+    sched.add_job(_prune_raw_html_job, "cron", day_of_week="sun", hour=4, minute=47, id="raw_html_prune")
     if settings.digest_email_enabled and settings.digest_email_to:
         hour = min(23, max(0, settings.digest_email_hour))  # clamp junk env values
         local_tz = datetime.now().astimezone().tzinfo  # digest is a local-time job
