@@ -2,11 +2,13 @@
 
 The Fernet key lives at ``.cti_secret`` in the project root and is auto-generated
 on first use. Add ``.cti_secret`` to ``.gitignore`` — it must NEVER be checked in.
+Set ``CTI_SECRET_FILE`` to relocate the key (containers, read-only installs).
 """
 
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -17,14 +19,26 @@ _HERE = Path(__file__).resolve().parent.parent
 _SECRET_PATH = _HERE / ".cti_secret"
 
 
+def _secret_path() -> Path:
+    """Resolve the key file location at call time.
+
+    ``CTI_SECRET_FILE`` wins when set — installed/container deployments put the
+    package in read-only site-packages, where the default path is unwritable.
+    Tests may still monkeypatch the ``_SECRET_PATH`` fallback directly.
+    """
+    override = os.environ.get("CTI_SECRET_FILE")
+    return Path(override) if override else _SECRET_PATH
+
+
 def _get_key() -> bytes:
     """Load or generate the Fernet key."""
-    if _SECRET_PATH.exists():
-        return _SECRET_PATH.read_bytes().strip()
+    path = _secret_path()
+    if path.exists():
+        return path.read_bytes().strip()
     key = Fernet.generate_key()
-    _SECRET_PATH.write_bytes(key)
+    path.write_bytes(key)
     try:
-        _SECRET_PATH.chmod(0o600)
+        path.chmod(0o600)
     except OSError as exc:
         _log.warning("cti_secret_chmod_failed: %s — key file may be world-readable", exc)
     return key
