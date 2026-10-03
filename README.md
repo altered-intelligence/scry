@@ -19,6 +19,11 @@ A defensive cyber threat intelligence platform that ingests public sources, extr
 
 ---
 
+## What's new in 0.11.0
+
+- **Daily digest email** — the scheduler can now email the daily report every morning (default 07:12 local, `CTI_DIGEST_EMAIL_HOUR`) when `CTI_DIGEST_EMAIL_ENABLED=true` + `CTI_DIGEST_EMAIL_TO` are set; multipart plain-text + Markdown body, subject with article/high-risk counts. Off by default, and a clean logged skip (never a crash) when SMTP isn't configured.
+- **`scry scheduler install`** — one-command launchd setup on macOS: writes `~/Library/LaunchAgents/com.scry.scheduler.plist` (current venv interpreter, project working directory, absolute `CTI_DATABASE_URL`, logs under `logs/`, RunAtLoad + KeepAlive), idempotent, with `uninstall` / `status` / `run` companions and a systemd unit example for Linux in [`docs/scheduling.md`](./docs/scheduling.md).
+
 ## What's new in 0.10.0
 
 - **LLM idle-unload** — the embedded local model (~2 GB RSS) no longer stays resident forever: after `CTI_AI_IDLE_UNLOAD_S` seconds without inference (default 15 min; `0` disables) a background reaper releases it, and the next question transparently reloads (~12s). Unload can never fire mid-inference (it takes the inference lock and re-checks idleness under it), and `/api/ai/status` now shows `idle_seconds` / `idle_unload_s` next to `model_loaded`.

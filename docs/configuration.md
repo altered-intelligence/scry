@@ -79,6 +79,14 @@ require authentication (session cookie, per-user API key, or the master
 | `CTI_RETENTION_RAW_HTML_DAYS` | `14` | Days to keep raw fetched HTML. |
 | `CTI_RETENTION_ARTICLE_TEXT_DAYS` | `365` | Days to keep extracted article text. |
 
+### Daily digest email (requires SMTP — see [scheduling.md](./scheduling.md))
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `CTI_DIGEST_EMAIL_ENABLED` | `false` | Scheduler job that emails the daily report every morning. |
+| `CTI_DIGEST_EMAIL_TO` | _(empty)_ | Digest recipient; the job stays unregistered while empty. |
+| `CTI_DIGEST_EMAIL_HOUR` | `7` | Local hour the digest fires (always at minute :12). |
+
 ### Alert channels (inert unless `CTI_ENABLE_OUTBOUND_ALERTS=true`)
 
 | Variable | Default | Purpose |

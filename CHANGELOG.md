@@ -4,6 +4,31 @@ All notable changes to Scry are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 semantic versioning.
 
+## [0.11.0] — 2026-10-03
+
+### Added
+
+- **Daily digest email job.** The scheduler can now generate the daily
+  report and email it every morning at HH:12 local time (default 07:12).
+  Off by default — new settings `CTI_DIGEST_EMAIL_ENABLED`,
+  `CTI_DIGEST_EMAIL_TO`, `CTI_DIGEST_EMAIL_HOUR`; the job is only registered
+  when enabled *and* addressed, skips with a clear log line when SMTP is not
+  configured, and never raises into the scheduler. The message is multipart
+  (plain text + `text/markdown` alternative of the same report —
+  `send_mail` gained an optional `markdown_body`); subject:
+  `Scry daily digest — YYYY-MM-DD (N articles, M high-risk)` (24 h window,
+  high-risk = risk ≥ 70).
+- **`scry scheduler install` / `uninstall` / `status` / `run`.** One-command
+  launchd setup on macOS: writes
+  `~/Library/LaunchAgents/com.scry.scheduler.plist` (idempotent —
+  reports installed/updated/unchanged) running the current venv interpreter
+  with `-m scry.scheduler`, `WorkingDirectory` at the repo, an absolute
+  `CTI_DATABASE_URL` (the default relative SQLite path is anchored),
+  `RunAtLoad` + `KeepAlive`, and logs under `logs/` (gitignored). Nothing is
+  loaded into launchd unless `--load` is passed; `status` shows
+  installed/loaded state and digest readiness. Linux systemd unit example in
+  `docs/scheduling.md`.
+
 ## [0.10.0] — 2026-10-03
 
 ### Added

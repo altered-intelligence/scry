@@ -50,7 +50,10 @@ docker compose up api
 
 The `api` service runs `alembic upgrade head` and then uvicorn on port 8000.
 A `scheduler` service (APScheduler recurring jobs) is available under the
-`optional` compose profile, as is a `redis` service.
+`optional` compose profile, as is a `redis` service. For running the
+scheduler outside Docker — launchd on macOS (`scry scheduler install`),
+systemd on Linux — and the optional daily digest email, see
+[scheduling.md](./scheduling.md).
 
 Endpoints once running:
 

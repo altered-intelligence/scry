@@ -1,6 +1,6 @@
 # Scry — Project Handbook & AI Handoff Document
 
-**Version:** 0.10.0 · **Repo:** https://github.com/altered-intelligence/scry · **License:** Apache-2.0
+**Version:** 0.11.0 · **Repo:** https://github.com/altered-intelligence/scry · **License:** Apache-2.0
 **Purpose of this document:** Explain what this project is, how it was built ("vibe coding" methodology), how it's organized, how GitHub is used as a backup, and — most importantly — provide a **master prompt** that lets any AI coding assistant (Claude Code, Codex, DeepSeek, Kimi, etc.) pick up development or recreate the project from scratch in any environment.
 
 ---
@@ -64,6 +64,7 @@ Track conventions:
 | **v0.8.2** | 2026-10-02 | **First-run setup required** — zero users + no API key no longer serves UI/API unauthenticated: redirects to `/setup` (setup mode can never return once an admin exists). Escape hatch `CTI_OPEN_ACCESS=true` (loud startup warning; docker-compose sets it deliberately). 702 tests. |
 | **v0.9.0** | 2026-10-02 | **FTS5 full-text search** (v0.9.x track item 1): FTS5 tables per searchable type (articles/observables/entities/claims, `porter unicode61`), `bm25()` ranking + `snippet()` excerpts for `/search`, UI, MCP, AI retrieval; sanitized quoted-AND MATCH with LIKE fallback on Postgres/old SQLite/any OperationalError; idempotent batched startup backfill; incremental sync wired into ingest/OTX/full-fetch/pipeline writes. Design pivot caught by tests: external-content FTS5 corrupts on delete-after-content-change → regular (content-owning) tables instead. Entity alias search works now. Live-verified on the real 445-article DB. 730 tests. |
 | **v0.10.0** | 2026-10-03 | **LLM idle-unload** (v0.9.x track item 2): embedded llama.cpp model (~2 GB RSS) released after `CTI_AI_IDLE_UNLOAD_S` idle seconds (default 900, 0=never); daemon reaper thread (starts on load, exits on unload); unload takes the inference lock + re-checks idleness under it → never mid-inference; next ask transparently reloads (~12s); lifespan shutdown unload; `/api/ai/status` gains `idle_seconds`/`idle_unload_s`. Live-verified: loaded → idle-flip at ~24s (TTL=20) → transparent reload, real answers both asks. 740 tests. |
+| **v0.11.0** | 2026-10-03 | **Scheduled collection + email digest** (v0.9.x track item 3): scheduler digest job emails the daily report at HH:12 local (`CTI_DIGEST_EMAIL_ENABLED/TO/HOUR`, off by default; registered only when enabled+addressed; clean skip without SMTP; never raises; multipart plain+`text/markdown`; subject carries 24h article/high-risk counts). `scry scheduler install/uninstall/status/run` — launchd LaunchAgent writer (idempotent; venv python + repo cwd + absolute `CTI_DATABASE_URL`; `logs/` gitignored; loads only with `--load`); systemd example in `docs/scheduling.md`. Live-verified: SMTP-missing skip on real DB, plist correct in temp dir, real launchd untouched. 752 tests. |
 
 **Session pattern that worked:** research/plan → implement step → run tests → live-verify on a running dev server → commit → repeat → release. Large features (auth, sources admin) were always split into 4–7 steps so progress survived session limits.
 
@@ -81,7 +82,7 @@ Track conventions:
 | AI | Provider abstraction in `scry/ai/providers/` (local GGUF via llama-cpp-python, Ollama, OpenAI, Anthropic, Google, xAI); offline hash-embedding semantic search (pgvector planned) |
 | Auth | bcrypt, DB-backed sessions (sliding 7-day), TOTP (pyotp + qrcode), WebAuthn (webauthn ≥2.0), per-user API keys |
 | Crypto | Fernet (cryptography ≥42) for at-rest secrets; key file `.cti_secret` (gitignored) |
-| Quality | pytest (740 tests), ruff, black, mypy; CI matrix on push/PR; gitleaks secret scanning |
+| Quality | pytest (752 tests), ruff, black, mypy; CI matrix on push/PR; gitleaks secret scanning |
 | Integrations | Feedparser/trafilatura/readability/bs4 (parsing), httpx + tenacity (fetch), structlog, orjson |
 
 ### Key subpackages (`scry/`)
@@ -154,7 +155,7 @@ uvicorn scry.main:app --reload     # http://localhost:8000  (/docs = OpenAPI)
 # First visit with zero users → /setup creates the first admin
 
 # Everyday verification loop
-.venv/bin/pytest -q                # 740 tests must pass
+.venv/bin/pytest -q                # 752 tests must pass
 .venv/bin/ruff check scry tests
 scry ingest-source "CISA Advisories" && scry stats
 
@@ -178,7 +179,7 @@ Server config: host/port via `CTI_API_HOST`/`CTI_API_PORT` (default 8000; a loca
 
 ## 7. Current State & Active Roadmap
 
-**Current:** v0.10.0 released (tag + GitHub release) — LLM idle-unload shipped (track item 2, after FTS5 in v0.9.0). 740 tests green (~60s suite). CI + secret scanning green. Open follow-up: passive-DNS real-data verification — crt.sh was returning 502; the next `POST /enrichment/run?providers=passive_dns` backfills automatically once the service recovers.
+**Current:** v0.11.0 released (tag + GitHub release) — scheduled collection + email digest shipped (track item 3, after FTS5 v0.9.0 and LLM idle-unload v0.10.0). 752 tests green (~50s suite). CI + secret scanning green. Open follow-up: passive-DNS real-data verification — crt.sh was returning 502; the next `POST /enrichment/run?providers=passive_dns` backfills automatically once the service recovers.
 
 **ACTIVE TRACK — v0.9.x "scale & ops" (owner-approved 2026-10-02, execute IN ORDER; ship each as its own minor release with docs + GitHub release):**
 
@@ -186,7 +187,7 @@ Server config: host/port via `CTI_API_HOST`/`CTI_API_PORT` (default 8000; a loca
 |---|---|---|
 | 1 | **FTS5 full-text search** (replace leading-wildcard LIKE scans across articles/observables/entities/claims; ~~external-content FTS5 tables + triggers~~ → regular content-owning FTS5 tables + write-path sync on SQLite (external content corrupts on delete-after-update), keeps Postgres path working; AI retrieval benefits automatically) | ✅ shipped as **v0.9.0** |
 | 2 | **LLM idle-unload** (release the ~2 GB local-model RSS after ~15 min idle; `CTI_AI_IDLE_UNLOAD_S`; reload on next ask) | ✅ shipped as **v0.10.0** |
-| 3 | **Scheduled collection + email digest** (ensure scheduler runs daily — launchd/systemd docs or in-app; daily report delivered via existing mail.py SMTP) | ⬜ not started → **v0.11.0** |
+| 3 | **Scheduled collection + email digest** (ensure scheduler runs daily — launchd/systemd docs or in-app; daily report delivered via existing mail.py SMTP) | ✅ shipped as **v0.11.0** |
 | 4 | **Persisted semantic embeddings** (embed at ingest, store vectors, query-time cosine instead of re-embedding the corpus per search) | ⬜ not started → **v0.12.0** |
 | 5 | **Docker hardening** (multi-stage build, non-root user, healthcheck, slim image) | ⬜ not started → **v0.13.0** |
 | 6 | **`raw_html` retention pruning** (configurable retention; raw HTML only needed for re-extraction; lifecycle job) | ⬜ not started → **v0.14.0** |
@@ -219,7 +220,7 @@ Copy everything in the fenced block below verbatim. It contains everything a mod
 You are working on "scry" — a self-hosted threat-intelligence platform (defensive
 security OSINT collector/extractor/enricher with web UI, REST API, MCP server,
 STIX 2.1/TAXII 2.1 export, and multi-user auth). Public repo:
-https://github.com/altered-intelligence/scry (Apache-2.0). Current version: 0.10.0.
+https://github.com/altered-intelligence/scry (Apache-2.0). Current version: 0.11.0.
 
 If the repo is not present, clone it and set up:
     python3 -m venv .venv && source .venv/bin/activate
@@ -234,7 +235,7 @@ Python ≥3.11 · FastAPI + uvicorn · SQLAlchemy 2.0 (SQLite default, Postgres+
 optional) · Alembic · Jinja2 server-rendered UI · Typer CLI (`scry`) · APScheduler ·
 provider-based AI (local GGUF llama-cpp-python / Ollama / OpenAI / Anthropic / Google /
 xAI) · bcrypt + TOTP + WebAuthn auth · Fernet at-rest secret encryption (key file
-.cti_secret) · pytest (740 tests) · ruff/black/mypy · gitleaks CI.
+.cti_secret) · pytest (752 tests) · ruff/black/mypy · gitleaks CI.
 
 # GOLDEN RULES (non-negotiable)
 1. DEFENSIVE-ONLY: never weaken SECURITY.md boundaries — SSRF guard, fail-closed
