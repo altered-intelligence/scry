@@ -20,6 +20,9 @@ from sqlalchemy import inspect, text
 from sqlalchemy.engine import Connection
 
 from scry.db import get_engine
+from scry.logging import get_logger
+
+logger = get_logger("migrations")
 
 
 @dataclass(frozen=True)
@@ -112,6 +115,24 @@ def apply_migrations(conn: Connection) -> None:
         if column not in {c["name"] for c in inspector.get_columns(table)}:
             continue
         conn.execute(text(ddl))
+    _apply_fts(conn)
+
+
+def _apply_fts(conn: Connection) -> None:
+    """Create + backfill the FTS5 search index (SQLite only, best-effort).
+
+    v0.9.0: FTS5 replaces leading-wildcard LIKE scans for full-text search.
+    Never block startup on the index — the LIKE fallback keeps search working.
+    """
+    if conn.dialect.name != "sqlite":
+        return
+    try:
+        from scry.search.fts import backfill_fts, ensure_fts_tables
+
+        if ensure_fts_tables(conn):
+            backfill_fts(conn)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("fts_migration_failed", exc=str(exc))
 
 
 def run_migrations() -> None:
