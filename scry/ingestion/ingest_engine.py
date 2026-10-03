@@ -24,6 +24,7 @@ from scry.ingestion.source_registry import SourceRegistry
 from scry.logging import get_logger
 from scry.models import CVE, Article, Source, SourceFetch
 from scry.parsing.article_parser import parse_article
+from scry.search import fts
 
 logger = get_logger("ingest_engine")
 PARSER_VERSION = "0.1"
@@ -92,6 +93,7 @@ class IngestionEngine:
             window_skipped = 0
             window_days = get_window_days(self.session)
             seen_urls: set[str] = set()  # in-feed dupes: the DB check can't see pending rows (autoflush off)
+            new_articles: list[Article] = []
             for entry in entries[:200]:
                 if not entry_in_window(entry.published_at, window_days, datetime.now(UTC)):
                     window_skipped += 1
@@ -117,8 +119,10 @@ class IngestionEngine:
                     tags=list(source.tags or []),
                 )
                 self.session.add(article)
+                new_articles.append(article)
                 persisted += 1
             self.session.commit()
+            self._index_fts([a.id for a in new_articles])
             if window_skipped:
                 logger.info("window_filtered", source=source.name, skipped=window_skipped, days=window_days)
             return {"articles": persisted, "feed_entries": len(entries), "window_skipped": window_skipped}
@@ -158,6 +162,7 @@ class IngestionEngine:
 
         candidates = [a for a in stubs if len(a.extracted_text or "") < 1000][:limit]
         logger.info("full_fetch_candidates", count=len(candidates))
+        updated_ids: list[int] = []
 
         for article in candidates:
             try:
@@ -193,13 +198,29 @@ class IngestionEngine:
                     # Reset extractor version so pipeline re-runs IOC extraction
                     article.extractor_version = "0"
                     updated += 1
+                    updated_ids.append(article.id)
             except Exception as exc:
                 logger.warning("full_fetch_error", article_id=article.id, exc=str(exc))
                 failed += 1
 
         self.session.commit()
+        self._index_fts(updated_ids)
         logger.info("full_fetch_done", updated=updated, failed=failed, skipped=skipped)
         return {"updated": updated, "failed": failed, "skipped": skipped}
+
+    def _index_fts(self, article_ids: list[int]) -> None:
+        """Refresh FTS5 entries for newly ingested/updated articles.
+
+        Best-effort: a search-index hiccup must never fail an ingest.
+        """
+        if not article_ids:
+            return
+        try:
+            fts.index_rows(self.session, "article", article_ids)
+            self.session.commit()
+        except Exception as exc:  # pragma: no cover - defensive
+            self.session.rollback()
+            logger.warning("fts_index_failed", exc=str(exc))
 
     # ----- helpers -----
 
@@ -248,6 +269,7 @@ class IngestionEngine:
         )
         self.session.add(article)
         self.session.commit()
+        self._index_fts([article.id])
         return article
 
     def _is_duplicate_url(self, url: str) -> bool:

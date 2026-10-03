@@ -40,6 +40,7 @@ from scry.scoring import SCORING_MODEL_VERSION
 from scry.scoring.confidence import ConfidenceInputs, ConfidenceScorer
 from scry.scoring.lifecycle import LifecycleEngine
 from scry.scoring.risk import RiskInputs, RiskScorer, expiration_from_ttl, recency_days
+from scry.search import fts
 
 logger = get_logger("pipeline")
 
@@ -83,19 +84,23 @@ class CTIPipeline:
         context_tags = self._context_tags(article, result)
 
         # Persist observables and mentions.
+        observable_ids: list[int] = []
         for ioc in result.iocs:
             ioc.tags = sorted(set([*ioc.tags, *context_tags]))
             ob = self._upsert_observable(ioc, article)
+            observable_ids.append(ob.id)
             self._enrich_and_score(ob, ioc, article)
             self._maybe_route_observable_to_review(ob, ioc, article)
 
         # Persist entities and mentions.
+        entity_ids: list[int] = []
         for ent in result.entities:
             entity = upsert_entity(
                 self.session,
                 surface_form=ent.surface_form,
                 entity_type=ent.type,
             )
+            entity_ids.append(entity.id)
             self.session.add(
                 EntityMention(
                     entity_id=entity.id,
@@ -107,6 +112,7 @@ class CTIPipeline:
             )
 
         # Persist claims.
+        claim_ids: list[int] = []
         for claim in result.claims:
             row = Claim(
                 claim_text=claim.claim_text,
@@ -123,6 +129,7 @@ class CTIPipeline:
                 row.review_status = "pending"
             self.session.add(row)
             self.session.flush()
+            claim_ids.append(row.id)
             if row.needs_review:
                 self._add_review_once(
                     item_type="claim",
@@ -154,7 +161,26 @@ class CTIPipeline:
             )
 
         self.session.commit()
+        self._sync_fts(article.id, observable_ids, entity_ids, claim_ids)
         return result
+
+    def _sync_fts(
+        self, article_id: int, observable_ids: list[int], entity_ids: list[int], claim_ids: list[int]
+    ) -> None:
+        """Refresh FTS5 index entries for everything this run touched.
+
+        Runs after the main commit so index values read committed content;
+        failures never break the pipeline (LIKE fallback keeps search alive).
+        """
+        try:
+            fts.index_rows(self.session, "article", [article_id])
+            fts.index_rows(self.session, "observable", observable_ids)
+            fts.index_rows(self.session, "entity", entity_ids)
+            fts.index_rows(self.session, "claim", claim_ids)
+            self.session.commit()
+        except Exception as exc:  # pragma: no cover - defensive
+            self.session.rollback()
+            logger.warning("fts_sync_failed", article_id=article_id, exc=str(exc))
 
     # -------- helpers --------
 
@@ -167,6 +193,10 @@ class CTIPipeline:
         so they are dropped too — reviews an analyst already touched are kept
         as an audit trail.
         """
+        # FTS5: old claim index entries must go BEFORE the content rows
+        # (external-content FTS5 resolves deleted tokens through the content
+        # table — once the row is gone the index entry is unrecoverable).
+        fts.unindex_claims_for_article(self.session, article.id)
         self.session.execute(delete(ObservableMention).where(ObservableMention.article_id == article.id))
         self.session.execute(delete(EntityMention).where(EntityMention.article_id == article.id))
         self.session.execute(delete(Claim).where(Claim.article_id == article.id))

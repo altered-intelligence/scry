@@ -31,6 +31,7 @@ from sqlalchemy.orm import Session
 from scry.config import load_otx_pulse_subscriptions
 from scry.logging import get_logger
 from scry.models import Article, Source, SystemSetting
+from scry.search import fts
 
 logger = get_logger("otx_pulses")
 
@@ -253,6 +254,7 @@ def pull_subscription(client: OTXPulseClient, sub: PulseSubscription, session: S
     source = _ensure_source(session, sub)
     now = datetime.now(UTC)
     counts = {"added": 0, "skipped": 0, "updated": 0, "filtered": 0}
+    touched_ids: list[int] = []
 
     pulses = client.search_pulses(sub.query, limit=sub.limit)
     for pulse in pulses:
@@ -300,27 +302,36 @@ def pull_subscription(client: OTXPulseClient, sub: PulseSubscription, session: S
             existing.content_hash = content_hash
             # Reset extractor version so the pipeline re-runs IOC extraction
             existing.extractor_version = "0"
+            touched_ids.append(existing.id)
             counts["updated"] += 1
             continue
 
-        session.add(
-            Article(
-                source_id=source.id,
-                title=title,
-                url=url,
-                published_at=created,
-                ingested_at=now,
-                extracted_text=summary[:50_000],
-                summary=summary,
-                content_hash=content_hash,
-                source_confidence=source.baseline_confidence,
-                parser_version=PARSER_VERSION,
-                tags=merged_tags,
-            )
+        article = Article(
+            source_id=source.id,
+            title=title,
+            url=url,
+            published_at=created,
+            ingested_at=now,
+            extracted_text=summary[:50_000],
+            summary=summary,
+            content_hash=content_hash,
+            source_confidence=source.baseline_confidence,
+            parser_version=PARSER_VERSION,
+            tags=merged_tags,
         )
+        session.add(article)
+        session.flush()
+        touched_ids.append(article.id)
         counts["added"] += 1
 
     session.commit()
+    # Keep the FTS5 index in sync for new/changed pulse articles (best-effort).
+    try:
+        fts.index_rows(session, "article", touched_ids)
+        session.commit()
+    except Exception as exc:  # pragma: no cover - defensive
+        session.rollback()
+        logger.warning("fts_index_failed", exc=str(exc))
     return counts
 
 
