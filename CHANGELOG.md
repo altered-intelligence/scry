@@ -4,6 +4,44 @@ All notable changes to Scry are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 semantic versioning.
 
+## [0.9.0] — 2026-10-02
+
+### Added
+
+- **FTS5 full-text search.** On SQLite (the default backend) `/search`, the
+  UI search box, MCP `scry_search`, and AI retrieval now run against SQLite
+  FTS5 indexes instead of leading-wildcard LIKE scans: one FTS5 table per
+  searchable object type (`articles_fts` over title/extracted_text/summary,
+  `observables_fts`, `entities_fts` over canonical_name + aliases,
+  `claims_fts` over claim/evidence text), `porter unicode61` tokenization,
+  `bm25()` relevance ranking, and `snippet()` match excerpts.
+  - Free-text queries are sanitized into quoted AND-joined MATCH terms, so
+    operator characters (`OR`, `NEAR/`, parentheses, `*`, …) can never break
+    a query or change its meaning; anything unsanitizable (and any
+    `OperationalError` from the index) falls back to the legacy LIKE scan.
+    Postgres and SQLite builds without FTS5 keep the LIKE path unchanged.
+  - The startup migration creates the tables and backfills them idempotently
+    (batched, orphan-purging) — existing databases are indexed on first boot
+    (verified live: 445 articles / 746 observables / 2 entities / 38 claims
+    indexed exactly, second boot a no-op).
+  - Write paths keep the index in sync incrementally: feed ingestion, OTX
+    pulse updates, full-content fetches, and pipeline extraction all
+    upsert/delete FTS rows in the same commit flow as their content writes
+    (best-effort — an indexing failure can never break ingestion).
+  - The FTS tables are regular (content-owning) FTS5 tables by design:
+    external-content tables corrupt ("database disk image is malformed")
+    when a row is deleted/replaced after its content changed, which is
+    exactly the reprocessing pattern here.
+  - Entity alias search now works: aliases are indexed, so searching an
+    alias (e.g. a group's alternative name) finds the entity.
+
+### Performance
+
+- Search no longer scans `articles.extracted_text` with leading-wildcard
+  LIKE on every query; indexed MATCH + bm25 replaces the full-table scan,
+  and AI retrieval (which issues one search per extracted keyword) benefits
+  proportionally.
+
 ## [0.8.2] — 2026-10-02
 
 ### Security

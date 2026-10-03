@@ -85,7 +85,8 @@ scry/
 │   └── opencti_stub.py
 │
 ├── search/
-│   ├── full_text.py            # SQL ILIKE across articles / observables / entities / claims
+│   ├── fts.py                  # FTS5 index layer: create/backfill/rebuild + incremental upsert/delete (SQLite)
+│   ├── full_text.py            # FTS5 MATCH + bm25 + snippet, LIKE fallback (Postgres / no-FTS5)
 │   └── semantic.py             # deterministic hash embedding (offline) — pluggable
 │
 ├── api/

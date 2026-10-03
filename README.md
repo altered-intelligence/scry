@@ -19,6 +19,10 @@ A defensive cyber threat intelligence platform that ingests public sources, extr
 
 ---
 
+## What's new in 0.9.0
+
+- **FTS5 full-text search** — `/search`, the UI search box, MCP `scry_search`, and AI retrieval now run on SQLite FTS5 indexes (one per searchable object type) with `porter unicode61` tokenization, `bm25()` relevance ranking, and `snippet()` match excerpts, replacing the leading-wildcard LIKE full-table scans. Queries are sanitized into quoted AND-joined MATCH terms — operator characters can never break a query — and any failure falls back to the legacy LIKE scan (which is still the whole story on Postgres). Existing databases are indexed automatically by an idempotent, batched startup migration, and the write paths (feed ingestion, OTX pulses, full-content fetches, pipeline extraction) keep the index in sync incrementally. Entity **alias** search works now, too.
+
 ## What's new in 0.8.0
 
 - **`scry backup` / `scry restore`** — move a whole install (database, `.env`, `.cti_secret`, config) between machines in one command: checksummed tar.gz archive with a manifest, optional `--full` (raw HTML + AI models) and `--encrypt` (Fernet, key already on your install); restore is atomic, refuses to clobber an existing database or a newer-version archive without `--force`, and prints a table-count diff.
