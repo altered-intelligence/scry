@@ -74,6 +74,7 @@ class Settings(BaseSettings):
     ai_search_max_tokens: int = 512  # answer length cap (keeps latency sane on 8 GB machines)
     ai_search_max_sources: int = 8  # top search hits fed to the model as context
     ai_search_timeout_s: int = 120  # hard timebox for one answer (first answer includes ~12s model load)
+    ai_idle_unload_s: int = 900  # release the local model after this many idle seconds (0 = never unload)
 
     # Retention
     retention_raw_html_days: int = 14

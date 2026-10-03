@@ -278,12 +278,15 @@ def ai_status(session: Session = Depends(get_session)) -> dict[str, Any]:
     else:
         active_id = "ollama"
         active_model = ""
+    idle = getattr(provider, "idle_seconds", None)
     return {
         "enabled": settings.enable_ai_search,
         "model_path": settings.ai_search_model_path,
         "model_present": present,
         "model_loaded": provider.model_loaded,
         "model_size_mb": size_mb,
+        "idle_seconds": round(idle, 1) if idle is not None else None,
+        "idle_unload_s": settings.ai_idle_unload_s,
         # Provider-aware additions (status pill uses these when non-local):
         "active_provider": active_id,
         "active_display": _PROVIDER_META.get(active_id, {}).get("display_name", active_id),

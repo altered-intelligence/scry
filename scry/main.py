@@ -137,11 +137,15 @@ async def lifespan(app: FastAPI):
             msg="No user accounts and no CTI_API_KEY — setup-required mode: open /setup to create the first admin.",
         )
     yield
+    # Release the embedded LLM (if loaded) and its idle-reaper on shutdown.
+    from scry.ai.providers.local import LocalLlamaProvider
+
+    LocalLlamaProvider.unload(reason="shutdown")
 
 
 app = FastAPI(
     title="Scry",
-    version="0.9.0",
+    version="0.10.0",
     description="Defensive CTI collection, extraction, enrichment, correlation, search, and reporting.",
     lifespan=lifespan,
 )
