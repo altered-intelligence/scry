@@ -1,6 +1,7 @@
 # Version control
 .git
 .gitignore
+.github
 
 # Python environments / caches
 .venv
@@ -11,6 +12,8 @@ __pycache__
 .pytest_cache
 .ruff_cache
 .mypy_cache
+.coverage
+htmlcov
 
 # Local data and databases
 data/
@@ -25,8 +28,19 @@ data/
 # Generated output
 reports/
 analytics_exports/
+logs/
 *.log
 *.out
+
+# Repo-only files the image doesn't need.
+# (README.md stays — pyproject.toml declares it as the package readme.
+#  requirements.lock, pyproject.toml, config/, alembic/ must reach the build.)
+tests/
+docs/
+*.md
+!README.md
+Dockerfile
+docker-compose.yml
 
 # OS noise
 .DS_Store
