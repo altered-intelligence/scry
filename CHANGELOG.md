@@ -6,6 +6,17 @@ semantic versioning.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Dashboard Quick links.** Three links (Data breaches, Initial access
+  listings, Dark web items) pointed at the Threat Feeds page with filters, but
+  nothing populates that table any more, so they always landed on "No items
+  match the current filters". They are replaced with live views: Open analyst
+  reviews, Ransomware reporting, and Exploited in the wild (article tag
+  filters). The Daily and Weekly report links, which open plain-text
+  Markdown, are now labelled "(text)". A test requires every Quick link to
+  resolve.
+
 ### Removed
 
 - **Feedly integration remnants.** The Feedly integration was already gone from
