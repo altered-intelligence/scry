@@ -146,7 +146,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Scry",
-    version="0.15.2",
+    version="0.16.0",
     description="Defensive CTI collection, extraction, enrichment, correlation, search, and reporting.",
     lifespan=lifespan,
 )

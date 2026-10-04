@@ -19,6 +19,13 @@ A defensive cyber threat intelligence platform that ingests public sources, extr
 
 ---
 
+## What's new in 0.16.0
+
+- **Scheduled full-page fetch** — feed articles that carry only a short summary now get their full page fetched right after each scheduled ingest, before extraction runs, so their indicators, entities, and claims are found in the same cycle. Bounded per run (`CTI_FULL_FETCH_LIMIT`, default 25), limited to recent articles (`CTI_FULL_FETCH_MAX_AGE_HOURS`, default 72), failed URLs back off for `CTI_FULL_FETCH_RETRY_HOURS` (default 6) and show up under collection gaps, and `CTI_FULL_FETCH_ENABLED=false` turns it off. Backfilling the real database's 341 older stubs added 1,145 observables and 411 claims.
+- **Security hardening** — auth cookies carry the `Secure` flag over HTTPS (`CTI_COOKIE_SECURE=auto|true|false`); `GET /api/ai/provider` now requires authentication; `POST /sources` is admin-only.
+- **Fixes** — passwords longer than 72 bytes no longer crash (passphrases are pre-hashed; existing hashes are untouched; input capped at 1,024 characters); single-URL ingest (`POST /ingest/url`, `scry ingest-url`) now parses the page instead of storing an empty article; feeds served without an XML content-type are recognised by their body.
+- **Release automation** — pushing a `v*` tag runs `.github/workflows/release.yml`, which checks the versions agree, runs lint and tests, and publishes the GitHub release from the changelog.
+
 ## What's new in 0.15.2
 
 - **Relationship evidence cap** — relationship evidence used to be the whole surrounding "sentence", and punctuation-free imports (pasted IOC sheets, hunt workbooks) turned that into hundreds of KB copied onto every relationship row: 1.16 GB of a 1.3 GB real database. Evidence is now windowed around the two endpoints and capped at 400 characters (verbatim when it already fits, so prose articles are unchanged), at extraction time and again at the persistence sink. New `scry prune-evidence [--max-chars N] [--dry-run] [--no-vacuum]` trims existing rows and VACUUMs; the startup migration trims them automatically. Live-verified: `relationships` 1,167 MB → 4.5 MB, database file 1,348 MB → 126 MB, 812 tests green.
