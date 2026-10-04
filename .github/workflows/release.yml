@@ -1,0 +1,74 @@
+name: release
+
+# Pushing a tag like v0.15.3 publishes the GitHub release automatically:
+# the tag must match pyproject.toml, lint + tests must pass, and the notes are
+# the matching "## [x.y.z]" section of CHANGELOG.md.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check tag, version, and changelog agree
+        id: meta
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+          py_version="$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml | head -1)"
+          app_version="$(sed -n 's/^ *version="\(.*\)",/\1/p' scry/main.py | head -1)"
+          if [ "$version" != "$py_version" ] || [ "$version" != "$app_version" ]; then
+            echo "::error::tag=$version pyproject=$py_version scry/main.py=$app_version must all match"
+            exit 1
+          fi
+          awk -v v="$version" '
+            $0 ~ "^## \\[" v "\\]" {found=1; next}
+            found && /^## \[/ {exit}
+            found {print}
+          ' CHANGELOG.md | awk 'NF||p{p=1;print}' > release_notes.md
+          if [ ! -s release_notes.md ]; then
+            echo "::error::no '## [$version]' section found in CHANGELOG.md"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,mcp]"
+
+      - name: Ruff
+        run: ruff check .
+
+      - name: Black
+        run: black --check .
+
+      - name: Tests
+        run: pytest -q
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release edit "$tag" --title "scry $tag" --notes-file release_notes.md --latest
+          else
+            gh release create "$tag" --title "scry $tag" --notes-file release_notes.md --latest --verify-tag
+          fi
