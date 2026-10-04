@@ -139,6 +139,21 @@ scry prune-html --dry-run     # what would the retention horizon reclaim?
 scry prune-html --days 7      # prune anything older than a week
 ```
 
+### `scry ingest ransomware-feed FILE [--source NAME] [--dry-run]`
+
+Import an exported ransomware-victim listing (JSON, JSON Lines, or CSV) into
+Intel Feeds → Ransomware Feeds. File import only — nothing is fetched, and
+stored claim URLs stay inert text. Use the provider's own export or API within
+its limits and terms. Common field names are recognised (victim, group, date,
+country, sector, website, description, severity, claim/post URLs); rows without
+a victim or group are skipped. Items de-duplicate on group + victim, so
+re-importing only fills gaps; each is tagged `source:<NAME>`.
+
+```bash
+scry ingest ransomware-feed export.json --source darkwebinformer --dry-run
+scry ingest ransomware-feed export.csv --source darkwebinformer
+```
+
 ### `scry prune-evidence [--max-chars N] [--dry-run] [--no-vacuum]`
 
 Trim oversized relationship evidence text down to the extractor cap (400

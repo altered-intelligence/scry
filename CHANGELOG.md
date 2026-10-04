@@ -6,6 +6,19 @@ semantic versioning.
 
 ## [Unreleased]
 
+### Added
+
+- **Ransomware feed file import — `scry ingest ransomware-feed FILE`.** The
+  Ransomware Feeds page had no data source. The new importer loads an exported
+  victim listing (JSON, JSON Lines, or CSV) from a feed tracker into
+  `ransomware_feed_items`: field names are matched through aliases
+  (victim/group/date/country/sector/website/severity/…), country names map to
+  ISO codes, severity maps to a risk score, items de-duplicate on (group,
+  victim) so re-imports only fill gaps and merge tags, and every item is
+  tagged `source:<name>` (`--source`). `--dry-run` reports counts without
+  writing. It is a file import only: nothing is fetched, and stored claim
+  URLs (often `.onion`) stay inert text.
+
 ### Fixed
 
 - **Dashboard Quick links.** Three links (Data breaches, Initial access

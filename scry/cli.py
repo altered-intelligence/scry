@@ -187,6 +187,33 @@ def ingest_otx_pulses(subscriptions: str = typer.Option("", "--subscriptions", "
     console.print_json(json.dumps({"results": results, "pipeline_processed": processed}))
 
 
+@ingest_app.command("ransomware-feed")
+def ingest_ransomware_feed(
+    path: Path = typer.Argument(..., exists=True, dir_okay=False, help="JSON / JSON Lines / CSV export file"),
+    source: str = typer.Option("import", "--source", "-s", help="Provider label stored as tag source:<name>"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Count what would change without writing."),
+) -> None:
+    """Import an exported ransomware-victim listing into Intel Feeds → Ransomware Feeds.
+
+    File import only — nothing is fetched. Use the provider's own export or API
+    within its limits and terms; every item is tagged ``source:<name>``.
+    """
+    from scry.ingestion.ransomware_feed import import_records, load_records
+
+    try:
+        records = load_records(path)
+    except (OSError, ValueError) as exc:
+        console.print(f"[red]Could not read {path}: {exc}[/red]")
+        raise typer.Exit(1) from None
+    with session_scope() as session:
+        counts = import_records(session, records, source=source, dry_run=dry_run)
+    prefix = "[yellow]DRY RUN[/yellow] " if dry_run else ""
+    console.print(
+        f"{prefix}{len(records)} row(s) read from {path.name}: "
+        + ", ".join(f"{k} {v}" for k, v in counts.items())
+    )
+
+
 @app.command("extract")
 def extract(article_id: int) -> None:
     """Re-run extraction on an article."""
