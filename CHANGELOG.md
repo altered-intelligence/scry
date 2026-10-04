@@ -4,6 +4,24 @@ All notable changes to Scry are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 semantic versioning.
 
+## [Unreleased]
+
+### Fixed
+
+- **Single-URL ingest now parses the page.** `POST /ingest/url`, `scry
+  ingest-url`, and a source whose URL is a single page stored the article
+  with an empty title and empty text, so extraction found nothing and
+  nothing ever re-parsed it (the second-pass full-content fetch only selects
+  rows with `raw_html IS NULL`, which these never are). The page is now run
+  through the article parser at ingest: title, text, author, language, and
+  canonical URL are stored, the raw HTML is kept (capped like the feed
+  path), and the article is queued for the extraction pipeline. Sources
+  under the `metadata_only` policy keep metadata but never page content.
+- **Feeds are recognised by their body, not only their content-type.** A
+  feed served as `text/html` without an XML declaration was mistaken for an
+  article page and stored as a title-less, empty "article" whose URL was the
+  feed itself (four such rows exist in the real database).
+
 ## [0.15.2] — 2026-10-03
 
 ### Fixed

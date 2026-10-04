@@ -19,7 +19,7 @@ from scry.ingestion.collection_window import entry_in_window, get_window_days
 from scry.ingestion.cve_feed import parse_kev_json
 from scry.ingestion.fetcher import FetchResult, SafeFetcher
 from scry.ingestion.policy import CollectionPolicyEngine, PolicyDecision
-from scry.ingestion.rss import is_feed_content_type, parse_feed_text
+from scry.ingestion.rss import looks_like_feed, parse_feed_text
 from scry.ingestion.source_registry import SourceRegistry
 from scry.logging import get_logger
 from scry.models import CVE, Article, Source, SourceFetch
@@ -28,6 +28,9 @@ from scry.search import embeddings, fts
 
 logger = get_logger("ingest_engine")
 PARSER_VERSION = "0.1"
+# Same caps the second-pass full-content fetch applies.
+MAX_TEXT_CHARS = 100_000
+MAX_RAW_HTML_CHARS = 500_000
 
 
 class IngestionEngine:
@@ -78,7 +81,7 @@ class IngestionEngine:
             self._record_fetch(source, feed_res)
 
             content_type = feed_res.headers.get("content-type", "")
-            if is_feed_content_type(content_type) or feed_res.text.lstrip().startswith("<?xml"):
+            if looks_like_feed(content_type, feed_res.text):
                 entries = parse_feed_text(feed_res.text)
             elif "application/json" in content_type and "kev" in (source.name or "").lower():
                 # CISA KEV style JSON — turn into CVE rows directly
@@ -191,8 +194,8 @@ class IngestionEngine:
                 parsed = parse_article(res.text, url=article.url)
                 full_text = parsed.text or res.text
                 if len(full_text) > len(article.extracted_text or ""):
-                    article.extracted_text = full_text[:100_000]
-                    article.raw_html = res.text[:500_000]
+                    article.extracted_text = full_text[:MAX_TEXT_CHARS]
+                    article.raw_html = res.text[:MAX_RAW_HTML_CHARS]
                     if parsed.title and not article.title:
                         article.title = parsed.title
                     # Reset extractor version so pipeline re-runs IOC extraction
@@ -257,13 +260,23 @@ class IngestionEngine:
             existing = self.session.scalar(select(Article).where(Article.url == fetch.url))
             return existing
 
+        # Parse the page NOW. Without this the article was stored with an empty
+        # title and empty text, so extraction found nothing and nothing ever
+        # re-parsed it (the second-pass full-content fetch only selects rows
+        # with raw_html IS NULL, which ad-hoc ingests never are).
+        metadata_only = policy.fetch_mode == "metadata_only"
+        parsed = parse_article(fetch.text, url=fetch.url)
         article = Article(
             source_id=source.id if source else None,
-            title="",
+            title=(parsed.title or "(no title)")[:1024],
             url=fetch.url,
+            canonical_url=(parsed.canonical_url or None) and parsed.canonical_url[:2048],
+            author=(parsed.author or None) and parsed.author[:255],
+            language=(parsed.language or None) and parsed.language[:16],
             ingested_at=datetime.now(UTC),
-            extracted_text="",
-            raw_html=fetch.text if policy.fetch_mode != "metadata_only" else None,
+            # metadata_only sources keep metadata, never page content.
+            extracted_text="" if metadata_only else (parsed.text or "")[:MAX_TEXT_CHARS],
+            raw_html=None if metadata_only else fetch.text[:MAX_RAW_HTML_CHARS],
             content_hash=fetch.content_hash,
             source_confidence=source.baseline_confidence if source else 60,
             parser_version=PARSER_VERSION,

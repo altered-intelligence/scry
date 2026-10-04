@@ -67,5 +67,22 @@ def is_feed_content_type(content_type: str) -> bool:
     return any(t in ct for t in ("rss", "atom", "xml"))
 
 
+_FEED_ROOT_PREFIXES = ("<?xml", "<rss", "<feed", "<rdf:rdf")
+
+
+def looks_like_feed(content_type: str, text: str) -> bool:
+    """True when a response is an RSS/Atom/RDF document.
+
+    Trusts the content-type when it says so, but also sniffs the first bytes:
+    feeds served as ``text/html`` (or with no useful type) and without an XML
+    declaration used to be mistaken for a single article page and stored as a
+    title-less, empty "article" whose URL was the feed itself.
+    """
+    if is_feed_content_type(content_type):
+        return True
+    head = (text or "")[:512].lstrip("\ufeff \t\r\n").lower()
+    return head.startswith(_FEED_ROOT_PREFIXES)
+
+
 def iter_feed_entries(text: str) -> Iterable[FeedEntry]:
     yield from parse_feed_text(text)
