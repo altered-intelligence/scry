@@ -6,6 +6,8 @@ semantic versioning.
 
 ## [Unreleased]
 
+## [0.16.1] — 2026-10-04
+
 ### Added
 
 - **Ransomware feed file import — `scry ingest ransomware-feed FILE`.** The

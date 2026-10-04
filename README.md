@@ -19,6 +19,12 @@ A defensive cyber threat intelligence platform that ingests public sources, extr
 
 ---
 
+## What's new in 0.16.1
+
+- **Ransomware feed import** — `scry ingest ransomware-feed FILE` loads an exported victim listing (JSON, JSON Lines, or CSV) into the Ransomware Feeds page. Field names are matched through aliases, country names map to ISO codes, severity maps to a risk score, items de-duplicate on group and victim, and each item is tagged `source:<name>`. `--dry-run` reports counts without writing.
+- **Dashboard Quick links** — the three links that landed on empty Threat Feeds pages now open live views (open analyst reviews, ransomware reporting, exploited in the wild); every Quick link is covered by a test.
+- **Feedly removal** — leftover Feedly settings, scripts, docs, and the token redaction pattern are gone.
+
 ## What's new in 0.16.0
 
 - **Scheduled full-page fetch** — feed articles that carry only a short summary now get their full page fetched right after each scheduled ingest, before extraction runs, so their indicators, entities, and claims are found in the same cycle. Bounded per run (`CTI_FULL_FETCH_LIMIT`, default 25), limited to recent articles (`CTI_FULL_FETCH_MAX_AGE_HOURS`, default 72), failed URLs back off for `CTI_FULL_FETCH_RETRY_HOURS` (default 6) and show up under collection gaps, and `CTI_FULL_FETCH_ENABLED=false` turns it off. Backfilling the real database's 341 older stubs added 1,145 observables and 411 claims.

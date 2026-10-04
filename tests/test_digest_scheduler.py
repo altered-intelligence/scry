@@ -7,6 +7,7 @@ directory is injected.
 from __future__ import annotations
 
 import plistlib
+import re
 
 import pytest
 
@@ -121,7 +122,7 @@ class TestLaunchAgent:
         data = plistlib.loads(res.plist_path.read_bytes())
         assert data["Label"] == scheduler_agent.LABEL
         args = data["ProgramArguments"]
-        assert args[0].endswith("python") and args[1:] == ["-m", "scry.scheduler"]
+        assert re.search(r"python[\d.]*$", args[0]) and args[1:] == ["-m", "scry.scheduler"]
         assert data["WorkingDirectory"] == str(scheduler_agent.REPO_ROOT)
         db_url = data["EnvironmentVariables"]["CTI_DATABASE_URL"]
         assert db_url.startswith("sqlite+pysqlite:///")
