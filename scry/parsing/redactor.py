@@ -23,8 +23,6 @@ PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     # OpenAI / Anthropic keys
     ("openai_key", re.compile(r"sk-(?:proj-|org-)?[A-Za-z0-9]{20,}")),
     ("anthropic_key", re.compile(r"sk-ant-[A-Za-z0-9\-_]{20,}")),
-    # Feedly personal tokens
-    ("feedly_token", re.compile(r"fe_[A-Za-z0-9]{20,}")),
     (
         "private_key_block",
         re.compile(

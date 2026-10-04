@@ -54,24 +54,6 @@ This document describes the available third-party enrichment connectors for Scry
 - **Rate Limit**: 1 request/second (free tier)
 - **Documentation**: https://developer.shodan.io/api
 
-### Threat Intelligence Platform
-
-#### Feedly Threat Intelligence
-- **Purpose**: CVE insights, threat actor intelligence, malware tracking, IOC enrichment, article collection
-- **API Token**: Set `CTI_FEEDLY_API_TOKEN` environment variable
-- **Supported Types**: CVE, Domain, IPv4, IPv6, SHA256, SHA1, MD5, Threat Actor, Malware
-- **Rate Limit**: 250 requests/minute (most endpoints)
-- **Documentation**: https://developers.feedly.com/
-- **Dual Mode**: Acts as both enricher (for observables/CVEs) and collector (for articles)
-- **Features**:
-  - CVE trending and exploit intelligence
-  - Threat actor profiles with TTPs
-  - Malware family tracking and detection rules
-  - IOC enrichment with context
-  - Article search and stream collection
-  - Cyber attack tracking
-- **See**: [docs/archive/FEEDLY_INTEGRATION.md](./docs/archive/FEEDLY_INTEGRATION.md) for comprehensive documentation
-
 ## Planned Connectors
 
 The following connectors are planned for future implementation:
@@ -148,10 +130,6 @@ CTI_BLUESKY_HANDLE=your.handle
 CTI_BLUESKY_PASSWORD=your_password
 CTI_MASTODON_INSTANCE=https://mastodon.social
 CTI_MASTODON_TOKEN=your_token
-
-# Feedly Threat Intelligence
-CTI_FEEDLY_API_TOKEN=your_bearer_token
-CTI_FEEDLY_USER_ID=your_user_id  # Optional
 ```
 
 ## Usage

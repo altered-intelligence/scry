@@ -149,13 +149,6 @@ stubs today (see [CONNECTORS.md](../CONNECTORS.md) and
 `CTI_BLUESKY_HANDLE`, `CTI_BLUESKY_PASSWORD`, `CTI_MASTODON_INSTANCE`,
 `CTI_MASTODON_TOKEN` — all default empty.
 
-### Feedly
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `CTI_FEEDLY_API_TOKEN` | _(empty)_ | Feedly API token. |
-| `CTI_FEEDLY_USER_ID` | _(empty)_ | Feedly user ID (personal streams). |
-
 ### Advanced
 
 | Variable | Default | Purpose |

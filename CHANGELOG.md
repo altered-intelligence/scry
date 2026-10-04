@@ -4,6 +4,20 @@ All notable changes to Scry are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 semantic versioning.
 
+## [Unreleased]
+
+### Removed
+
+- **Feedly integration remnants.** The Feedly integration was already gone from
+  the code, but its settings, scripts, and docs lingered. Removed: the
+  `CTI_FEEDLY_API_TOKEN` / `CTI_FEEDLY_USER_ID` settings (set or unset, they
+  were ignored), the four `scripts/` files that imported the deleted Feedly
+  modules (`feedly_run_now.py`, `feedly_enrich_simple.py`,
+  `export_for_analytics.py`, `run_threat_hunting.py`), `docs/archive/`
+  (the two Feedly write-ups), the Feedly sections of `CONNECTORS.md` and
+  `docs/configuration.md`, `.env.example`, and the Feedly token pattern from
+  the secret redactor.
+
 ## [0.16.0] — 2026-10-03
 
 ### Added

@@ -20,7 +20,7 @@ CONFIG_DIR = REPO_ROOT / "config"
 
 class Settings(BaseSettings):
     # NOTE: the CTI_ env prefix is intentionally kept after the rebrand to
-    # Scry — existing .env files (CTI_FEEDLY_API_TOKEN etc.) must keep working.
+    # Scry — existing .env files (CTI_VIRUSTOTAL_API_KEY etc.) must keep working.
     model_config = SettingsConfigDict(env_prefix="CTI_", env_file=".env", extra="ignore")
 
     env: str = "local"
@@ -213,10 +213,6 @@ class Settings(BaseSettings):
     bluesky_password: str = ""
     mastodon_instance: str = ""
     mastodon_token: str = ""
-
-    # Feedly Threat Intelligence
-    feedly_api_token: str = ""
-    feedly_user_id: str = ""  # Optional: for personal streams
 
     config_dir: Path = Field(default=CONFIG_DIR)
 
