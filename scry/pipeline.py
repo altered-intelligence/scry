@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from scry.alias_resolution import resolve_canonical, upsert_entity
 from scry.enrichment import EnrichmentEngine
 from scry.extraction import EXTRACTOR_VERSION, Extractor
+from scry.extraction.relationship_extractor import evidence_window
 from scry.logging import get_logger
 from scry.models import (
     AnalystReview,
@@ -378,7 +379,9 @@ class CTIPipeline:
                     target_id=tgt_id,
                     relationship_type=r.relationship_type,
                     confidence=r.confidence,
-                    evidence_text=r.evidence_text,
+                    # Belt and braces: any extractor (incl. a future LLM one)
+                    # may hand back a huge sentence — cap it at the sink too.
+                    evidence_text=evidence_window(r.evidence_text, [[r.source_value], [r.target_value]]),
                     article_id=article.id,
                     explicit_or_inferred=r.explicit_or_inferred,
                     extraction_method=r.extraction_method,

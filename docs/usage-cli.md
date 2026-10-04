@@ -139,6 +139,23 @@ scry prune-html --dry-run     # what would the retention horizon reclaim?
 scry prune-html --days 7      # prune anything older than a week
 ```
 
+### `scry prune-evidence [--max-chars N] [--dry-run] [--no-vacuum]`
+
+Trim oversized relationship evidence text down to the extractor cap (400
+characters by default). Before the cap, relationship evidence was the whole
+surrounding "sentence"; punctuation-free inputs such as pasted IOC sheets
+turned that into hundreds of KB copied onto every relationship row. Each
+oversized row is re-windowed around its two endpoints, exactly as new
+extractions are stored, so both the entity and the indicator stay visible.
+Idempotent; the startup migration performs the same trim but only this
+command VACUUMs the SQLite file to reclaim the space.
+
+```bash
+scry prune-evidence --dry-run     # how many rows exceed the cap, and roughly how much space they hold
+scry prune-evidence               # trim + VACUUM
+scry prune-evidence --max-chars 300 --no-vacuum
+```
+
 ## Diagnostics
 
 ### `scry stats`

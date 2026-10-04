@@ -117,6 +117,32 @@ def apply_migrations(conn: Connection) -> None:
         conn.execute(text(ddl))
     _apply_fts(conn)
     _apply_embeddings(conn)
+    _apply_evidence_cap(conn)
+
+
+def _apply_evidence_cap(conn: Connection) -> None:
+    """Trim oversized relationship evidence left by pre-cap extractions (best-effort).
+
+    Relationship evidence is now windowed to ``MAX_EVIDENCE_CHARS`` at
+    extraction time; rows written before that stored whole "sentences"
+    (hundreds of KB each on punctuation-free imports). Idempotent — a
+    database without oversized rows costs one COUNT. The file itself only
+    shrinks after ``scry prune-evidence`` (VACUUM). Never blocks startup.
+    """
+    if not inspect(conn).has_table("relationships"):
+        return
+    try:
+        from scry.retention import truncate_relationship_evidence
+
+        res = truncate_relationship_evidence(conn)
+        if res["truncated"]:
+            logger.info(
+                "relationship_evidence_capped",
+                rows=res["truncated"],
+                bytes_reclaimed=res["bytes_reclaimed"],
+            )
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("evidence_cap_migration_failed", exc=str(exc))
 
 
 def _apply_embeddings(conn: Connection) -> None:

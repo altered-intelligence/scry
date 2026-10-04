@@ -4,6 +4,37 @@ All notable changes to Scry are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 semantic versioning.
 
+## [Unreleased]
+
+### Fixed
+
+- **Relationship evidence no longer stores whole "sentences".** The
+  relationship extractor used the sentence containing both endpoints as
+  evidence and split sentences on punctuation, so punctuation-free inputs
+  (pasted IOC spreadsheets, hunt workbooks) produced single "sentences" of
+  hundreds of KB that were copied onto every relationship row — 1.16 GB of a
+  1.3 GB real database, with only 73 distinct texts across 9,385 rows.
+  Evidence is now windowed around the two endpoints (closest pair of
+  occurrences, two fragments when they are far apart) and hard-capped at
+  `MAX_EVIDENCE_CHARS` (400). Sentences that fit the cap are stored verbatim,
+  so prose articles are unchanged; the pipeline applies the same cap at the
+  persistence sink as a guard for any future extractor.
+
+### Added
+
+- **`scry prune-evidence [--max-chars N] [--dry-run] [--no-vacuum]`** —
+  re-windows oversized `relationships.evidence_text` rows exactly as new
+  extractions are stored (both endpoint labels kept), reports rows and bytes
+  reclaimed, and VACUUMs SQLite to shrink the file. Idempotent.
+- **Startup repair.** The migration path trims oversized relationship
+  evidence automatically (one COUNT when nothing is oversized; never blocks
+  startup). The file itself shrinks after `scry prune-evidence` (VACUUM).
+
+Live-verified on the real database (backup first): 9,333 oversized rows
+re-windowed (both endpoint labels visible in the trimmed evidence), the
+`relationships` table 1,167 MB → 4.5 MB, the SQLite file 1,348 MB → 126 MB
+after VACUUM, `PRAGMA integrity_check` ok, 812 tests green.
+
 ## [0.15.1] — 2026-10-03
 
 ### Added

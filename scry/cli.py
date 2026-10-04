@@ -18,6 +18,7 @@ Commands:
   alerts list              List recent alerts
   decay run                Apply IOC decay
   prune-html               Prune stored raw_html older than the retention horizon (--days, --dry-run)
+  prune-evidence           Trim oversized relationship evidence to the extractor cap (--dry-run)
   scheduler run            Run the scheduler in the foreground
   scheduler install        Write the macOS LaunchAgent plist (--load to activate, --dir to override)
   scheduler uninstall      Remove the LaunchAgent plist
@@ -628,6 +629,46 @@ def prune_html(
         f"{retention}d — ~{human_bytes(res['bytes_reclaimed'])} reclaimable"
     )
     if not dry_run and res["pruned"] and vacuum:
+        if vacuum_sqlite(get_engine()):
+            console.print("[green]VACUUM done — database file shrunk[/green]")
+        else:
+            console.print("[yellow]VACUUM skipped (non-SQLite backend or database locked)[/yellow]")
+
+
+@app.command("prune-evidence")
+def prune_evidence(
+    max_chars: int = typer.Option(
+        -1, "--max-chars", help="Evidence cap in characters (default: the extractor's MAX_EVIDENCE_CHARS)."
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Report counts + reclaimable bytes without writing."
+    ),
+    vacuum: bool = typer.Option(
+        True, "--vacuum/--no-vacuum", help="VACUUM after a real run (SQLite) to shrink the DB file."
+    ),
+) -> None:
+    """Trim oversized relationship evidence text down to the extractor cap.
+
+    Relationship evidence used to be the whole surrounding "sentence"; for
+    punctuation-free inputs (pasted IOC sheets) that was hundreds of KB copied
+    onto every relationship row. Each oversized row is re-windowed around its
+    two endpoints, exactly as new extractions are stored. Idempotent.
+    """
+    from scry.extraction.relationship_extractor import MAX_EVIDENCE_CHARS
+    from scry.retention import human_bytes, truncate_relationship_evidence, vacuum_sqlite
+
+    cap = max_chars if max_chars > 0 else MAX_EVIDENCE_CHARS
+    with session_scope() as session:
+        res = truncate_relationship_evidence(session, cap, dry_run=dry_run)
+
+    n = res["candidates"] if dry_run else res["truncated"]
+    verb = "Would trim" if dry_run else "Trimmed"
+    prefix = "[yellow]DRY RUN[/yellow] " if dry_run else ""
+    console.print(
+        f"{prefix}{verb} evidence on [bold]{n}[/bold] relationship(s) longer than {cap} chars — "
+        f"~{human_bytes(res['bytes_reclaimed'])} reclaimable"
+    )
+    if not dry_run and res["truncated"] and vacuum:
         if vacuum_sqlite(get_engine()):
             console.print("[green]VACUUM done — database file shrunk[/green]")
         else:

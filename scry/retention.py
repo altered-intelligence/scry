@@ -14,12 +14,14 @@ Age is anchored on ``ingested_at`` (when WE stored the HTML), falling back to
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select, update
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.orm import Session
 
+from scry.extraction.relationship_extractor import MAX_EVIDENCE_CHARS, evidence_window
 from scry.logging import get_logger
 from scry.models import Article
 
@@ -103,3 +105,127 @@ def human_bytes(n: int | float) -> str:
             return f"{size:.1f} {unit}" if unit != "B" else f"{int(size)} B"
         size /= 1024
     return f"{size:.1f} TB"  # pragma: no cover — unreachable
+
+
+# ------------------------- relationship evidence cap -------------------------
+
+# Relationship endpoints that live in the entities table; every other kind is
+# an observable type (mirrors the resolution in scry.pipeline / scry.exports).
+_ENTITY_KINDS = {
+    "threat_actor",
+    "malware_family",
+    "tool",
+    "campaign",
+    "intrusion_set",
+    "organization",
+    "person",
+    "sector",
+    "location",
+    "vulnerability",
+}
+_EVIDENCE_BATCH = 50  # rows per round trip — oversized rows can be hundreds of KB each
+
+
+def truncate_relationship_evidence(
+    target: Session | Connection,
+    max_chars: int = MAX_EVIDENCE_CHARS,
+    *,
+    dry_run: bool = False,
+) -> dict:
+    """Window oversized ``relationships.evidence_text`` down to ``max_chars``.
+
+    Extractions made before the evidence cap stored the whole surrounding
+    "sentence" on every relationship row; punctuation-free inputs (pasted
+    IOC sheets) turned that into hundreds of KB per row. Each oversized row
+    is re-windowed around its two endpoints with the same ``evidence_window``
+    new extractions use, so repaired rows look exactly like fresh ones.
+    Idempotent — a second run finds nothing to do. ``dry_run`` reports the
+    candidate count and a reclaim estimate without writing. Does NOT commit:
+    the caller's transaction (``session_scope`` / ``engine.begin()``) carries
+    the writes, and the file only shrinks after a VACUUM (see the CLI).
+    """
+    if max_chars <= 0:
+        raise ValueError("max_chars must be positive")
+    conn = target.connection() if isinstance(target, Session) else target
+    candidates, bytes_before = conn.exec_driver_sql(
+        "SELECT COUNT(*), COALESCE(SUM(LENGTH(evidence_text)), 0) "
+        "FROM relationships WHERE LENGTH(evidence_text) > ?",
+        (max_chars,),
+    ).one()
+    candidates, bytes_before = int(candidates), int(bytes_before)
+    result = {
+        "max_chars": max_chars,
+        "candidates": candidates,
+        "truncated": 0,
+        "bytes_before": bytes_before,
+        "bytes_after": bytes_before,
+        # Estimate until rows are rewritten: every candidate shrinks to <= max_chars.
+        "bytes_reclaimed": max(0, bytes_before - candidates * max_chars),
+    }
+    if dry_run or not candidates:
+        logger.info("relationship_evidence_trim", dry_run=dry_run, **result)
+        return result
+
+    ids = [
+        int(r[0])
+        for r in conn.exec_driver_sql(
+            "SELECT id FROM relationships WHERE LENGTH(evidence_text) > ? ORDER BY id", (max_chars,)
+        ).all()
+    ]
+    labels: dict[tuple[str, int], list[str]] = {}
+    truncated = 0
+    bytes_after = 0
+    for start in range(0, len(ids), _EVIDENCE_BATCH):
+        chunk = ids[start : start + _EVIDENCE_BATCH]
+        ph = ", ".join("?" for _ in chunk)
+        rows = conn.exec_driver_sql(
+            "SELECT id, source_type, source_id, target_type, target_id, evidence_text "
+            f"FROM relationships WHERE id IN ({ph})",
+            tuple(chunk),
+        ).all()
+        updates: list[tuple[str, int]] = []
+        for rid, src_type, src_id, tgt_type, tgt_id, text in rows:
+            endpoints = [
+                _endpoint_labels(conn, src_type, src_id, labels),
+                _endpoint_labels(conn, tgt_type, tgt_id, labels),
+            ]
+            trimmed = evidence_window(text or "", endpoints, max_chars=max_chars)
+            bytes_after += len(trimmed)
+            updates.append((trimmed, int(rid)))
+        if updates:
+            conn.exec_driver_sql("UPDATE relationships SET evidence_text = ? WHERE id = ?", updates)
+            truncated += len(updates)
+
+    result.update(truncated=truncated, bytes_after=bytes_after, bytes_reclaimed=bytes_before - bytes_after)
+    logger.info("relationship_evidence_trimmed", **result)
+    return result
+
+
+def _endpoint_labels(
+    conn: Connection, kind: str, oid: int, cache: dict[tuple[str, int], list[str]]
+) -> list[str]:
+    """Surface forms a relationship endpoint may appear as in evidence text (cached)."""
+    key = (kind, int(oid))
+    if key in cache:
+        return cache[key]
+    labels: list[str] = []
+    if kind in _ENTITY_KINDS:
+        row = conn.exec_driver_sql(
+            "SELECT canonical_name, aliases FROM entities WHERE id = ?", (oid,)
+        ).first()
+        if row is not None:
+            labels.append(str(row[0] or ""))
+            raw = row[1]
+            try:
+                aliases = json.loads(raw) if isinstance(raw, str) else list(raw or [])
+            except (TypeError, ValueError):
+                aliases = []
+            labels.extend(str(a) for a in aliases)
+    else:
+        row = conn.exec_driver_sql(
+            "SELECT value, normalized_value FROM observables WHERE id = ?", (oid,)
+        ).first()
+        if row is not None:
+            labels.extend(str(v or "") for v in row)
+    cache[key] = [label for label in labels if label]
+    return cache[key]

@@ -7,7 +7,9 @@ Conservative — only emits typed relationships when a clear cue is present.
 
 from __future__ import annotations
 
+import bisect
 import re
+from collections.abc import Sequence
 
 from scry.schemas.extraction import (
     EntityCandidate,
@@ -28,6 +30,124 @@ CUES: dict[str, list[str]] = {
     "hosted_on": [r"\bhosted\s+on\b"],
     "downloads_from": [r"\bdownloads?\s+from\b"],
 }
+
+# Evidence for a relationship is the sentence that contains both endpoints.
+# Punctuation-free inputs (pasted spreadsheets, IOC dumps) make one "sentence"
+# hundreds of KB long, and that text used to be copied onto EVERY relationship
+# row — 1.1 GB of a 1.3 GB real database. Evidence is therefore windowed
+# around the endpoints and hard-capped. Sentences that fit the cap are stored
+# verbatim, so ordinary prose is unaffected.
+MAX_EVIDENCE_CHARS = 400
+_EVIDENCE_PAD = 80
+_ELLIPSIS = "..."
+_JOINER = " ... "
+_MAX_OCCURRENCES = 5000  # per endpoint — bounds work on pathological inputs
+
+Span = tuple[int, int]
+
+
+def evidence_window(
+    text: str,
+    endpoints: Sequence[Sequence[str]],
+    *,
+    max_chars: int = MAX_EVIDENCE_CHARS,
+    pad: int = _EVIDENCE_PAD,
+) -> str:
+    """Trim ``text`` to a window that shows the relationship endpoints.
+
+    ``endpoints`` lists, per endpoint, the surface forms it may appear as
+    (an entity's aliases, an IOC's raw and normalized value, ...). Text that
+    already fits in ``max_chars`` is returned verbatim (stripped). Otherwise
+    the pair of occurrences closest to each other is located
+    (case-insensitive), and:
+
+    - when both fit in one window, that window is returned with up to
+      ``pad`` characters of context on each side;
+    - when they are too far apart, one fragment around each endpoint is
+      returned, joined by an ellipsis, so both ends stay visible;
+    - with only one endpoint found, the window centres on it; with none,
+      the head of the text is kept.
+
+    Cut edges carry an ellipsis marker and the result never exceeds
+    ``max_chars``. Match positions come from the original text (regex,
+    IGNORECASE) so case folding can never shift the slices.
+    """
+    text = (text or "").strip()
+    if len(text) <= max_chars:
+        return text
+    spans = [s for s in (_occurrences(text, forms) for forms in endpoints) if s]
+    marker = len(_ELLIPSIS)
+    if not spans:
+        return _cut(text, 0, max_chars - marker)
+    if len(spans) == 1:
+        return _window_around(text, spans[0][0], max_chars, pad)
+    a, b = _closest_pair(spans[0], spans[1])
+    lo, hi = min(a[0], b[0]), max(a[1], b[1])
+    if hi - lo <= max_chars - 2 * marker:
+        return _window_around(text, (lo, hi), max_chars, pad)
+    # Endpoints too far apart for one window: one fragment around each.
+    first, second = sorted((a, b))
+    half = (max_chars - 2 * marker - len(_JOINER)) // 2
+    left = _fragment(text, first, half, pad)
+    right = _fragment(text, second, half, pad)
+    prefix = _ELLIPSIS if left[0] > 0 else ""
+    suffix = _ELLIPSIS if right[1] < len(text) else ""
+    return f"{prefix}{text[left[0] : left[1]].strip()}{_JOINER}{text[right[0] : right[1]].strip()}{suffix}"
+
+
+def _occurrences(text: str, forms: Sequence[str]) -> list[Span]:
+    """All (start, end) matches of any form, sorted by start; empty forms ignored."""
+    out: list[Span] = []
+    for form in forms:
+        needle = (form or "").strip()
+        if not needle:
+            continue
+        for m in re.finditer(re.escape(needle), text, flags=re.IGNORECASE):
+            out.append((m.start(), m.end()))
+            if len(out) >= _MAX_OCCURRENCES:
+                break
+    out.sort()
+    return out
+
+
+def _closest_pair(a_spans: list[Span], b_spans: list[Span]) -> tuple[Span, Span]:
+    """The (a, b) occurrence pair covering the narrowest stretch of text."""
+    b_starts = [s for s, _ in b_spans]
+    best: tuple[Span, Span] | None = None
+    best_width = 0
+    for a in a_spans:
+        i = bisect.bisect_left(b_starts, a[0])
+        for j in (i - 1, i):
+            if 0 <= j < len(b_spans):
+                b = b_spans[j]
+                width = max(a[1], b[1]) - min(a[0], b[0])
+                if best is None or width < best_width:
+                    best, best_width = (a, b), width
+    assert best is not None  # both lists are non-empty by construction
+    return best
+
+
+def _fragment(text: str, span: Span, budget: int, pad: int) -> Span:
+    """Bounds of a window around ``span`` that is at most ``budget`` characters."""
+    start, end = span
+    length = end - start
+    if length >= budget:
+        return start, start + budget
+    extra = min(pad, (budget - length) // 2)
+    return max(0, start - extra), min(len(text), end + extra)
+
+
+def _window_around(text: str, span: Span, max_chars: int, pad: int) -> str:
+    start, end = _fragment(text, span, max_chars - 2 * len(_ELLIPSIS), pad)
+    return _cut(text, start, end)
+
+
+def _cut(text: str, start: int, end: int) -> str:
+    """``text[start:end]`` (stripped) with an ellipsis on each side that was cut."""
+    start = max(0, start)
+    end = min(len(text), end)
+    piece = text[start:end].strip()
+    return f"{_ELLIPSIS if start > 0 else ''}{piece}{_ELLIPSIS if end < len(text) else ''}"
 
 
 class RelationshipExtractor:
@@ -67,7 +187,9 @@ class RelationshipExtractor:
                                     target_value=b.canonical_name,
                                     relationship_type=rel_type,
                                     confidence=65,
-                                    evidence_text=sentence.strip(),
+                                    evidence_text=evidence_window(
+                                        sentence, [[a.surface_form], [b.surface_form]]
+                                    ),
                                     explicit_or_inferred="inferred",
                                     extraction_method="cooccurrence",
                                 )
@@ -92,7 +214,9 @@ class RelationshipExtractor:
                             target_value=ioc.normalized_value,
                             relationship_type=rtype,
                             confidence=60,
-                            evidence_text=sentence.strip(),
+                            evidence_text=evidence_window(
+                                sentence, [[entity.surface_form], [ioc.value, ioc.normalized_value]]
+                            ),
                             explicit_or_inferred="inferred",
                             extraction_method="cooccurrence",
                         )
@@ -111,7 +235,9 @@ class RelationshipExtractor:
                             target_value=cve.normalized_value,
                             relationship_type="exploits",
                             confidence=65,
-                            evidence_text=sentence.strip(),
+                            evidence_text=evidence_window(
+                                sentence, [[actor.surface_form], [cve.normalized_value]]
+                            ),
                             explicit_or_inferred="inferred",
                             extraction_method="cooccurrence",
                         )
