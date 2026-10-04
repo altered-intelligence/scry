@@ -1,7 +1,8 @@
 """APScheduler-based recurring task scheduler.
 
 Default schedule (UTC, staggered so the two ingest jobs never collide):
-  ingest-all       every 30 min at :04/:34
+  ingest-all       every 30 min at :04/:34 (then a bounded full-page fetch for
+                   recent RSS-stub articles, before extraction)
   otx-pulses       every 30 min at :19/:49
   decay            daily
   alert evaluation every 15 min
@@ -44,8 +45,24 @@ def _ingest_all_job() -> None:
     source or transient DB lock must not kill the scheduler thread."""
 
     async def _run():
+        settings = get_settings()
         with session_scope() as session:
-            res = await IngestionEngine(session).ingest_all()
+            engine = IngestionEngine(session)
+            res = await engine.ingest_all()
+            if settings.full_fetch_enabled:
+                # RSS stubs get their full page before extraction runs, so
+                # their IOCs/entities/claims are found in the same cycle. Never
+                # blocks the pipeline: a failure here only skips the upgrade.
+                try:
+                    full = await engine.fetch_full_content(
+                        limit=settings.full_fetch_limit,
+                        max_age_hours=settings.full_fetch_max_age_hours,
+                        retry_after_hours=settings.full_fetch_retry_hours,
+                    )
+                    logger.info("scheduler_full_fetch_done", result=full)
+                except Exception as exc:
+                    session.rollback()
+                    logger.warning("scheduler_full_fetch_failed", exc=str(exc))
             pipeline = CTIPipeline(session)
             for art in session.scalars(select(Article).where(Article.extractor_version == "0")):
                 pipeline.process_article(art)

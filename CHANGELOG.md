@@ -6,8 +6,26 @@ semantic versioning.
 
 ## [Unreleased]
 
+### Added
+
+- **Scheduled full-page fetch for RSS stubs.** `fetch_full_content` used to
+  run only when someone called `POST /ingest/fetch-full`, so feed articles
+  with a short or empty summary stayed short forever. The scheduled ingest
+  now runs it right after collection and before extraction (bounded to
+  `CTI_FULL_FETCH_LIMIT` articles per run, default 25; only articles
+  ingested within `CTI_FULL_FETCH_MAX_AGE_HOURS`, default 72, so pruned HTML
+  is not re-downloaded; disable with `CTI_FULL_FETCH_ENABLED=false`). Failed
+  fetches are recorded in `source_fetches` and the URL backs off for
+  `CTI_FULL_FETCH_RETRY_HOURS` (default 6); a page that fetches fine but is
+  not longer than the stored text is marked done instead of being refetched
+  every cycle.
+
 ### Fixed
 
+- **Full-content fetch hardening.** Candidates from disabled sources no
+  longer consume the per-run limit (filtered in SQL), one fetcher serves the
+  whole batch so the per-host rate limiter actually applies, and when a page
+  parses to no text the raw HTML is no longer stored as the article text.
 - **Single-URL ingest now parses the page.** `POST /ingest/url`, `scry
   ingest-url`, and a source whose URL is a single page stored the article
   with an empty title and empty text, so extraction found nothing and

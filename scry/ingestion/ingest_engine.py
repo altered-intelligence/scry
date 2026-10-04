@@ -10,9 +10,9 @@ logic lives here.
 from __future__ import annotations
 
 import hashlib
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.orm import Session
 
 from scry.ingestion.collection_window import entry_in_window, get_window_days
@@ -31,6 +31,8 @@ PARSER_VERSION = "0.1"
 # Same caps the second-pass full-content fetch applies.
 MAX_TEXT_CHARS = 100_000
 MAX_RAW_HTML_CHARS = 500_000
+# Articles with less text than this are RSS stubs worth a full-page fetch.
+SHORT_TEXT_CHARS = 1000
 
 
 class IngestionEngine:
@@ -143,73 +145,109 @@ class IngestionEngine:
                 totals[k] = totals.get(k, 0) + v
         return totals
 
-    async def fetch_full_content(self, limit: int = 50) -> dict[str, int]:
-        """Second-pass: fetch the full HTML for articles that only have RSS summaries.
+    async def fetch_full_content(
+        self,
+        limit: int = 50,
+        *,
+        max_age_hours: int | None = None,
+        retry_after_hours: int = 0,
+    ) -> dict[str, int]:
+        """Second-pass: fetch the full page for articles that only have RSS summaries.
 
-        Identifies articles whose extracted_text is short (< 1000 chars) and where
-        no full HTML is stored, then fetches and parses the full article URL.
-        Returns counts of updated and failed articles.
+        Candidates are articles with no stored HTML whose text is short
+        (< ``SHORT_TEXT_CHARS``) and whose source is enabled; newest first.
+
+        - ``max_age_hours`` limits candidates to recently ingested articles
+          (the scheduler uses it so articles whose HTML was pruned by
+          retention are never refetched).
+        - ``retry_after_hours`` skips URLs with a failed fetch recorded in
+          ``source_fetches`` within that window (the scheduler's back-off).
+        - A page that fetches fine but is no longer than the stored text is
+          still marked done (its HTML is stored), so genuinely short pages
+          are not refetched every cycle.
+
+        Returns counts: updated (longer text stored), unchanged, failed, skipped.
         """
-        updated = 0
-        failed = 0
-        skipped = 0
-
-        # Articles with short content that haven't had full fetch yet
-        stubs = self.session.scalars(
+        now = datetime.now(UTC)
+        stmt = (
             select(Article)
-            .where(Article.url.isnot(None))
-            .where(Article.raw_html.is_(None))
-            .order_by(Article.id.desc())
-            .limit(limit * 3)  # over-fetch to account for skips
-        ).all()
-
-        candidates = [a for a in stubs if len(a.extracted_text or "") < 1000][:limit]
+            .outerjoin(Source, Source.id == Article.source_id)
+            .where(Article.url.isnot(None), Article.raw_html.is_(None))
+            .where(func.length(Article.extracted_text) < SHORT_TEXT_CHARS)
+            .where(or_(Source.id.is_(None), Source.enabled.is_(True)))
+        )
+        if max_age_hours:
+            stmt = stmt.where(
+                func.coalesce(Article.ingested_at, Article.created_at) >= now - timedelta(hours=max_age_hours)
+            )
+        if retry_after_hours:
+            recent_failure = exists().where(
+                SourceFetch.url == Article.url,
+                SourceFetch.error.isnot(None),
+                SourceFetch.fetched_at >= now - timedelta(hours=retry_after_hours),
+            )
+            stmt = stmt.where(~recent_failure)
+        candidates = self.session.scalars(stmt.order_by(Article.id.desc()).limit(limit)).all()
         logger.info("full_fetch_candidates", count=len(candidates))
+
+        updated = unchanged = failed = skipped = 0
         updated_ids: list[int] = []
 
-        for article in candidates:
-            try:
+        # One fetcher for the whole batch so its per-host rate limiter works.
+        async with SafeFetcher() as fetcher:
+            for article in candidates:
                 source = self.session.get(Source, article.source_id) if article.source_id else None
-                policy_name = source.collection_policy if source else "safe_public_web"
-                safety_mode = source.safety_mode if source else None
-                source_enabled = source.enabled if source else True
-                decision = self.policy.evaluate(
-                    policy_name=policy_name,
-                    source_enabled=source_enabled,
-                    source_safety_mode=safety_mode,
-                )
-                if not decision.allowed:
-                    skipped += 1
-                    continue
+                reason: str | None = None
+                try:
+                    decision = self.policy.evaluate(
+                        policy_name=source.collection_policy if source else "safe_public_web",
+                        source_enabled=source.enabled if source else True,
+                        source_safety_mode=source.safety_mode if source else None,
+                    )
+                    if not decision.allowed:
+                        skipped += 1
+                        continue
+                    res = await fetcher.fetch(
+                        article.url,
+                        policy=decision,
+                        rate_limit_per_minute=source.rate_limit_per_minute if source else 10,
+                    )
+                    if res.error or not res.text or len(res.text) < 500:
+                        reason = res.error or "response body too short"
+                        status = res.status_code
+                    else:
+                        parsed = parse_article(res.text, url=article.url)
+                        if len(parsed.text or "") > len(article.extracted_text or ""):
+                            article.extracted_text = parsed.text[:MAX_TEXT_CHARS]
+                            article.raw_html = res.text[:MAX_RAW_HTML_CHARS]
+                            if parsed.title and not article.title:
+                                article.title = parsed.title[:1024]
+                            # Reset extractor version so the pipeline re-runs extraction.
+                            article.extractor_version = "0"
+                            updated += 1
+                            updated_ids.append(article.id)
+                        else:
+                            # Fetched fine, nothing longer to store: keep the HTML so
+                            # this article stops being a candidate.
+                            article.raw_html = res.text[:MAX_RAW_HTML_CHARS]
+                            unchanged += 1
+                        self.session.commit()
+                        continue
+                except Exception as exc:
+                    logger.warning("full_fetch_error", article_id=article.id, exc=str(exc))
+                    self.session.rollback()
+                    reason, status = f"{type(exc).__name__}: {exc}", None
 
-                rate = source.rate_limit_per_minute if source else 10
-
-                async with SafeFetcher() as fetcher:
-                    res = await fetcher.fetch(article.url, policy=decision, rate_limit_per_minute=rate)
-
-                if res.error or not res.text or len(res.text) < 500:
-                    failed += 1
-                    continue
-
-                parsed = parse_article(res.text, url=article.url)
-                full_text = parsed.text or res.text
-                if len(full_text) > len(article.extracted_text or ""):
-                    article.extracted_text = full_text[:MAX_TEXT_CHARS]
-                    article.raw_html = res.text[:MAX_RAW_HTML_CHARS]
-                    if parsed.title and not article.title:
-                        article.title = parsed.title
-                    # Reset extractor version so pipeline re-runs IOC extraction
-                    article.extractor_version = "0"
-                    updated += 1
-                    updated_ids.append(article.id)
-            except Exception as exc:
-                logger.warning("full_fetch_error", article_id=article.id, exc=str(exc))
                 failed += 1
+                if source is not None:  # back-off marker + "collection gaps" visibility
+                    self._record_fetch(
+                        source,
+                        FetchResult(url=article.url, status_code=status, error=str(reason)[:500]),
+                    )
 
-        self.session.commit()
         self._index_fts(updated_ids)
-        logger.info("full_fetch_done", updated=updated, failed=failed, skipped=skipped)
-        return {"updated": updated, "failed": failed, "skipped": skipped}
+        logger.info("full_fetch_done", updated=updated, unchanged=unchanged, failed=failed, skipped=skipped)
+        return {"updated": updated, "unchanged": unchanged, "failed": failed, "skipped": skipped}
 
     def _index_fts(self, article_ids: list[int]) -> None:
         """Refresh FTS5 entries + embeddings for newly ingested/updated articles.

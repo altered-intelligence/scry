@@ -72,6 +72,21 @@ require authentication (session cookie, per-user API key, or the master
 | `CTI_AI_SEARCH_TIMEOUT_S` | `120` | Hard timebox for one answer (the first answer includes ~10s model load). |
 | `CTI_AI_IDLE_UNLOAD_S` | `900` | Release the embedded model after this many idle seconds (frees ~2 GB RSS); the next question transparently reloads. `0` keeps the model resident forever. |
 
+### Scheduled full-content fetch
+
+Feeds often carry only a short summary. After each scheduled ingest the
+scheduler fetches the full page for recent "stub" articles (text under 1,000
+characters, no stored HTML, source enabled) *before* extraction runs, so their
+indicators, entities, and claims are found in the same cycle. Source collection
+policies and the SSRF guard apply as usual.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `CTI_FULL_FETCH_ENABLED` | `true` | Run the full-page fetch after each scheduled ingest. |
+| `CTI_FULL_FETCH_LIMIT` | `25` | Maximum articles fetched per scheduled run. |
+| `CTI_FULL_FETCH_MAX_AGE_HOURS` | `72` | Only articles ingested within this many hours are considered. |
+| `CTI_FULL_FETCH_RETRY_HOURS` | `6` | A URL whose fetch failed is skipped for this long (failures are recorded in `source_fetches`, so they also appear under "collection gaps"). |
+
 ### Retention
 
 | Variable | Default | Purpose |

@@ -76,6 +76,14 @@ class Settings(BaseSettings):
     ai_search_timeout_s: int = 120  # hard timebox for one answer (first answer includes ~12s model load)
     ai_idle_unload_s: int = 900  # release the local model after this many idle seconds (0 = never unload)
 
+    # Scheduled full-content fetch: after each scheduled ingest, fetch the full
+    # page for recent RSS-stub articles (short summary, no stored HTML). Bounded
+    # per run; failed URLs back off for full_fetch_retry_hours.
+    full_fetch_enabled: bool = True
+    full_fetch_limit: int = 25  # articles per scheduled run
+    full_fetch_max_age_hours: int = 72  # only recently ingested articles
+    full_fetch_retry_hours: int = 6  # skip a URL this long after a failed fetch
+
     # Retention
     raw_html_retention_days: int = 30  # prune Article.raw_html older than this (0 = keep forever)
     retention_article_text_days: int = 365  # reserved — not yet enforced

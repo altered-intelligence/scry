@@ -114,6 +114,18 @@ The compose bundle already includes a `scheduler` service
 (`python -m scry.scheduler`); set the digest env vars on that service to get
 the email there.
 
+## 3b. Full-page fetch for feed stubs
+
+Each scheduled ingest (every 30 minutes) is followed by a bounded second pass
+that fetches the full page for recent articles whose feed entry carried only a
+short summary, then runs extraction on the upgraded text. It is on by default;
+tune or disable it with the `CTI_FULL_FETCH_*` variables in
+[configuration.md](./configuration.md). Failed URLs back off for six hours, a
+page that is simply short is stored once and never refetched, and articles
+older than the age window (default 72 hours) are left alone, so pruned HTML is
+not re-downloaded. The manual `POST /ingest/fetch-full` endpoint keeps its old
+unbounded behaviour.
+
 ## 4. raw_html retention (weekly prune)
 
 Stored `raw_html` is the dominant share of database size and is only needed
