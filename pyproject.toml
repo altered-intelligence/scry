@@ -1,6 +1,6 @@
 [project]
 name = "scry"
-version = "0.15.1"
+version = "0.15.2"
 description = "Scry — defensive CTI collection, extraction, enrichment, correlation, search, and reporting platform."
 readme = "README.md"
 requires-python = ">=3.11"

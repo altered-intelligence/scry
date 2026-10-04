@@ -19,6 +19,10 @@ A defensive cyber threat intelligence platform that ingests public sources, extr
 
 ---
 
+## What's new in 0.15.2
+
+- **Relationship evidence cap** — relationship evidence used to be the whole surrounding "sentence", and punctuation-free imports (pasted IOC sheets, hunt workbooks) turned that into hundreds of KB copied onto every relationship row: 1.16 GB of a 1.3 GB real database. Evidence is now windowed around the two endpoints and capped at 400 characters (verbatim when it already fits, so prose articles are unchanged), at extraction time and again at the persistence sink. New `scry prune-evidence [--max-chars N] [--dry-run] [--no-vacuum]` trims existing rows and VACUUMs; the startup migration trims them automatically. Live-verified: `relationships` 1,167 MB → 4.5 MB, database file 1,348 MB → 126 MB, 812 tests green.
+
 ## What's new in 0.15.0
 
 - **FortiGuard Labs enrichment provider** — full FortiGuard IOC Research API v1.6 coverage as a first-class provider: threat-intel search (verdict categories, confidence, kill-chain phases, references), related indicators, country visit counts, user submissions + ticket status, investigation batch/atomic endpoints for URL / IP / Domain / File (including whois, ASN, geoip, AI summaries), and outbreak tags / IOCs / telemetry. Supports domains, URLs, IPs, hashes, emails, and onions (looked up as URLs); per-provider toggle + Fernet-encrypted key on the Intel Feeds page; 7-day refresh TTL (`enrichment_refresh_days_fortiguard`); `scry fortiguard` CLI with 17 subcommands (`search`, `related`, `visits`, `submit`, `outbreak-tags`, `test`, …). Onions are now also routed to VirusTotal and OTX as URL lookups.
