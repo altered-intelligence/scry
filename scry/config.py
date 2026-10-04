@@ -44,6 +44,12 @@ class Settings(BaseSettings):
     # Never enable on a network-reachable instance.
     open_access: bool = False
 
+    # Session/auth cookies get the Secure attribute: "auto" (default) when the
+    # request arrived over HTTPS (incl. X-Forwarded-Proto behind a trusted
+    # proxy), "true" always, "false" never. Plain http://localhost keeps working
+    # under "auto" (Safari rejects Secure cookies on http even for localhost).
+    cookie_secure: str = "auto"
+
     # Safety
     enable_dark_web: bool = False
     enable_js_rendering: bool = False

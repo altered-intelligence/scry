@@ -20,7 +20,9 @@ is enabled, so monitoring probes and the Search-page provider picker keep
 working (read-only only — mutations on the same paths require auth):
 
 - ``/api/health`` / ``/health`` — health probe (mounted without prefix)
-- ``/api/ai/status``, ``/api/ai/provider`` — Search-page provider picker
+- ``/api/ai/status`` — Search-page status pill (the provider list,
+  ``/api/ai/provider``, is NOT exempt: it exposes base URLs, masked keys, and
+  connection errors; the Search page calls it with the session cookie)
 
 The HTML UI routes (``/ui/*`` and the dashboard) are gated by middleware in
 ``scry/main.py``, not through this dependency.
@@ -34,7 +36,7 @@ from fastapi import HTTPException, Request
 
 # Read-only methods that may be answered without credentials on the exempt
 # paths below. Everything else (PUT/POST/DELETE/PATCH/…) requires auth —
-# e.g. PUT /api/ai/provider mutates stored LLM credentials and must never be
+# e.g. a PUT on an exempt path would mutate stored LLM credentials and must never be
 # reachable anonymously.
 _UNAUTHENTICATED_METHODS = frozenset({"GET", "HEAD"})
 
@@ -46,7 +48,6 @@ _UNAUTHENTICATED_PATHS = frozenset(
         "/api/health",
         "/health",
         "/api/ai/status",
-        "/api/ai/provider",
     }
 )
 

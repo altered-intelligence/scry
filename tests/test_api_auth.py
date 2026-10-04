@@ -69,11 +69,13 @@ def test_health_stays_open_with_key(api_key):
         assert r.json() == {"status": "ok"}
 
 
-def test_ai_status_and_provider_stay_open_with_key(api_key):
-    """The Search-page provider picker calls these unauthenticated."""
+def test_ai_status_stays_open_but_provider_list_requires_the_key(api_key):
+    """Status is a harmless probe; the provider list exposes base URLs, masked
+    keys, and connection errors, so it needs the key (or a session)."""
     with TestClient(app) as client:
         assert client.get("/api/ai/status").status_code == 200
-        assert client.get("/api/ai/provider").status_code == 200
+        assert client.get("/api/ai/provider").status_code == 401
+        assert client.get("/api/ai/provider", headers={"X-API-Key": api_key}).status_code == 200
 
 
 def test_ui_routes_not_authenticated(api_key):

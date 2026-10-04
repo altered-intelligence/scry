@@ -83,9 +83,10 @@ def master_key(monkeypatch):
 
 
 class TestMethodAwareExemptions:
-    def test_get_provider_picker_stays_open(self, master_key):
+    def test_provider_list_needs_auth_but_status_stays_open(self, master_key):
         with TestClient(app) as client:
-            assert client.get("/api/ai/provider").status_code == 200
+            assert client.get("/api/ai/provider").status_code == 401
+            assert client.get("/api/ai/provider", headers={"X-API-Key": master_key}).status_code == 200
             assert client.get("/api/ai/status").status_code == 200
 
     def test_put_provider_requires_auth(self, master_key):

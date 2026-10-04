@@ -104,8 +104,11 @@ def list_sources(session: Session = Depends(get_session)):
     return session.scalars(select(Source).order_by(Source.name)).all()
 
 
-@api_router.post("/sources", response_model=SourceOut)
+@api_router.post("/sources", response_model=SourceOut, dependencies=[Depends(require_admin)])
 def create_source(payload: SourceIn, session: Session = Depends(get_session)):
+    """Register a collection source — admin-only when user accounts exist
+    (collection is global state, like PATCH and the UI toggles); the master
+    key and legacy zero-user mode keep working for automation."""
     if session.scalar(select(Source).where(Source.name == payload.name)):
         raise HTTPException(409, detail="Source name already exists")
     src = Source(**payload.model_dump())

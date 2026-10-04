@@ -460,7 +460,7 @@ class TestGating:
         with TestClient(app) as client:
             assert client.get("/health").status_code == 200
             assert client.get("/api/ai/status").status_code == 200
-            assert client.get("/api/ai/provider").status_code == 200
+            assert client.get("/api/ai/provider").status_code == 401  # no longer exempt
 
     def test_api_still_open_when_no_users_even_without_key(self):
         """Zero users: no key, no cookie — everything open (legacy behavior)."""

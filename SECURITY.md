@@ -40,7 +40,7 @@ All REST endpoints accept an optional static API token (`CTI_API_KEY` in `.env`,
 
 - Clients must send `X-API-Key: <key>` or `Authorization: Bearer <key>`; anything else gets `401` with a `WWW-Authenticate: Bearer` challenge.
 - The key is compared with `hmac.compare_digest` (constant time) to avoid timing leaks.
-- Exemptions stay unauthenticated so dependent surfaces keep working: `/health` (monitoring probes) and `/api/ai/status` + `/api/ai/provider` (Search-page provider picker).
+- Exemptions stay unauthenticated so dependent surfaces keep working: `/health` (monitoring probes) and `/api/ai/status` (Search-page status pill). The provider list `/api/ai/provider` requires authentication: it exposes base URLs, masked keys, and connection errors (the Search page sends the session cookie).
 - The HTML UI routes (`/ui/*`, dashboard) are **never** authenticated by this token — they are plain FastAPI routes outside the API routers. If Scry is exposed beyond localhost, put the UI behind a reverse proxy / SSO; do not rely on `CTI_API_KEY` to protect browser pages.
 
 ## SSRF guard

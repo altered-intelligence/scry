@@ -194,6 +194,29 @@ def _timeago(value) -> Markup | str:
 templates.env.filters["timeago"] = _timeago
 
 
+def _cookie_secure(request: Request) -> bool:
+    """Whether auth cookies should carry the Secure attribute (see Settings.cookie_secure)."""
+    mode = (get_settings().cookie_secure or "auto").strip().lower()
+    if mode in ("true", "1", "yes", "on"):
+        return True
+    if mode in ("false", "0", "no", "off"):
+        return False
+    return request.url.scheme == "https"
+
+
+def _set_cookie(request: Request, response, key: str, value: str, *, max_age: int, path: str = "/") -> None:
+    """Set an auth cookie: HttpOnly, SameSite=Lax, and Secure over HTTPS."""
+    response.set_cookie(
+        key,
+        value,
+        max_age=max_age,
+        httponly=True,
+        samesite="lax",
+        secure=_cookie_secure(request),
+        path=path,
+    )
+
+
 def _redirect_flash(url: str, message: str, kind: str = "success") -> RedirectResponse:
     sep = "&" if "?" in url else "?"
     return RedirectResponse(
@@ -346,12 +369,12 @@ def login_submit(
             session.commit()
             params = f"?{urlencode({'next': next})}" if next else ""
             response = RedirectResponse(url=f"/login/mfa{params}", status_code=303)
-            response.set_cookie(
+            _set_cookie(
+                request,
+                response,
                 _totp.MFA_PENDING_COOKIE,
                 pending,
                 max_age=int(_totp.MFA_PENDING_TTL.total_seconds()),
-                httponly=True,
-                samesite="lax",
                 path="/",
             )
             return response
@@ -366,13 +389,8 @@ def login_submit(
         session.commit()
 
     response = RedirectResponse(url=_safe_next(next), status_code=303)
-    response.set_cookie(
-        SESSION_COOKIE,
-        raw_token,
-        max_age=int(SESSION_TTL.total_seconds()),
-        httponly=True,
-        samesite="lax",
-        path="/",
+    _set_cookie(
+        request, response, SESSION_COOKIE, raw_token, max_age=int(SESSION_TTL.total_seconds()), path="/"
     )
     return response
 
@@ -424,14 +442,7 @@ def setup_page(request: Request):
             "csrf": token,
         },
     )
-    response.set_cookie(
-        SETUP_CSRF_COOKIE,
-        token,
-        max_age=600,
-        httponly=True,
-        samesite="lax",
-        path="/setup",
-    )
+    _set_cookie(request, response, SETUP_CSRF_COOKIE, token, max_age=600, path="/setup")
     return response
 
 
@@ -492,13 +503,8 @@ def setup_submit(
         session.commit()
 
     response = RedirectResponse(url="/", status_code=303)
-    response.set_cookie(
-        SESSION_COOKIE,
-        raw_token,
-        max_age=int(SESSION_TTL.total_seconds()),
-        httponly=True,
-        samesite="lax",
-        path="/",
+    _set_cookie(
+        request, response, SESSION_COOKIE, raw_token, max_age=int(SESSION_TTL.total_seconds()), path="/"
     )
     response.delete_cookie(SETUP_CSRF_COOKIE, path="/setup")
     return response
@@ -615,13 +621,8 @@ def mfa_challenge_submit(
         session.commit()
 
     response = RedirectResponse(url=_safe_next(next), status_code=303)
-    response.set_cookie(
-        SESSION_COOKIE,
-        raw_token,
-        max_age=int(SESSION_TTL.total_seconds()),
-        httponly=True,
-        samesite="lax",
-        path="/",
+    _set_cookie(
+        request, response, SESSION_COOKIE, raw_token, max_age=int(SESSION_TTL.total_seconds()), path="/"
     )
     response.delete_cookie(_totp.MFA_PENDING_COOKIE, path="/")
     return response
@@ -1759,12 +1760,12 @@ def profile_passkey_register_begin(
     options_json, challenge = _webauthn.registration_options_json(user, credentials, rp_id)
     marker = _webauthn.issue_passkey_marker(user.id, challenge)
     response = JSONResponse({"options": json.loads(options_json)})
-    response.set_cookie(
+    _set_cookie(
+        request,
+        response,
         _webauthn.PASSKEY_PENDING_COOKIE,
         marker,
         max_age=int(_webauthn.PASSKEY_PENDING_TTL.total_seconds()),
-        httponly=True,
-        samesite="lax",
         path="/",
     )
     return response
@@ -1897,12 +1898,12 @@ def login_passkey_begin(request: Request, username: str = Form(...)):
         options_json, challenge = _webauthn.authentication_options_json(credentials, rp_id)
         marker = _webauthn.issue_passkey_marker(user.id, challenge)
     response = JSONResponse({"options": json.loads(options_json)})
-    response.set_cookie(
+    _set_cookie(
+        request,
+        response,
         _webauthn.PASSKEY_PENDING_COOKIE,
         marker,
         max_age=int(_webauthn.PASSKEY_PENDING_TTL.total_seconds()),
-        httponly=True,
-        samesite="lax",
         path="/",
     )
     return response
@@ -1970,13 +1971,8 @@ def login_passkey_complete(request: Request, payload: dict = Body(default={})):
         )
         session.commit()
     response = JSONResponse({"ok": True, "redirect": next_url})
-    response.set_cookie(
-        SESSION_COOKIE,
-        raw_token,
-        max_age=int(SESSION_TTL.total_seconds()),
-        httponly=True,
-        samesite="lax",
-        path="/",
+    _set_cookie(
+        request, response, SESSION_COOKIE, raw_token, max_age=int(SESSION_TTL.total_seconds()), path="/"
     )
     response.delete_cookie(_webauthn.PASSKEY_PENDING_COOKIE, path="/")
     return response

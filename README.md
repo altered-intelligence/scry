@@ -256,7 +256,7 @@ scry stats
 - **MFA (TOTP)** — on /profile, scan the QR code with Google Authenticator, confirm one code, and MFA is enabled; 10 one-time recovery codes are shown once at setup. MFA is challenged at login when enabled; a recovery code works as a fallback.
 - **Passkeys (WebAuthn)** — register a passkey on /profile, then log in with username + passkey (no password). Passkey login satisfies MFA. The relying party is derived per-request from the Host header, so passkeys work on `localhost` now and on LAN/HTTPS hosts as-is.
 - **Master API key (`CTI_API_KEY`)** — a static key accepted on all REST API and `/taxii2` routes via `X-API-Key` or `Authorization: Bearer`, constant-time compared. Useful for automation/Dashboard widgets.
-- **Per-user API keys** — created on /profile (masked after creation, revocable, optional expiry, last-used tracking). Once users exist, the REST API and `/taxii2` accept any of: session cookie, per-user API key, or master `CTI_API_KEY`. Exemptions that stay open: `/health`, `/api/ai/status`, `/api/ai/provider` GET, and `/login` + `/static`.
+- **Per-user API keys** — created on /profile (masked after creation, revocable, optional expiry, last-used tracking). Once users exist, the REST API and `/taxii2` accept any of: session cookie, per-user API key, or master `CTI_API_KEY`. Exemptions that stay open: `/health`, `/api/ai/status`, and `/login` + `/static` (the provider list `/api/ai/provider` requires authentication).
 
 ## Configuration
 

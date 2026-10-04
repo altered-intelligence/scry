@@ -20,6 +20,28 @@ semantic versioning.
   not longer than the stored text is marked done instead of being refetched
   every cycle.
 
+### Security
+
+- **Auth cookies are marked `Secure` over HTTPS.** The session, MFA-pending,
+  passkey-pending, and first-run CSRF cookies are now set through one helper
+  that adds the `Secure` attribute when the request arrived over HTTPS
+  (including `X-Forwarded-Proto` behind a trusted proxy). New
+  `CTI_COOKIE_SECURE` setting: `auto` (default), `true`, or `false`; plain
+  `http://localhost` keeps working under `auto`. Behind a TLS-terminating
+  proxy, run uvicorn with `--proxy-headers --forwarded-allow-ips=<proxy-ip>`
+  or set `CTI_COOKIE_SECURE=true`.
+- **`GET /api/ai/provider` now requires authentication.** It was exempt so
+  the Search page could populate its picker, but it exposes configured base
+  URLs, masked key tails, and connection-test errors to anyone who can reach
+  the port. The Search page calls it with the session cookie, so signed-in
+  users see no change; `/health` and `/api/ai/status` stay open. With only a
+  master key configured and no user accounts, the browser picker needs an
+  account (or `CTI_OPEN_ACCESS`) because the page cannot send the key.
+- **`POST /sources` is admin-only** (when user accounts exist), matching
+  `PATCH /sources/{id}` and the UI toggles: collection is global state, so a
+  regular user could previously add feeds that every user's ingest would
+  fetch. The master key and legacy zero-user open mode keep working.
+
 ### Fixed
 
 - **Passwords over 72 bytes no longer crash.** bcrypt 5 raises `ValueError`
