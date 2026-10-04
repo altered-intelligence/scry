@@ -29,7 +29,7 @@ from scry.api.deps import get_session
 from scry.api.router import compute_stats
 from scry.api.taxii import taxii_router
 from scry.auth.dependencies import current_user, path_requires_ui_auth
-from scry.auth.passwords import hash_password, verify_password
+from scry.auth.passwords import hash_password, password_length_error, verify_password
 from scry.auth.sessions import (
     SESSION_COOKIE,
     SESSION_TTL,
@@ -456,6 +456,8 @@ def setup_submit(
             return _setup_redirect("Username is required.")
         if len(password) < 8:
             return _setup_redirect("Password must be at least 8 characters.")
+        if (too_long := password_length_error(password)) is not None:
+            return _setup_redirect(too_long)
         if password != confirm_password:
             return _setup_redirect("Passwords do not match.")
         from scry import mail as _mail
@@ -878,6 +880,8 @@ def admin_create_user(
         return _redirect_flash("/admin", "Username is required.", "error")
     if session.scalar(select(User).where(func.lower(User.username) == username.lower())):
         return _redirect_flash("/admin", f"Username {username!r} already exists.", "error")
+    if (too_long := password_length_error(password)) is not None:
+        return _redirect_flash("/admin", too_long, "error")
     generated = not password
     if generated:
         password = secrets.token_urlsafe(9)
@@ -1437,6 +1441,8 @@ def profile_change_password(
         return _redirect_flash(
             "/profile", f"New password must be at least {_MIN_PASSWORD_LEN} characters.", "error"
         )
+    if (too_long := password_length_error(new_password)) is not None:
+        return _redirect_flash("/profile", too_long, "error")
     user.password_hash = hash_password(new_password)
     user.must_change_password = False
     user.failed_login_count = 0

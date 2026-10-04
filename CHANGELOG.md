@@ -22,6 +22,16 @@ semantic versioning.
 
 ### Fixed
 
+- **Passwords over 72 bytes no longer crash.** bcrypt 5 raises `ValueError`
+  for longer input, so `hash_password` failed with an HTTP 500 on first-run
+  setup, profile password change, and admin user creation (and a traceback in
+  `scry users create|reset-password|seed`), while `verify_password` swallowed
+  the error and returned False. Passwords that fit keep their exact bcrypt
+  hash, so every existing account is unaffected. Longer passphrases are
+  pre-hashed (`bcrypt-sha256$` + bcrypt of `base64(sha256(password))`), so the
+  whole password counts rather than only its first 72 bytes. Input is capped
+  at 1,024 characters with a clear error on every entry point (web forms and
+  CLI), and login attempts over the cap fail cleanly.
 - **Full-content fetch hardening.** Candidates from disabled sources no
   longer consume the per-run limit (filtered in SQL), one fetcher serves the
   whole batch so the per-host rate limiter actually applies, and when a page

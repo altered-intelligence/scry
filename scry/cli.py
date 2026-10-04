@@ -52,7 +52,7 @@ from rich.table import Table
 from sqlalchemy import func, select
 
 from scry.ai.errors import AskError
-from scry.auth.passwords import hash_password
+from scry.auth.passwords import hash_password, password_length_error
 from scry.db import get_engine, session_scope
 from scry.enrichment import EnrichmentEngine
 from scry.enrichment.fortiguard import FortiGuardClient
@@ -901,6 +901,13 @@ def _prompt_password() -> str:
     return typer.prompt("Password", hide_input=True, confirmation_prompt=True)
 
 
+def _require_password_length(password: str) -> None:
+    """Exit with a clear message instead of crashing in the hasher."""
+    if (problem := password_length_error(password)) is not None:
+        console.print(f"[red]{problem}[/red]")
+        raise typer.Exit(2)
+
+
 users_app = typer.Typer(help="User account management (v0.5.0)")
 app.add_typer(users_app, name="users")
 
@@ -922,6 +929,7 @@ def users_create(
     email = _validate_email(email)
     if password is None:
         password = _prompt_password()
+    _require_password_length(password)
     with session_scope() as session:
         if _find_user(session, username) is not None:
             console.print(f"[red]Username {username!r} already exists[/red]")
@@ -986,6 +994,7 @@ def users_reset_password(
     """Reset a user's password; forces a change at next login and logs them out."""
     if password is None:
         password = _prompt_password()
+    _require_password_length(password)
     from scry.auth.sessions import revoke_all_sessions
 
     with session_scope() as session:
@@ -1044,6 +1053,8 @@ def users_seed(
     if password is not None and len(password) < 8:
         console.print("[red]Password must be at least 8 characters[/red]")
         raise typer.Exit(2)
+    if password is not None:
+        _require_password_length(password)
     generated = password is None
     if generated:
         password = secrets.token_urlsafe(12)
