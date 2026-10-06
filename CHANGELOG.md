@@ -6,6 +6,8 @@ semantic versioning.
 
 ## [Unreleased]
 
+## [0.17.0] — 2026-10-06
+
 Fixes from the 2026-10 product review: precision, explainable scoring, and
 briefs that say what changed, why it matters, and what to do.
 

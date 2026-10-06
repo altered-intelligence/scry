@@ -19,6 +19,14 @@ A defensive cyber threat intelligence platform that ingests public sources, extr
 
 ---
 
+## What's new in 0.17.0
+
+- **Accuracy** — product names such as ASP.NET are no longer extracted as domains; actor and malware tags and relationships need evidence next to the indicator; victim domains and citation links are recognised. Scoring model 0.2 caps unverified indicators below block level, and every score shows how it was built. `scry reprocess` rebuilds existing data.
+- **Briefs** — the daily and weekly briefs now lead with what changed, why it matters and what to do, with de-duplicated stories and per-source collection health.
+- **Reliability** — KEV additions use CISA's date added; rate-limited feeds pause with backoff.
+- **Mobile** — every page fits iPhone, Samsung Galaxy, Pixel and foldables, with a collapsible menu, tap dropdowns, scrolling tables, touch-friendly inputs, install-to-home-screen icons and gzip responses.
+- **Orbistrace menu** — `/ui/orbistrace` embeds orbistrace.com under the Scry menu bar (`CTI_ORBISTRACE_URL`).
+
 ## What's new in 0.16.1
 
 - **Ransomware feed import** — `scry ingest ransomware-feed FILE` loads an exported victim listing (JSON, JSON Lines, or CSV) into the Ransomware Feeds page. Field names are matched through aliases, country names map to ISO codes, severity maps to a risk score, items de-duplicate on group and victim, and each item is tagged `source:<name>`. `--dry-run` reports counts without writing.
