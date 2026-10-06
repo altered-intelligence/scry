@@ -38,7 +38,7 @@
 {%- macro poc_badge() -%}<span class="badge mid" title="Public PoC available">PoC</span>{%- endmacro -%}
 
 {%- macro observable_link(ob) -%}
-<a href="/ui/observables/{{ ob.id }}"><code>{{ ob.normalized_value }}</code></a>
+<a href="/ui/observables/{{ ob.id }}"><code{% if ob.normalized_value|length <= 24 %} class="nb"{% endif %}>{{ ob.normalized_value }}</code></a>
 {%- endmacro -%}
 
 {%- macro article_link(a) -%}
@@ -50,7 +50,7 @@
 {%- endmacro -%}
 
 {%- macro cve_link(cve_id) -%}
-<a href="/ui/cves/{{ cve_id }}"><code>{{ cve_id }}</code></a>
+<a href="/ui/cves/{{ cve_id }}"><code class="nb">{{ cve_id }}</code></a>
 {%- endmacro -%}
 
 {%- macro pagination(total, offset, limit, base_url, qs='') -%}

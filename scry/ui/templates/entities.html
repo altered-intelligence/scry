@@ -8,7 +8,7 @@
 <form class="filters" method="get" action="/ui/entities">
   <div>
     <label>Search name</label>
-    <input type="text" name="q" value="{{ filters.q or '' }}" placeholder="canonical name…">
+    <input type="search" name="q" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="search" value="{{ filters.q or '' }}" placeholder="canonical name…">
   </div>
   <div>
     <label>Type</label>

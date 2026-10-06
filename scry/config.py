@@ -69,6 +69,10 @@ class Settings(BaseSettings):
     )
 
     # UI
+    # Companion site shown inside Scry under the "Orbistrace" menu (embedded
+    # full-height below the navigation bar). Empty hides the menu item. The
+    # site must allow this origin in its CSP frame-ancestors.
+    orbistrace_url: str = "https://orbistrace.com/"
     enable_ai_search: bool = (
         True  # show the AI assistant panel on /ui/search (set CTI_ENABLE_AI_SEARCH=false to hide)
     )

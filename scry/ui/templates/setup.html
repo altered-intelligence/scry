@@ -15,7 +15,7 @@
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <label style="display: grid; gap: 4px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em;">
       Username
-      <input type="text" name="username" required autofocus autocomplete="username">
+      <input type="text" name="username" autocapitalize="none" autocorrect="off" spellcheck="false" required autofocus autocomplete="username">
     </label>
     <label style="display: grid; gap: 4px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em;">
       Password <span style="text-transform: none; letter-spacing: 0;">(min 8 characters)</span>
@@ -27,7 +27,7 @@
     </label>
     <label style="display: grid; gap: 4px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em;">
       Email <span style="text-transform: none; letter-spacing: 0;">(optional)</span>
-      <input type="text" name="email" autocomplete="email" placeholder="you@example.com">
+      <input type="email" name="email" autocapitalize="none" spellcheck="false" autocomplete="email" placeholder="you@example.com">
     </label>
     <button type="submit" class="btn" style="justify-self: start;">Create administrator</button>
   </form>

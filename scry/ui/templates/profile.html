@@ -40,9 +40,9 @@
   <h2 style="margin-top: 0;">Change password</h2>
   <form method="post" action="/profile/password" class="filters" style="align-items: end;">
     <input type="hidden" name="csrf" value="{{ csrf }}">
-    <label>Current password <input type="password" name="current_password" required></label>
-    <label>New password <input type="password" name="new_password" required minlength="10"></label>
-    <label>Confirm new password <input type="password" name="confirm_password" required></label>
+    <label>Current password <input type="password" name="current_password" required autocomplete="current-password"></label>
+    <label>New password <input type="password" name="new_password" required minlength="10" autocomplete="new-password"></label>
+    <label>Confirm new password <input type="password" name="confirm_password" required autocomplete="new-password"></label>
     <button type="submit" class="btn">Change password</button>
   </form>
   <p class="muted">Minimum 10 characters. Changing your password signs out every other session.</p>
@@ -61,7 +61,7 @@
           {{ pending_verification.expires_at|timeago }} (hover for the exact time).</p>
         <form method="post" action="/profile/verify-email/confirm" class="filters" style="align-items: end;">
           <input type="hidden" name="csrf" value="{{ csrf }}">
-          <label>Verification code <input type="text" name="code" required
+          <label>Verification code <input type="text" name="code" required autocomplete="one-time-code"
                    inputmode="numeric" pattern="\d{6}" maxlength="6" placeholder="123456"
                    style="min-width: 100px; letter-spacing: 0.2em;"></label>
           <button type="submit" class="btn">Confirm code</button>
@@ -126,7 +126,7 @@
         <p><code style="font-size: 15px; letter-spacing: 0.1em;">{{ mfa_setup.secret }}</code></p>
         <form method="post" action="/profile/mfa/verify" class="filters" style="align-items: end;">
           <input type="hidden" name="csrf" value="{{ csrf }}">
-          <label>6-digit code <input type="text" name="code" required
+          <label>6-digit code <input type="text" name="code" required autocomplete="one-time-code"
                    inputmode="numeric" pattern="\d{6}" maxlength="6" placeholder="123456"
                    style="min-width: 100px; letter-spacing: 0.2em;"></label>
           <button type="submit" class="btn">Verify and enable</button>

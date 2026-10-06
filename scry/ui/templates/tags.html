@@ -9,7 +9,7 @@
 <form class="filters" method="get" action="/ui/tags">
   <div>
     <label>Search</label>
-    <input type="text" name="q" value="{{ filters.q or '' }}" placeholder="filter tag names…">
+    <input type="search" name="q" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="search" value="{{ filters.q or '' }}" placeholder="filter tag names…">
   </div>
   <button class="btn" type="submit">Filter</button>
   <a class="btn secondary" href="/ui/tags">Reset</a>

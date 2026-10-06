@@ -3,14 +3,27 @@
 <head>
   <meta charset="utf-8">
   <title>{% block title %}Scry{% endblock %}</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <link rel="icon" type="image/svg+xml" href="/static/logo.svg">
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+  <link rel="manifest" href="/static/manifest.webmanifest">
   <meta name="color-scheme" content="dark light">
+  <!-- Browser chrome colour (Android Chrome, Samsung Internet, Safari 15+) -->
+  <meta name="theme-color" content="#161b22" id="theme-color">
+  <!-- Stop iOS / Samsung from turning IPs, hashes and numbers into phone links -->
+  <meta name="format-detection" content="telephone=no, date=no, address=no, email=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Scry">
   <script>
     (function () {
-      var t = localStorage.getItem('cti-theme');
+      var t = null;
+      try { t = localStorage.getItem('cti-theme'); } catch (e) {}
       if (!t) t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
       document.documentElement.dataset.theme = t;
+      var m = document.getElementById('theme-color');
+      if (m) m.setAttribute('content', t === 'light' ? '#ffffff' : '#161b22');
     })();
   </script>
   <style>
@@ -69,12 +82,18 @@
       --tor: #8250df;
     }
     * { box-sizing: border-box; }
+    html {
+      /* No font inflation on rotation (iOS Safari) or "text boosting" (Android, Samsung Internet). */
+      -webkit-text-size-adjust: 100%;
+      text-size-adjust: 100%;
+    }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
       margin: 0;
       background: var(--bg);
       color: var(--text);
       line-height: 1.5;
+      -webkit-tap-highlight-color: rgba(88, 166, 255, 0.15);
     }
     header.nav {
       background: var(--panel);
@@ -95,6 +114,18 @@
     .brand-logo { width: 24px; height: 24px; display: block; }
     header.nav .spacer { flex: 1; }
     header.nav .meta { color: var(--muted); font-size: 12px; }
+    .nav-links { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; flex: 1; }
+    header.nav a.active { color: var(--accent); }
+
+    /* Embedded companion site: edge to edge below the bar, one scroll area (the frame). */
+    body.embed-page { overflow: hidden; }
+    main.embed { padding: 0; max-width: none; margin: 0; }
+    .embed-frame {
+      display: block; width: 100%; border: 0; background: var(--bg);
+      height: calc(100vh - var(--nav-h, 57px));
+      height: calc(100dvh - var(--nav-h, 57px));
+    }
+    .nav-toggle { display: none; }
     main { padding: 24px; max-width: 1280px; margin: 0 auto; }
 
     h1, h2, h3 { color: var(--text); }
@@ -103,12 +134,25 @@
     h3 { font-size: 15px; margin: 16px 0 8px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
     a { color: var(--accent); text-decoration: none; }
     a:hover { text-decoration: underline; }
-    code { background: var(--panel-2); padding: 1px 6px; border-radius: 4px; font-size: 13px; word-break: break-all; }
+    /* Long indicators (hashes, URLs) wrap only when they would overflow;
+       short ones such as CVE IDs stay on one line. */
+    code { background: var(--panel-2); padding: 1px 6px; border-radius: 4px; font-size: 13px; overflow-wrap: break-word; word-break: normal; }
+    pre { max-width: 100%; overflow-x: auto; }
+    code.nb { white-space: nowrap; } /* short IDs (CVE-2025-61882, IPs) never split at hyphens/dots */
     pre code { display: block; padding: 12px; overflow: auto; }
+    h1, h2, .hero, dd, td, .panel, .card { overflow-wrap: break-word; }
 
     .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+    .grid.cols-5 { grid-template-columns: repeat(5, 1fr); }
+    .grid.cols-6 { grid-template-columns: repeat(6, 1fr); }
     .grid-2 { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
-    @media (max-width: 900px) { .grid { grid-template-columns: repeat(2, 1fr); } .grid-2 { grid-template-columns: 1fr; } }
+    /* Grid children may shrink below their content (long hashes would otherwise widen the page). */
+    .grid > *, .grid-2 > * { min-width: 0; }
+    @media (max-width: 1100px) { .grid.cols-5, .grid.cols-6 { grid-template-columns: repeat(3, 1fr); } }
+    @media (max-width: 900px) { .grid, .grid.cols-5, .grid.cols-6 { grid-template-columns: repeat(2, 1fr); } .grid-2 { grid-template-columns: 1fr; } }
+
+    /* Wide tables scroll inside their own box instead of widening the page (wrapped by script below). */
+    .table-scroll { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
 
     .card {
       background: var(--panel);
@@ -132,7 +176,7 @@
     table { width: 100%; border-collapse: collapse; }
     th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: top; }
     th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; }
-    tr:hover td { background: var(--panel-2); }
+    @media (hover: hover) { tr:hover td { background: var(--panel-2); } }
 
     /* Tags */
     .tag {
@@ -183,7 +227,7 @@
       flex-wrap: wrap;
     }
     .filters label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; display: block; }
-    .filters input, .filters select, input[type=text], input[type=password], input[type=number], select, textarea {
+    .filters input, .filters select, input[type=text], input[type=password], input[type=number], input[type=search], input[type=email], input[type=url], select, textarea {
       background: var(--bg);
       border: 1px solid var(--border);
       color: var(--text);
@@ -193,6 +237,8 @@
       font-family: inherit;
       min-width: 140px;
     }
+    .wide-input { min-width: 240px; }
+    @media (max-width: 760px) { .wide-input { min-width: 0; width: 100%; } }
     .btn {
       background: var(--good);
       color: white;
@@ -261,8 +307,8 @@
     .tag-cloud .tag.size-m { font-size: 14px; }
     .tag-cloud .tag.size-s { font-size: 12px; }
 
-    .row { display: flex; gap: 12px; align-items: center; }
-    .truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 520px; }
+    .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: min(520px, 70vw); }
 
     .empty { color: var(--muted); padding: 24px; text-align: center; }
 
@@ -292,8 +338,11 @@
       box-shadow: var(--shadow);
       padding: 4px 0;
     }
-    .nav-dropdown:hover .dropdown-menu,
-    .nav-dropdown:focus-within .dropdown-menu { display: block; }
+    /* Hover opens menus only where hover exists; touch (and keyboard) use the
+       .open class set by the script — iOS Safari never focuses a tapped button. */
+    @media (hover: hover) { .nav-dropdown:hover .dropdown-menu { display: block; } }
+    .nav-dropdown:focus-within .dropdown-menu,
+    .nav-dropdown.open .dropdown-menu { display: block; }
     .nav-dropdown .dropdown-menu a {
       display: block;
       padding: 7px 14px;
@@ -374,6 +423,82 @@
       body, header.nav, .card, .panel, .sidebar, .hero, .filters, .dropdown-menu,
       .tag, .card.click { transition: none; }
     }
+
+    /* ---------- Touch devices (phones, tablets, Samsung DeX off) ---------- */
+    @media (pointer: coarse) {
+      /* iOS Safari zooms into any field under 16px when it gets focus. */
+      input, select, textarea, .filters input, .filters select { font-size: 16px; }
+      .btn, button.theme-toggle, .nav-btn { min-height: 40px; }
+      .pagination a, .pagination .btn { min-height: 44px; display: inline-flex; align-items: center; }
+      .tag { padding: 4px 10px; margin: 3px 4px 3px 0; }
+      .card.click:hover, .tag:hover, .btn:hover { filter: none; }
+    }
+
+    /* ---------- Collapsible menu: phones and tablets (iPad, Galaxy Tab) ---------- */
+    @media (max-width: 1280px) { header.nav .meta { display: none; } }
+    @media (max-width: 1024px) {
+      header.nav {
+        padding: 8px max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left));
+        padding-top: max(8px, env(safe-area-inset-top));
+        gap: 8px;
+      }
+      header.nav > .meta { display: none; }
+      .nav-toggle {
+        display: inline-flex; align-items: center; justify-content: center;
+        margin-left: auto; width: 44px; height: 40px;
+        background: none; border: 1px solid var(--border); border-radius: 6px;
+        color: var(--text); font-size: 20px; cursor: pointer;
+      }
+      .nav-links { display: none; order: 10; flex: 1 0 100%; flex-direction: column; align-items: stretch; gap: 0; padding: 4px 0 8px; max-height: calc(100vh - 64px); max-height: calc(100dvh - 64px); overflow-y: auto; overscroll-behavior: contain; }
+      header.nav.open .nav-links { display: flex; }
+      .nav-links a, .nav-links .nav-btn, .nav-links form button { font-size: 16px; padding: 11px 8px; min-height: 44px; display: flex; align-items: center; border-radius: 6px; }
+      .nav-links .spacer { display: none; }
+      .nav-links .meta { display: block; padding: 8px; }
+      .nav-links form { display: block !important; }
+      .nav-links .nav-dropdown > .nav-btn { width: 100%; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; min-height: 32px; padding: 10px 8px 2px; cursor: default; }
+      .nav-links .nav-dropdown > .nav-btn::after { content: none; }
+      .nav-links .dropdown-menu { display: block; position: static; border: 0; box-shadow: none; background: none; padding: 0 0 0 10px; min-width: 0; }
+      .nav-links .dropdown-menu a { padding: 11px 8px; font-size: 16px; white-space: normal; }
+      .nav-links .dropdown-menu .sub-header { padding: 8px 8px 2px; }
+      header.nav .nav-links a { font-size: 16px; }
+      header.nav .nav-links .meta { display: block; padding: 8px; }
+    }
+
+    /* ---------- Phones (iPhone, Galaxy S/A, Pixel; landscape included) ---------- */
+    @media (max-width: 760px) {
+      main {
+        padding: 14px max(12px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+      }
+      h1 { font-size: 20px; margin-bottom: 12px; }
+      h2 { font-size: 16px; margin: 18px 0 8px; }
+      .hero { padding: 14px; }
+      .panel { padding: 12px; }
+      .card { padding: 12px; }
+      .card .num { font-size: 22px; }
+      .grid { gap: 10px; margin-bottom: 16px; }
+      th, td { padding: 7px 8px; }
+      /* Multi-column tables keep readable columns and scroll sideways in their box. */
+      .table-scroll.wide > table { min-width: 640px; }
+      .table-scroll td:has(> .tag) { min-width: 320px; }
+      /* Long hashes/URLs wrap inside a bounded cell instead of stretching the column. */
+      .table-scroll td code { display: inline-block; max-width: 17rem; overflow-wrap: break-word; }
+      .table-scroll.wide { box-shadow: inset -10px 0 8px -10px rgba(0, 0, 0, 0.35); }
+      .sidebar { position: static; }
+      .filters { padding: 10px; gap: 10px; }
+      .filters > * { flex: 1 1 140px; min-width: 0; }
+      .filters input, .filters select, .filters textarea { width: 100%; min-width: 0; }
+      input[type=text], input[type=password], input[type=number], input[type=search], input[type=email], select, textarea { max-width: 100%; min-width: 0; }
+      dl.kv { grid-template-columns: minmax(0, max-content) minmax(0, 1fr); gap: 4px 10px; }
+      .flash { flex-wrap: wrap; }
+      .pagination { flex-wrap: wrap; }
+    }
+    @media (max-width: 480px) {
+      .table-scroll td code { max-width: 10.5rem; }
+    }
+    @media (max-width: 420px) {
+      dl.kv { grid-template-columns: 1fr; }
+      dl.kv dt { margin-top: 6px; }
+    }
   </style>
 </head>
 <body>
@@ -395,8 +520,10 @@
       <span>Scry</span>
     </a>
     <span class="meta" style="font-style:italic">Seeing threats before they arrive</span>
+    <button type="button" class="nav-toggle" aria-label="Menu" aria-expanded="false" aria-controls="nav-links">☰</button>
+    <nav class="nav-links" id="nav-links" aria-label="Main">
     <div class="nav-dropdown">
-      <button class="nav-btn">Intel</button>
+      <button type="button" class="nav-btn" aria-haspopup="true" aria-expanded="false">Intel</button>
       <div class="dropdown-menu">
         <a href="/ui/articles">Articles</a>
         <a href="/ui/observables">Observables</a>
@@ -408,7 +535,7 @@
     <a href="/ui/reviews">Reviews</a>
     <a href="/ui/alerts">Alerts</a>
     <div class="nav-dropdown">
-      <button class="nav-btn">Intel Feeds</button>
+      <button type="button" class="nav-btn" aria-haspopup="true" aria-expanded="false">Intel Feeds</button>
       <div class="dropdown-menu">
         <span class="sub-header">Threat Intelligence</span>
         <a href="/ui/intel-feeds/threat-feeds">Threat Feeds</a>
@@ -418,6 +545,9 @@
       </div>
     </div>
     <a href="/ui/search">Search</a>
+    {% if orbistrace_enabled() %}
+      <a href="/ui/orbistrace"{% if request.url.path == '/ui/orbistrace' %} aria-current="page" class="active"{% endif %}>Orbistrace</a>
+    {% endif %}
     {% if request.state.user and request.state.user.role == 'admin' %}
       <a href="/admin">Admin</a>
     {% endif %}
@@ -432,9 +562,10 @@
       <a href="/login">Login</a>
     {% endif %}
     <span class="meta">Defensive use only · {{ request.url.hostname }}</span>
+    </nav>
     <button id="theme-toggle" class="theme-toggle" aria-label="Toggle light/dark theme" title="Toggle theme">☾</button>
   </header>
-  <main>
+  <main class="{% block main_class %}{% endblock %}">
     {% if request.query_params.get('flash') %}
     <div class="flash {{ request.query_params.get('flash_kind') if request.query_params.get('flash_kind') in ('success', 'error') else 'success' }}" role="status">
       <span>{{ request.query_params.get('flash') }}</span>
@@ -450,10 +581,58 @@
       btn.addEventListener('click', function () {
         var next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
         document.documentElement.dataset.theme = next;
-        localStorage.setItem('cti-theme', next);
+        try { localStorage.setItem('cti-theme', next); } catch (e) {}
+        var m = document.getElementById('theme-color');
+        if (m) m.setAttribute('content', next === 'light' ? '#ffffff' : '#161b22');
         icon();
       });
       icon();
+    })();
+
+    // Navigation: phone menu toggle + tap-to-open dropdowns (touch has no hover).
+    (function () {
+      var header = document.querySelector('header.nav');
+      var toggle = header.querySelector('.nav-toggle');
+      toggle.addEventListener('click', function () {
+        var open = header.classList.toggle('open');
+        toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+        toggle.textContent = open ? '✕' : '☰';
+      });
+      var dropdowns = header.querySelectorAll('.nav-dropdown');
+      function closeAll(except) {
+        dropdowns.forEach(function (d) {
+          if (d !== except) {
+            d.classList.remove('open');
+            d.querySelector('.nav-btn').setAttribute('aria-expanded', 'false');
+          }
+        });
+      }
+      dropdowns.forEach(function (d) {
+        var b = d.querySelector('.nav-btn');
+        b.addEventListener('click', function (ev) {
+          if (window.matchMedia('(max-width: 1024px)').matches) return; // menus are expanded inline in the collapsible menu
+          ev.stopPropagation();
+          var open = d.classList.toggle('open');
+          b.setAttribute('aria-expanded', open ? 'true' : 'false');
+          closeAll(d);
+        });
+      });
+      document.addEventListener('click', function () { closeAll(null); });
+      document.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Escape') { closeAll(null); header.classList.remove('open'); toggle.setAttribute('aria-expanded', 'false'); toggle.textContent = '☰'; }
+      });
+    })();
+
+    // Every data table scrolls inside its own box on narrow screens.
+    (function () {
+      document.querySelectorAll('main table').forEach(function (t) {
+        if (t.parentElement && t.parentElement.classList.contains('table-scroll')) return;
+        var wrap = document.createElement('div');
+        var cols = t.rows.length ? t.rows[0].cells.length : 0;
+        wrap.className = cols >= 4 ? 'table-scroll wide' : 'table-scroll';
+        t.parentNode.insertBefore(wrap, t);
+        wrap.appendChild(t);
+      });
     })();
   </script>
 </body>

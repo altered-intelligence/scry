@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Orbistrace · Scry{% endblock %}
+{% block main_class %}embed{% endblock %}
+{% block content %}
+{#- Orbistrace runs in its own origin; the sandbox keeps every click inside
+    this frame (no top-level navigation away from Scry) while allowing what a
+    normal site needs. -#}
+<iframe
+  class="embed-frame"
+  id="orbistrace-frame"
+  src="{{ frame_src }}"
+  title="Orbistrace"
+  allow="fullscreen; clipboard-write"
+  allowfullscreen
+  referrerpolicy="strict-origin-when-cross-origin"
+  sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads allow-modals"
+></iframe>
+<script>
+  (function () {
+    document.body.classList.add('embed-page');
+    var header = document.querySelector('header.nav');
+    function fit() {
+      document.documentElement.style.setProperty('--nav-h', header.getBoundingClientRect().height + 'px');
+    }
+    fit();
+    window.addEventListener('resize', fit);
+    window.addEventListener('orientationchange', fit);
+    if (window.ResizeObserver) new ResizeObserver(fit).observe(header);
+  })();
+</script>
+{% endblock %}

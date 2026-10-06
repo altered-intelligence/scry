@@ -5,7 +5,7 @@
 
 <h1>Search</h1>
 <form method="get" action="/ui/search" class="filters">
-  <input type="text" name="q" value="{{ q }}" placeholder="articles, observables, entities, claims…" style="min-width: 320px;">
+  <input type="search" name="q" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="search" value="{{ q }}" placeholder="articles, observables, entities, claims…" class="wide-input">
   <button class="btn" type="submit">Search</button>
 </form>
 
@@ -129,10 +129,10 @@
         <input type="password" id="ai-config-key" autocomplete="new-password" placeholder="">
       </label>
       <label id="ai-config-url-row">Base URL
-        <input id="ai-config-base-url" placeholder="optional — e.g. http://localhost:11434">
+        <input id="ai-config-base-url" type="url" inputmode="url" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="optional — e.g. http://localhost:11434">
       </label>
       <label>Model
-        <input id="ai-config-model" list="ai-config-model-list" placeholder="default">
+        <input id="ai-config-model" autocapitalize="none" autocorrect="off" spellcheck="false" list="ai-config-model-list" placeholder="default">
         <datalist id="ai-config-model-list"></datalist>
       </label>
     </div>

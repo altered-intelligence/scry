@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import hmac
 import json
+import mimetypes
 import re
 import secrets
 from collections import Counter
@@ -20,6 +21,7 @@ from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
+from starlette.middleware.gzip import GZipMiddleware
 
 from scry.api import api_router
 from scry.api.ai import ai_router
@@ -158,6 +160,11 @@ app.include_router(chat_router, dependencies=[Depends(require_api_key)])
 # key is configured (no discovery exemption).
 app.include_router(taxii_router, dependencies=[Depends(require_api_key)])
 
+# Compress HTML/JSON over slow mobile links (pages are 20-60 KB of markup;
+# Starlette leaves text/event-stream untouched).
+app.add_middleware(GZipMiddleware, minimum_size=1024)
+
+mimetypes.add_type("application/manifest+json", ".webmanifest")
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
@@ -231,6 +238,7 @@ def _risk_factor_label(name: str) -> str:
 
 
 templates.env.filters["action_label"] = _action_label
+templates.env.globals["orbistrace_enabled"] = lambda: bool(get_settings().orbistrace_url.strip())
 templates.env.filters["risk_factor_label"] = _risk_factor_label
 
 # Tags that mean a benign / false-positive signal was actually evaluated.
@@ -3052,6 +3060,27 @@ def ui_source_toggle(
 
 
 # ------------------------- search -------------------------
+
+
+_ORBISTRACE_PATH_RE = re.compile(r"^/(?!/)[A-Za-z0-9._~!$&'()*+,;=:@%/?#-]{0,512}$")
+
+
+def orbistrace_src(base: str, path: str | None) -> str:
+    """Frame URL for an optional deep-link path; anything that is not a plain
+    same-site path (schemes, ``//host``, backslashes) falls back to the home page."""
+    base = base.strip()
+    if not path or not _ORBISTRACE_PATH_RE.match(path) or "\\" in path:
+        return base
+    return base.rstrip("/") + path
+
+
+@app.get("/ui/orbistrace", response_class=HTMLResponse)
+def ui_orbistrace(request: Request, path: str | None = None):
+    """Orbistrace, embedded full-height under the Scry navigation bar."""
+    base = get_settings().orbistrace_url
+    if not base.strip():
+        raise HTTPException(404)
+    return templates.TemplateResponse(request, "orbistrace.html", {"frame_src": orbistrace_src(base, path)})
 
 
 @app.get("/ui/search", response_class=HTMLResponse)

@@ -69,6 +69,31 @@ briefs that say what changed, why it matters, and what to do.
 - **SECURITY.md: Data flows and Third-party data terms**, including the
   VirusTotal public-API commercial-use restriction.
 
+### Added (mobile)
+
+- **Phone and tablet support.** Every page now fits iPhone, Samsung Galaxy,
+  Pixel and folded Galaxy Z Fold widths (280-430 px) without the browser
+  zooming out (13 of 18 pages used to render 600-1,424 px wide): a
+  collapsible menu replaces the 190 px wrapping header up to 1,024 px
+  (iPad, Galaxy Tab), dropdowns open on tap (iOS Safari never focused
+  them), data tables scroll inside their own box with readable column
+  widths, stat grids reflow, long hashes/URLs wrap inside cells while CVE
+  IDs stay on one line, and detail key/value lists stack on narrow phones.
+- Touch details: 16 px form text (no iOS focus-zoom), 40-44 px touch
+  targets, no sticky hover, safe-area padding for notched iPhones,
+  `format-detection` so IPs, hashes and numbers are not turned into phone
+  links, IOC search boxes without auto-capitalise/auto-correct
+  (`type=search`, search key on the keyboard), one-time-code autofill,
+  password-manager hints (iCloud Keychain, Samsung Pass, Google).
+- Add to Home Screen / install: web app manifest, Apple touch icon,
+  Android icons (incl. maskable), theme-colour that follows light/dark.
+- Responses are gzip-compressed (list pages ~60 KB -> ~11 KB on mobile
+  networks).
+- **Orbistrace menu.** `/ui/orbistrace` shows orbistrace.com full-height
+  under the Scry menu bar (no redirect; clicks stay in the frame; deep
+  links with `?path=`). Configure with `CTI_ORBISTRACE_URL`. Requires
+  orbistrace.com to allow Scry in `frame-ancestors` (docs/configuration.md).
+
 ### Changed
 
 - UI shows readable action labels (Urgent review, Block if safe, Hunt,

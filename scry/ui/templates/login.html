@@ -38,7 +38,7 @@
       {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
       <label style="display: grid; gap: 4px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em;">
         Username
-        <input type="text" name="username" required autofocus autocomplete="username">
+        <input type="text" name="username" autocapitalize="none" autocorrect="off" spellcheck="false" required autofocus autocomplete="username">
       </label>
       <label style="display: grid; gap: 4px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em;">
         Password
@@ -51,7 +51,7 @@
       <h2 style="font-size: 14px; margin: 0 0 10px;">Sign in with a passkey</h2>
       <form id="passkey-login-form" style="display: grid; gap: 8px;">
         {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
-        <input type="text" name="username" required autocomplete="username" placeholder="Username"
+        <input type="text" name="username" autocapitalize="none" autocorrect="off" spellcheck="false" required autocomplete="username" placeholder="Username"
                style="padding: 8px;">
         <button type="submit" class="btn secondary" style="justify-self: start;">Use passkey</button>
       </form>

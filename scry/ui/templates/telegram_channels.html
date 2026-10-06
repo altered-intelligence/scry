@@ -96,7 +96,7 @@
 
 <div class="card" style="padding:16px 20px;">
   <form class="tg-filters" method="get" action="/ui/intel-feeds/telegram-channels">
-    <input type="text" name="q" value="{{ q or '' }}" placeholder="Search by name or @username…" autofocus>
+    <input type="search" name="q" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="search" value="{{ q or '' }}" placeholder="Search by name or @username…" autofocus>
     <span class="tg-count">Showing <strong>{{ channels | length }}</strong> of <strong>{{ total }}</strong></span>
     <button class="btn-sm" type="submit">Filter</button>
     {% if q %}

@@ -8,7 +8,7 @@
 <form class="filters" method="get" action="/ui/articles">
   <div>
     <label>Search title</label>
-    <input type="text" name="q" value="{{ filters.q or '' }}" placeholder="title or body…">
+    <input type="search" name="q" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="search" value="{{ filters.q or '' }}" placeholder="title or body…">
   </div>
   <div>
     <label>Tag</label>

@@ -15,7 +15,7 @@
   <span class="muted">Last collected: {% if last_collected %}{{ last_collected | timeago }}{% else %}never{% endif %}</span>
 </div>
 
-<div class="grid" style="grid-template-columns:repeat(6,1fr)">
+<div class="grid cols-6">
   <a href="/ui/articles" class="card click">
     <div class="num">{{ counts.articles }}</div>
     <div class="lbl">Articles</div>

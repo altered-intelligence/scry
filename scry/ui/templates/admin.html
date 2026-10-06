@@ -61,7 +61,7 @@
                   style="display: grid; gap: 6px; margin-top: 8px; min-width: 220px;">
               <input type="hidden" name="csrf" value="{{ csrf }}">
               <input type="text" name="display_name" value="{{ u.display_name or '' }}" placeholder="Display name">
-              <input type="text" name="email" value="{{ u.email }}" required>
+              <input type="email" name="email" autocapitalize="none" spellcheck="false" value="{{ u.email }}" required>
               <select name="role">
                 <option value="user" {% if u.role == 'user' %}selected{% endif %}>user</option>
                 <option value="admin" {% if u.role == 'admin' %}selected{% endif %}>admin</option>
@@ -107,8 +107,8 @@
   <h2 style="margin-top: 0;">Create user</h2>
   <form method="post" action="/admin/users/create" class="filters" style="align-items: end;">
     <input type="hidden" name="csrf" value="{{ csrf }}">
-    <label>Username <input type="text" name="username" required></label>
-    <label>Email <input type="text" name="email" required placeholder="user@example.com"></label>
+    <label>Username <input type="text" name="username" autocapitalize="none" autocorrect="off" spellcheck="false" required></label>
+    <label>Email <input type="email" name="email" autocapitalize="none" spellcheck="false" required placeholder="user@example.com"></label>
     <label>Display name <input type="text" name="display_name"></label>
     <label>Role
       <select name="role"><option value="user">user</option><option value="admin">admin</option></select>

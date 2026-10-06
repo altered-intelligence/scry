@@ -8,7 +8,7 @@
 <form class="filters" method="get" action="/ui/cves">
   <div>
     <label>Search</label>
-    <input type="text" name="q" value="{{ filters.q or '' }}" placeholder="CVE id / vendor / product">
+    <input type="search" name="q" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="search" value="{{ filters.q or '' }}" placeholder="CVE id / vendor / product">
   </div>
   <div>
     <label>Vendor</label>
