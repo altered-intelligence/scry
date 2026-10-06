@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import UTC, datetime, timedelta
+from urllib.parse import urlsplit
 
 from sqlalchemy import exists, func, or_, select
 from sqlalchemy.orm import Session
@@ -33,6 +34,16 @@ MAX_TEXT_CHARS = 100_000
 MAX_RAW_HTML_CHARS = 500_000
 # Articles with less text than this are RSS stubs worth a full-page fetch.
 SHORT_TEXT_CHARS = 1000
+# A feed that answered "slow down" (429/503) is left alone for a while
+# instead of failing again every scheduler cycle: 1h after the first
+# throttle, doubling per consecutive throttle, capped at 24h.
+THROTTLE_STATUSES = frozenset({429, 503})
+THROTTLE_BASE_COOLDOWN = timedelta(hours=1)
+THROTTLE_MAX_COOLDOWN = timedelta(hours=24)
+
+
+def _as_utc(dt: datetime) -> datetime:
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
 
 
 class IngestionEngine:
@@ -133,8 +144,13 @@ class IngestionEngine:
             return {"articles": persisted, "feed_entries": len(entries), "window_skipped": window_skipped}
 
     async def ingest_all(self) -> dict[str, int]:
-        totals: dict[str, int] = {"articles": 0, "cves": 0, "errors": 0, "blocked": 0}
+        totals: dict[str, int] = {"articles": 0, "cves": 0, "errors": 0, "blocked": 0, "deferred": 0}
         for source in self.registry.enabled_sources():
+            until = self.throttled_until(source)
+            if until is not None:
+                logger.info("source_deferred_rate_limited", source=source.name, until=until.isoformat())
+                totals["deferred"] += 1
+                continue
             try:
                 res = await self.ingest_source(source)
             except Exception as exc:
@@ -144,6 +160,26 @@ class IngestionEngine:
             for k, v in res.items():
                 totals[k] = totals.get(k, 0) + v
         return totals
+
+    def throttled_until(self, source: Source, *, now: datetime | None = None) -> datetime | None:
+        """When a rate-limited feed may be fetched again, or None if it may be fetched now."""
+        feed_url = source.feed or source.url
+        recent = self.session.scalars(
+            select(SourceFetch)
+            .where(SourceFetch.source_id == source.id, SourceFetch.url == feed_url)
+            .order_by(SourceFetch.fetched_at.desc())
+            .limit(6)
+        ).all()
+        streak = 0
+        for fetch in recent:
+            if fetch.status_code not in THROTTLE_STATUSES:
+                break
+            streak += 1
+        if not streak:
+            return None
+        cooldown = min(THROTTLE_MAX_COOLDOWN, THROTTLE_BASE_COOLDOWN * (2 ** (streak - 1)))
+        until = _as_utc(recent[0].fetched_at) + cooldown
+        return until if until > (now or datetime.now(UTC)) else None
 
     async def fetch_full_content(
         self,
@@ -192,12 +228,17 @@ class IngestionEngine:
 
         updated = unchanged = failed = skipped = 0
         updated_ids: list[int] = []
+        throttled_hosts: set[str] = set()  # hosts that said 429/503 in this batch
 
         # One fetcher for the whole batch so its per-host rate limiter works.
         async with SafeFetcher() as fetcher:
             for article in candidates:
                 source = self.session.get(Source, article.source_id) if article.source_id else None
                 reason: str | None = None
+                host = (urlsplit(article.url).hostname or "").lower()
+                if host in throttled_hosts:
+                    skipped += 1
+                    continue
                 try:
                     decision = self.policy.evaluate(
                         policy_name=source.collection_policy if source else "safe_public_web",
@@ -215,6 +256,8 @@ class IngestionEngine:
                     if res.error or not res.text or len(res.text) < 500:
                         reason = res.error or "response body too short"
                         status = res.status_code
+                        if status in THROTTLE_STATUSES:
+                            throttled_hosts.add(host)
                     else:
                         parsed = parse_article(res.text, url=article.url)
                         if len(parsed.text or "") > len(article.extracted_text or ""):
@@ -354,9 +397,22 @@ class IngestionEngine:
             cve.product = entry.product or cve.product
             cve.description = entry.short_description or cve.description
             cve.kev = True
+            added = _parse_kev_date(entry.date_added)
+            if added is not None:
+                cve.kev_added_at = added
             cve.exploited_in_the_wild = True
             cve.ransomware_associated = cve.ransomware_associated or entry.ransomware_associated
             cve.is_microsoft = (entry.vendor or "").lower().startswith("microsoft") or cve.is_microsoft
             count += 1
         self.session.commit()
         return count
+
+
+def _parse_kev_date(value: str | None) -> datetime | None:
+    """CISA KEV ``dateAdded`` ("2026-10-02") as an aware UTC datetime."""
+    if not value:
+        return None
+    try:
+        return datetime.strptime(str(value)[:10], "%Y-%m-%d").replace(tzinfo=UTC)
+    except ValueError:
+        return None

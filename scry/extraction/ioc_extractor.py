@@ -92,6 +92,67 @@ DISCORD_INVITE_RE = re.compile(r"\bdiscord(?:\.gg|\.com/invite)/[A-Za-z0-9]+\b",
 _VERSION_LIKE_RE = re.compile(r"^\d+\.\d+(?:\.\d+){0,3}$")  # 1.2.3, 5.7.0.1
 _ALPHA_TLDS = {"local", "internal", "lan", "home", "test", "example", "invalid"}
 
+# Product and framework names that are syntactically valid domains because
+# ".net" is a real TLD ("Telerik UI for ASP.NET AJAX" used to become the domain
+# observable asp.net with risk 99). Extend per deployment with
+# ``software_name_denylist`` in config/policies.yaml.
+SOFTWARE_NAME_DOMAINS = frozenset(
+    {"asp.net", "ado.net", "vb.net", "ml.net", "dot.net", "f#.net", "j#.net", "c#.net"}
+)
+
+# TLDs that are also common file extensions (README.md, setup.py, run.sh, a
+# .zip archive). Kept, because these TLDs are abused for real phishing, but
+# flagged as possible file names with an elevated false-positive risk.
+FILE_EXTENSION_TLDS = frozenset({"md", "py", "sh", "rs", "zip", "mov"})
+
+# Words near an indicator that say it is attacker infrastructure or a
+# payload. Looked for in the indicator's own evidence window only, never
+# article-wide, so a roundup's framing cannot vouch for an unrelated item.
+MALICIOUS_CONTEXT_RE = re.compile(
+    r"(?i)\b(?:c2|c&c|command[- ]and[- ]control|malicious|attacker[- ]controlled|threat[- ]actor[- ]controlled"
+    r"|payloads?|droppers?|exfiltrat\w*|phishing\s+(?:domain|site|page|url|kit)s?|beacon(?:s|ed|ing)?\s+to"
+    r"|indicators?\s+of\s+compromise|iocs?|staging\s+server|loader|backdoor|implant|sinkhol\w*)\b"
+)
+_MALICIOUS_CONTEXT_CONFIDENCE = 70
+
+# Words saying the indicator belongs to a victim (a breached portal, a
+# leak-site listing), which is not attacker infrastructure.
+VICTIM_CONTEXT_RE = re.compile(
+    r"(?i)\b(?:victims?|breach(?:ed|es)?|affecting|stole|stolen|compromised|hacked|leaked|seiz(?:ed|ing)"
+    r"|defaced|data\s+(?:from|of)|listed\s+on|leak\s+site|portal)\b"
+)
+_VICTIM_MALICIOUSNESS_CAP = 30
+_VICTIM_FP_RISK = 0.5
+
+# Citation wording around a link: the link points at reporting about a
+# threat, it is not the threat. Wins over malicious wording for domains/URLs
+# ("Source cluster (related IOCs, reporting): https://...").
+REFERENCE_CONTEXT_RE = re.compile(
+    r"(?i)(?:\bsource\s+(?:cluster|report|article|link)|\baggregated\s+by\b|\bread\s+more\b|\breported\s+by\b"
+    r"|\baccording\s+to\b|\bsee\s+(?:also|the\s+(?:report|advisory|analysis))\b|\breferences?\s*:|\bsource\s*:"
+    r"|\bfull\s+(?:report|analysis|write-?up)\b|\badvisory\b|\bblog\s+post\b)"
+)
+_REFERENCE_FP_RISK = 0.6
+_REFERENCE_MALICIOUSNESS_CAP = 30
+_LINK_TYPES = frozenset({"domain", "url"})
+
+
+def local_context(text: str, *values: str) -> str:
+    """``text`` with the indicator's own spelling(s) blanked out.
+
+    A URL like .../warlock-ransomware-exploit must not supply its own
+    "ransomware" or "exploit" context.
+    """
+    for value in sorted({v for v in values if v}, key=len, reverse=True):
+        # The whole whitespace-delimited token: a domain inside a URL takes
+        # the URL's path with it.
+        text = re.sub(rf"\S*{re.escape(value)}\S*", " ", text, flags=re.IGNORECASE)
+    return text
+
+
+_NETWORK_TYPES = frozenset({"domain", "url", "ipv4", "ipv6", "email"})
+_UNSCORED_TYPES = frozenset({"cve", "attack_technique", "asn"})
+
 
 def _is_valid_domain(value: str) -> bool:
     if "." not in value:
@@ -141,6 +202,12 @@ class IOCExtractor:
     def __init__(self) -> None:
         self.policies = load_policies()
         self.benign_hosts = {h.lower() for h in self.policies.get("benign_infrastructure_hosts", []) or []}
+        # Reporting/research sites: links to them are citations, not IOCs.
+        # The pipeline adds the hosts of every configured source.
+        self.reference_hosts = {h.lower() for h in self.policies.get("reference_hosts", []) or []}
+        self.software_names = SOFTWARE_NAME_DOMAINS | {
+            n.lower() for n in self.policies.get("software_name_denylist", []) or []
+        }
 
     def extract(self, text: str) -> list[IOCCandidate]:
         if not text:
@@ -259,17 +326,23 @@ class IOCExtractor:
             if normalized in seen:
                 continue
             seen.add(normalized)
-            out.append(
-                IOCCandidate(
-                    type="domain",
-                    value=raw,
-                    normalized_value=normalized,
-                    evidence_text=_window(text, m.start(), m.end()),
-                    context_window=_window(text, m.start(), m.end(), pad=160),
-                    extraction_method="regex",
-                    extraction_confidence=75,
-                )
+            if self._is_software_name(raw, normalized):
+                continue
+            candidate = IOCCandidate(
+                type="domain",
+                value=raw,
+                normalized_value=normalized,
+                evidence_text=_window(text, m.start(), m.end()),
+                context_window=_window(text, m.start(), m.end(), pad=160),
+                extraction_method="regex",
+                extraction_confidence=75,
             )
+            if normalized.rsplit(".", 1)[-1] in FILE_EXTENSION_TLDS:
+                candidate.tags = ["possible-filename"]
+                candidate.false_positive_risk = 0.6
+                candidate.maliciousness_confidence = 30
+                candidate.extraction_confidence = 50
+            out.append(candidate)
         for m in DEFANGED_DOMAIN_RE.finditer(text):
             raw = m.group(0)
             refanged = refang(raw).lower().rstrip(".")
@@ -291,6 +364,19 @@ class IOCExtractor:
                 )
             )
         return out
+
+    def is_reference_host(self, host: str) -> bool:
+        host = host.lower()
+        return any(host == h or host.endswith("." + h) for h in self.reference_hosts)
+
+    def _is_software_name(self, raw: str, normalized: str) -> bool:
+        """True for product names that only look like domains (ASP.NET, VB.NET).
+
+        Matches the curated list, plus any name written with an upper-case
+        ".NET" suffix: that spelling is the .NET product convention, while
+        real hosts in reporting are written in lower case or defanged.
+        """
+        return normalized in self.software_names or raw.endswith(".NET")
 
     def _extract_emails(self, text: str) -> list[IOCCandidate]:
         out: list[IOCCandidate] = []
@@ -390,6 +476,25 @@ class IOCExtractor:
                 if key in best:
                     it.tags = list({*it.tags, *best[key].tags})
                 best[key] = it
+        # Local context: only the indicator's own evidence window counts, and
+        # never the indicator's own text.
+        for it in best.values():
+            if it.type in _UNSCORED_TYPES or "possible-filename" in it.tags:
+                continue
+            ctx = local_context(it.evidence_text or "", it.value, it.normalized_value)
+            if it.type in _LINK_TYPES and (
+                self.is_reference_host(_host_of(it)) or REFERENCE_CONTEXT_RE.search(ctx)
+            ):
+                it.tags = list({*it.tags, "reference-context"})
+                it.maliciousness_confidence = min(it.maliciousness_confidence, _REFERENCE_MALICIOUSNESS_CAP)
+                it.false_positive_risk = max(it.false_positive_risk, _REFERENCE_FP_RISK)
+            elif MALICIOUS_CONTEXT_RE.search(ctx):
+                it.tags = list({*it.tags, "malicious-context"})
+                it.maliciousness_confidence = max(it.maliciousness_confidence, _MALICIOUS_CONTEXT_CONFIDENCE)
+            elif it.type in _NETWORK_TYPES and VICTIM_CONTEXT_RE.search(ctx):
+                it.tags = list({*it.tags, "victim-context"})
+                it.maliciousness_confidence = min(it.maliciousness_confidence, _VICTIM_MALICIOUSNESS_CAP)
+                it.false_positive_risk = max(it.false_positive_risk, _VICTIM_FP_RISK)
         # Tag obvious benign infra
         for it in best.values():
             if it.type in {"domain", "url"}:
@@ -407,6 +512,13 @@ class IOCExtractor:
                     it.false_positive_risk = max(it.false_positive_risk, 0.7)
                     it.maliciousness_confidence = min(it.maliciousness_confidence, 30)
         return sorted(best.values(), key=lambda x: (x.type, x.normalized_value))
+
+
+def _host_of(it: IOCCandidate) -> str:
+    if it.type == "url":
+        m = re.match(r"https?://([^/:]+)", it.normalized_value, flags=re.IGNORECASE)
+        return m.group(1) if m else ""
+    return it.normalized_value
 
 
 def _window(text: str, start: int, end: int, *, pad: int = 80) -> str:

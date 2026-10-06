@@ -18,13 +18,12 @@
 {%- endmacro -%}
 
 {%- macro action_badge(action) -%}
-{%- if action == 'urgent_review' %}<span class="badge bad">{{ action }}</span>
-{%- elif action == 'block_if_safe' %}<span class="badge warn">{{ action }}</span>
-{%- elif action == 'high_priority_hunt' %}<span class="badge mid">{{ action }}</span>
-{%- elif action == 'monitor' %}<span class="badge dim">{{ action }}</span>
-{%- elif action == 'enrich_only' %}<span class="badge dim">{{ action }}</span>
-{%- elif action == 'expired' %}<span class="badge gray">{{ action }}</span>
-{%- else %}<span class="badge dim">{{ action }}</span>
+{%- set label = action|action_label -%}
+{%- if action == 'urgent_review' %}<span class="badge bad" title="{{ action }}">{{ label }}</span>
+{%- elif action == 'block_if_safe' %}<span class="badge warn" title="{{ action }}">{{ label }}</span>
+{%- elif action == 'high_priority_hunt' %}<span class="badge mid" title="{{ action }}">{{ label }}</span>
+{%- elif action == 'expired' %}<span class="badge gray" title="{{ action }}">{{ label }}</span>
+{%- else %}<span class="badge dim" title="{{ action }}">{{ label }}</span>
 {%- endif %}
 {%- endmacro -%}
 

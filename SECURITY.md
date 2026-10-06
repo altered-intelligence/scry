@@ -94,6 +94,40 @@ Redaction runs **before** article text is committed to the DB and before any sea
 
 When an extracted observable resolves to one of these, the extractor tags it `benign-shared-infrastructure`, the risk scorer subtracts 20+ points, and (if a high-confidence claim would otherwise demand blocking) the item is routed to the analyst review queue rather than auto-actioned.
 
+## Data flows
+
+What leaves the machine, and when. Nothing else is sent anywhere.
+
+| Data | Destination | When |
+| --- | --- | --- |
+| Feed/page requests | the configured sources | scheduled or manual collection (SSRF-guarded, policy-checked) |
+| Indicator values (IP, domain, URL, hash) | VirusTotal, OTX, AbuseIPDB, GreyNoise, FortiGuard | only for providers with a key configured, during enrichment runs or a user's live lookup |
+| CVE IDs | FIRST.org EPSS API (keyless) | EPSS enrichment runs |
+| Domain names | crt.sh certificate-transparency search (keyless, passive) | passive-DNS enrichment runs |
+| AI Search question + top matching excerpts | the selected AI provider | only when a hosted provider (OpenAI, Anthropic, …) is configured; the bundled local model never leaves the machine, Ollama goes wherever its base URL points (localhost by default) |
+| Alerts | Slack / Teams / webhook / SMTP | only with `CTI_ENABLE_OUTBOUND_ALERTS=true` and a channel configured |
+
+Searches, analyst comments, review decisions, watchlists and user accounts
+stay in the local database. Stored page HTML is pruned after
+`CTI_RAW_HTML_RETENTION_DAYS` (default 30); `scry backup` / `scry restore`
+cover recovery.
+
+## Third-party data terms
+
+Check each provider's terms before using Scry commercially or sharing its
+output with clients:
+
+- **VirusTotal**: the free public API may not be used in commercial
+  products or services; a commercial deployment needs a VirusTotal premium
+  licence.
+- **Other enrichment providers** (OTX, AbuseIPDB, GreyNoise, FortiGuard,
+  FIRST.org EPSS, crt.sh): free tiers often restrict commercial use,
+  volume, or redistribution — confirm the licence that matches your use.
+- **Collected articles and imported feeds** (e.g. ransomware leak-site
+  trackers) remain their publishers' content: keep attribution (Scry tags
+  every item `source:<name>`) and respect redistribution terms when quoting
+  them in client deliverables.
+
 ## What the LLM is allowed to do
 
 - Summarize an article

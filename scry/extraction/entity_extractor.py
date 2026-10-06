@@ -54,27 +54,59 @@ def _escape_term(t: str) -> str:
     return re.escape(t).replace(r"\ ", r"[\s_-]")
 
 
+# Names that are also ordinary English words ("play the video", "a beacon of
+# hope"). They only count when written with their capitalisation AND a
+# threat word sits nearby. Extend with ``ambiguous_names`` in aliases.yaml.
+AMBIGUOUS_NAMES = frozenset({"play", "beacon", "hive", "royal", "akira", "conti", "storm", "chaos", "medusa"})
+_THREAT_CONTEXT_RE = re.compile(
+    r"(?i)\b(?:ransomware|gang|group|operators?|affiliates?|malware|strain|variant|payload|implant|c2"
+    r"|cobalt\s+strike|leak\s+site|extortion|threat\s+actors?|encrypt\w*|victims?)\b"
+)
+_CONTEXT_PAD = 60
+
+
 class EntityExtractor:
     EXTRACTOR_VERSION = "0.1"
 
     def __init__(self) -> None:
         self._terms = _build_dictionary()
-        # Build a single compiled pattern per term for fast scanning.
-        self._compiled: list[tuple[_Term, re.Pattern[str]]] = []
+        ambiguous = AMBIGUOUS_NAMES | {n.lower() for n in (load_aliases().get("ambiguous_names") or [])}
+        # One pattern per term for the unambiguous surfaces (case-insensitive)
+        # and one for word-like surfaces (case-sensitive + context check).
+        self._compiled: list[tuple[_Term, re.Pattern[str] | None, re.Pattern[str] | None]] = []
         for term in self._terms:
-            surfaces = [term.canonical, *term.aliases]
-            patt = re.compile(
-                r"\b(?:" + "|".join(_escape_term(s) for s in surfaces if s) + r")\b",
-                re.IGNORECASE,
+            surfaces = [s for s in (term.canonical, *term.aliases) if s]
+            plain = [s for s in surfaces if s.lower() not in ambiguous]
+            risky = [s for s in surfaces if s.lower() in ambiguous]
+            plain_re = (
+                re.compile(r"\b(?:" + "|".join(_escape_term(s) for s in plain) + r")\b", re.IGNORECASE)
+                if plain
+                else None
             )
-            self._compiled.append((term, patt))
+            risky_re = (
+                re.compile(r"\b(?:" + "|".join(_escape_term(s) for s in risky) + r")\b") if risky else None
+            )
+            self._compiled.append((term, plain_re, risky_re))
+
+    @staticmethod
+    def _first_match(text: str, plain_re, risky_re) -> re.Match[str] | None:
+        if plain_re is not None:
+            m = plain_re.search(text)
+            if m:
+                return m
+        if risky_re is not None:
+            for m in risky_re.finditer(text):
+                window = text[max(0, m.start() - _CONTEXT_PAD) : m.end() + _CONTEXT_PAD]
+                if _THREAT_CONTEXT_RE.search(window):
+                    return m
+        return None
 
     def extract(self, text: str) -> list[EntityCandidate]:
         if not text:
             return []
         candidates: list[EntityCandidate] = []
-        for term, patt in self._compiled:
-            m = patt.search(text)
+        for term, plain_re, risky_re in self._compiled:
+            m = self._first_match(text, plain_re, risky_re)
             if not m:
                 continue
             candidates.append(

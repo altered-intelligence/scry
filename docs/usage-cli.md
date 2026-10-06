@@ -154,6 +154,24 @@ scry ingest ransomware-feed export.json --source darkwebinformer --dry-run
 scry ingest ransomware-feed export.csv --source darkwebinformer
 ```
 
+### `scry reprocess [--days N | --all] [--dry-run]`
+
+Rebuild extraction, attribution tags and risk scores with the current rules
+(run after an extractor or scoring-model upgrade, e.g. scoring model 0.2).
+For the selected articles (default: ingested in the last 30 days) it resets
+the context-derived tags and maliciousness / false-positive signals of the
+observables they mention, re-extracts, and re-scores. Observables the
+extractor no longer finds anywhere (such as `asp.net`) are **retracted**:
+status `false_positive`, risk 0, tag `retracted-by-extractor` — never
+deleted. Imported mentions (`manual_import`) and analyst review decisions
+are kept. Back up first.
+
+```bash
+scry backup
+scry reprocess --dry-run --all
+scry reprocess --all
+```
+
 ### `scry prune-evidence [--max-chars N] [--dry-run] [--no-vacuum]`
 
 Trim oversized relationship evidence text down to the extractor cap (400

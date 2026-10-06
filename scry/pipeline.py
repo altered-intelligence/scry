@@ -17,6 +17,8 @@ from sqlalchemy.orm import Session
 from scry.alias_resolution import resolve_canonical, upsert_entity
 from scry.enrichment import EnrichmentEngine
 from scry.extraction import EXTRACTOR_VERSION, Extractor
+from scry.extraction.classifiers import classify_all
+from scry.extraction.ioc_extractor import local_context
 from scry.extraction.relationship_extractor import evidence_window
 from scry.logging import get_logger
 from scry.models import (
@@ -45,6 +47,34 @@ from scry.search import embeddings, fts
 
 logger = get_logger("pipeline")
 
+# Extractor tags that count as benign context in risk scoring.
+BENIGN_CONTEXT_TAGS = frozenset({"possible-filename", "reference-context", "victim-context"})
+# A vendor calls the indicator clean: VirusTotal with no malicious/suspicious
+# votes and at least this many harmless ones, or GreyNoise "benign".
+VT_CLEAN_MIN_HARMLESS = 20
+
+
+def vendor_clean_flags(enrichment: dict) -> list[str]:
+    flags: list[str] = []
+    vt = enrichment.get("virustotal") or {}
+    stats = vt.get("last_analysis_stats") or {}
+    if (
+        stats
+        and not vt.get("not_found")
+        and int(stats.get("malicious") or 0) == 0
+        and int(stats.get("suspicious") or 0) == 0
+        and int(stats.get("harmless") or 0) >= VT_CLEAN_MIN_HARMLESS
+    ):
+        flags.append("vendor-clean:virustotal")
+    gn = enrichment.get("greynoise") or {}
+    if str(gn.get("classification") or "").lower() == "benign":
+        flags.append("vendor-clean:greynoise")
+    return flags
+
+
+# Observable mentions the pipeline did not create and must never delete.
+PRESERVED_MENTION_METHODS = frozenset({"manual_import"})
+
 
 def _as_utc(dt: datetime) -> datetime:
     """Treat naive datetimes (SQLite round-trip) as UTC for safe comparison."""
@@ -55,6 +85,7 @@ class CTIPipeline:
     def __init__(self, session: Session) -> None:
         self.session = session
         self.extractor = Extractor()
+        self.extractor.ioc.reference_hosts |= self._source_hosts()
         self.enrichment = EnrichmentEngine(session)
         self.confidence = ConfidenceScorer()
         self.risk = RiskScorer()
@@ -80,14 +111,23 @@ class CTIPipeline:
         article.tags = sorted(set([*article.tags, *result.tags]))
         article.extractor_version = EXTRACTOR_VERSION
 
-        # Propagate article/source/entity context onto every extracted IOC
-        # so downstream search and scoring can see provenance and attribution.
+        # Source provenance applies to every IOC in the article; actor and
+        # malware attribution only to IOCs whose own context names them, so a
+        # roundup that mentions Cl0p once does not tag every CVE in it.
         context_tags = self._context_tags(article, result)
+        entity_tags = self._entity_tag_patterns(result)
 
         # Persist observables and mentions.
         observable_ids: list[int] = []
         for ioc in result.iocs:
-            ioc.tags = sorted(set([*ioc.tags, *context_tags]))
+            local_text = ioc.context_window or ioc.evidence_text or ""
+            # Victims are not attributed to the actor that hit them.
+            local_entity_tags = (
+                []
+                if "victim-context" in ioc.tags
+                else [tag for patt, tags in entity_tags if patt.search(local_text) for tag in tags]
+            )
+            ioc.tags = sorted(set([*ioc.tags, *context_tags, *local_entity_tags]))
             ob = self._upsert_observable(ioc, article)
             observable_ids.append(ob.id)
             self._enrich_and_score(ob, ioc, article)
@@ -126,12 +166,20 @@ class CTIPipeline:
                 extractor_version=EXTRACTOR_VERSION,
             )
             row.needs_review = should_route_to_review(claim, article)
-            if row.needs_review:
+            prior = self._closed_claim_review(article.id, claim.evidence_text) if row.needs_review else None
+            if prior is not None:
+                # An analyst already decided on this exact claim in a previous
+                # run: keep the decision instead of reopening it.
+                row.needs_review = False
+                row.review_status = prior.disposition or "reviewed"
+            elif row.needs_review:
                 row.review_status = "pending"
             self.session.add(row)
             self.session.flush()
             claim_ids.append(row.id)
-            if row.needs_review:
+            if prior is not None:
+                prior.item_id = row.id  # keep the audit trail pointing at the live claim
+            elif row.needs_review:
                 self._add_review_once(
                     item_type="claim",
                     item_id=row.id,
@@ -201,7 +249,14 @@ class CTIPipeline:
         # (external-content FTS5 resolves deleted tokens through the content
         # table — once the row is gone the index entry is unrecoverable).
         fts.unindex_claims_for_article(self.session, article.id)
-        self.session.execute(delete(ObservableMention).where(ObservableMention.article_id == article.id))
+        # Mentions written by importers (hunt workbooks: aliases, addresses,
+        # people...) are not reproducible by the extractor; keep them.
+        self.session.execute(
+            delete(ObservableMention).where(
+                ObservableMention.article_id == article.id,
+                ObservableMention.extraction_method.not_in(PRESERVED_MENTION_METHODS),
+            )
+        )
         self.session.execute(delete(EntityMention).where(EntityMention.article_id == article.id))
         self.session.execute(delete(Claim).where(Claim.article_id == article.id))
         self.session.execute(delete(Relationship).where(Relationship.article_id == article.id))
@@ -218,6 +273,19 @@ class CTIPipeline:
             )
         )
 
+    def _closed_claim_review(self, article_id: int, evidence_text: str) -> AnalystReview | None:
+        return self.session.scalar(
+            select(AnalystReview)
+            .where(
+                AnalystReview.item_type == "claim",
+                AnalystReview.article_id == article_id,
+                AnalystReview.status != "open",
+                AnalystReview.evidence_text == evidence_text,
+            )
+            .order_by(AnalystReview.id.desc())
+            .limit(1)
+        )
+
     def _add_review_once(self, **fields) -> None:
         """Route to the review queue unless an OPEN review for the same
         (item_type, item_id) already exists — reprocessing must not pile up
@@ -232,11 +300,28 @@ class CTIPipeline:
         if existing is None:
             self.session.add(AnalystReview(**fields))
 
+    def _source_hosts(self) -> set[str]:
+        """Hosts of configured sources: links back to them are citations."""
+        from urllib.parse import urlsplit
+
+        from scry.models import Source
+
+        hosts: set[str] = set()
+        for url, feed in self.session.execute(select(Source.url, Source.feed)).all():
+            for value in (url, feed):
+                host = (urlsplit(value or "").hostname or "").lower()
+                if host.startswith("www."):
+                    host = host[4:]
+                if host and "." in host:
+                    hosts.add(host)
+        return hosts
+
     @staticmethod
     def _slug(value: str) -> str:
         return re.sub(r"[^a-z0-9]+", "-", (value or "").lower()).strip("-")
 
     def _context_tags(self, article: Article, result: ExtractionResult) -> list[str]:
+        """Source provenance tags shared by every IOC in the article."""
         tags: set[str] = set()
         source = article.source
         if source is not None:
@@ -247,18 +332,26 @@ class CTIPipeline:
             type_slug = self._slug(source.type)
             if type_slug:
                 tags.add(f"source-type:{type_slug}")
+        return sorted(tags)
+
+    def _entity_tag_patterns(self, result: ExtractionResult) -> list[tuple[re.Pattern[str], list[str]]]:
+        """(pattern over the entity's names, tags to add) per extracted entity."""
+        out: list[tuple[re.Pattern[str], list[str]]] = []
         for ent in result.entities:
             canonical, _ = resolve_canonical(ent.surface_form, ent.type)
             slug = self._slug(canonical)
             if not slug:
                 continue
             kind = self._slug(ent.type)
-            tags.add(f"{kind}:{slug}")
+            tags = [f"{kind}:{slug}"]
             if ent.type == "threat_actor":
-                tags.add(f"actor:{slug}")
+                tags.append(f"actor:{slug}")
             elif ent.type == "malware_family":
-                tags.add(f"malware:{slug}")
-        return sorted(tags)
+                tags.append(f"malware:{slug}")
+            names = sorted({ent.surface_form, canonical}, key=len, reverse=True)
+            patt = re.compile(r"\b(?:" + "|".join(re.escape(n) for n in names if n) + r")\b", re.IGNORECASE)
+            out.append((patt, tags))
+        return out
 
     def _upsert_observable(self, ioc: IOCCandidate, article: Article) -> Observable:
         ob = self.session.scalar(
@@ -295,6 +388,10 @@ class CTIPipeline:
             if ob.last_reported is None or new_reported > _as_utc(ob.last_reported):
                 ob.last_reported = new_reported
             ob.extraction_confidence = max(ob.extraction_confidence, ioc.extraction_confidence)
+            # Local evidence from this sighting can raise (never lower) the
+            # stored maliciousness / false-positive signals.
+            ob.maliciousness_confidence = max(ob.maliciousness_confidence, ioc.maliciousness_confidence)
+            ob.false_positive_risk = max(ob.false_positive_risk or 0.0, ioc.false_positive_risk)
             ob.tags = sorted(set([*ob.tags, *ioc.tags]))
 
         self.session.add(
@@ -330,19 +427,42 @@ class CTIPipeline:
             )
         )
 
+        enrichment = ob.enrichment or {}
+        local_topics = {
+            t.tag
+            for t in classify_all(
+                local_context(ioc.context_window or ioc.evidence_text or "", ioc.value, ioc.normalized_value)
+            )
+        }
         risk = self.risk.score(
             RiskInputs(
                 maliciousness_confidence=ob.maliciousness_confidence,
                 source_confidence=article.source_confidence,
                 recency_days=recency_days(article.published_at),
-                independent_sources=(ob.enrichment or {}).get("prevalence", {}).get("distinct_sources", 1),
+                independent_sources=enrichment.get("prevalence", {}).get("distinct_sources", 1),
                 attached_topics=set(article.tags or []),
-                benign_context_flags=[t for t in (ob.tags or []) if "benign" in t],
-                enrichment=ob.enrichment or {},
+                benign_context_flags=[
+                    *(t for t in (ob.tags or []) if "benign" in t or t in BENIGN_CONTEXT_TAGS),
+                    *vendor_clean_flags(enrichment),
+                ],
+                enrichment=enrichment,
+                local_topics=local_topics,
+                ioc_type=ob.type,
+                corroborating_flags=[k for k in enrichment if k.endswith("_escalated")],
             )
         )
         ob.risk_score = risk.score
         ob.actionability = risk.actionability
+        # Keep the arithmetic next to the number so the UI can explain it.
+        ob.enrichment = {
+            **enrichment,
+            "risk_breakdown": {
+                "score": risk.score,
+                "model_version": risk.model_version,
+                "article_id": article.id,
+                "contributors": [[name, round(float(value), 1)] for name, value in risk.contributors],
+            },
+        }
         ob.maliciousness_confidence = confidence.maliciousness_confidence
         ob.ttl_days = self.lifecycle.ttl_for(ob)
         if ob.ttl_days > 0:
@@ -400,3 +520,87 @@ class CTIPipeline:
             select(Observable).where(Observable.type == kind, Observable.normalized_value == value)
         )
         return ob.id if ob else None
+
+
+# ---------------------------------------------------------------------------
+# Bulk reprocessing (scoring model 0.2)
+# ---------------------------------------------------------------------------
+
+# Tags the pipeline derives from article context; rebuilt on every reprocess.
+_DERIVED_TAG_PREFIXES = ("threat-actor:", "actor:", "malware-family:", "malware:")
+_DERIVED_TAGS = frozenset({"malicious-context", "possible-filename", "victim-context", "reference-context"})
+RETRACTED_TAG = "retracted-by-extractor"
+
+
+def reprocess_articles(session: Session, article_ids: list[int]) -> dict[str, int]:
+    """Re-run extraction + scoring for ``article_ids`` with the current rules.
+
+    Before re-extraction, context-derived tags and the maliciousness / false-
+    positive signals of the observables these articles mention are reset, so
+    stale attributions (a roundup's actor stamped on every CVE) and stale
+    scores do not survive the merge. Observables that no longer appear in any
+    article after the rerun (e.g. ``asp.net``, a product name the extractor
+    now rejects) are retracted: status ``false_positive``, risk 0, tagged
+    ``retracted-by-extractor``. Nothing is deleted.
+    """
+    if not article_ids:
+        return {"articles": 0, "observables_rescored": 0, "observables_retracted": 0}
+    touched: set[int] = set()
+    for chunk in _chunks(article_ids):
+        touched.update(
+            session.scalars(
+                select(ObservableMention.observable_id).where(ObservableMention.article_id.in_(chunk))
+            ).all()
+        )
+    for chunk in _chunks(sorted(touched)):
+        for ob in session.scalars(select(Observable).where(Observable.id.in_(chunk))):
+            ob.tags = [
+                t
+                for t in (ob.tags or [])
+                if t not in _DERIVED_TAGS and not t.startswith(_DERIVED_TAG_PREFIXES)
+            ]
+            ob.maliciousness_confidence = 50
+            ob.false_positive_risk = 0.0
+    session.commit()
+
+    pipeline = CTIPipeline(session)
+    done = 0
+    for article_id in article_ids:
+        article = session.get(Article, article_id)
+        if article is None:
+            continue
+        article.extractor_version = "0"
+        try:
+            pipeline.process_article(article)
+            done += 1
+        except Exception as exc:  # keep going; one bad article must not stop a rebuild
+            session.rollback()
+            logger.warning("reprocess_failed", article_id=article_id, exc=str(exc))
+
+    still_mentioned: set[int] = set()
+    for chunk in _chunks(sorted(touched)):
+        still_mentioned.update(
+            session.scalars(
+                select(ObservableMention.observable_id).where(ObservableMention.observable_id.in_(chunk))
+            ).all()
+        )
+    retracted = 0
+    for chunk in _chunks(sorted(touched - still_mentioned)):
+        for ob in session.scalars(select(Observable).where(Observable.id.in_(chunk))):
+            ob.status = "false_positive"
+            ob.risk_score = 0.0
+            ob.actionability = "enrich_only"
+            ob.tags = sorted({*(ob.tags or []), RETRACTED_TAG})
+            retracted += 1
+    session.commit()
+    return {
+        "articles": done,
+        "observables_rescored": len(still_mentioned),
+        "observables_retracted": retracted,
+    }
+
+
+def _chunks(ids: list[int], size: int = 500):
+    """Slices small enough for SQLite's bound-variable limit."""
+    for i in range(0, len(ids), size):
+        yield ids[i : i + size]

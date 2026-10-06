@@ -6,6 +6,78 @@ semantic versioning.
 
 ## [Unreleased]
 
+Fixes from the 2026-10 product review: precision, explainable scoring, and
+briefs that say what changed, why it matters, and what to do.
+
+### Fixed
+
+- **Product names extracted as domains.** "Telerik UI for ASP.NET AJAX"
+  produced the domain observable `asp.net` with risk 99, Cl0p tags and a
+  high-risk alert. `.NET` product names (`ASP.NET`, `VB.NET`,
+  `Microsoft.NET`, an upper-case `.NET` suffix, plus
+  `software_name_denylist` in policies.yaml) are no longer domains;
+  file-name-shaped hosts (`README.md`, `setup.py`) are kept but flagged
+  `possible-filename` with a high false-positive risk.
+- **Article-wide attribution leaking onto every item.** Actor and malware
+  tags were stamped on every indicator in an article, so each CVE in a
+  weekly roundup inherited its Cl0p tag. They now apply only to indicators
+  whose own context names the actor; victim domains (`victim-context`) get
+  none. Relationships need the endpoints within 120 characters, and an
+  actor/malware → CVE `exploits` link also needs an exploitation verb.
+- **Common words matched as malware.** "play" and "beacon" (Play,
+  Cobalt Strike Beacon) only match when capitalised and next to threat
+  wording; extend with `ambiguous_names` in aliases.yaml.
+- **Risk 99 from roundup framing.** Scoring model 0.2: topic bonuses count
+  in full only next to the indicator (a quarter if only elsewhere in the
+  article); network/file indicators without malicious wording beside them,
+  a vendor verdict, or a second source are capped at 69 (hunt, not block);
+  citations to reporting sites (`reference-context`, configured source
+  hosts, `reference_hosts` in policies.yaml), victim domains, file-name
+  shapes and clean vendor verdicts (VirusTotal 0 malicious / ≥ 20 harmless,
+  GreyNoise "benign") count as benign context. On
+  the project database this took urgent/block observables from 1,033 to 38
+  (CVEs in KEV make up most of the rest).
+- **Reprocessing lost analyst work.** Re-extracting an article (`scry
+  extract`, full-page fetch) deleted imported (`manual_import`) mentions
+  and reopened claim reviews analysts had already closed. Both are now kept.
+- **"New KEV" counts.** KEV ingestion now stores CISA's `dateAdded`
+  (`kev_added_at`); briefs count KEV additions by that date instead of the
+  row's last update (which reported 1,533 "new" entries).
+- **Rate-limited feeds retried every cycle.** A feed that answers HTTP
+  429/503 is paused for 1 h, doubling per consecutive throttle up to 24 h;
+  the full-page fetch stops calling a host for the rest of the batch once
+  it throttles.
+
+### Added
+
+- **Score explanations.** Each observable stores its risk contributors;
+  its page shows "How this score was built" with plain definitions of
+  risk, maliciousness confidence, extraction confidence and false-positive
+  risk. An unevaluated false-positive risk reads "not assessed" instead of
+  0.0.
+- **`scry reprocess [--days N | --all] [--dry-run]`** rebuilds extraction,
+  tags and scores with the current rules and retracts observables the
+  extractor no longer finds (status `false_positive`, never deleted).
+- **Rewritten daily and weekly briefs.** Titled "Scry Daily/Weekly Threat
+  Brief"; lead with What changed / Why it matters / Recommended actions
+  (KEV additions by date, ransomware leak-site posts, watchlist matches,
+  block-level indicators with their reasons, review queue); stories are
+  de-duplicated across outlets, ranked by decision relevance, and exclude
+  feed index pages, sensor/pulse dumps and local imports; untitled
+  articles get a readable fallback; collection problems are summarised per
+  source (with pause times) instead of raw fetch errors.
+- **SECURITY.md: Data flows and Third-party data terms**, including the
+  VirusTotal public-API commercial-use restriction.
+
+### Changed
+
+- UI shows readable action labels (Urgent review, Block if safe, Hunt,
+  Monitor, Enrich only); the internal value stays in the tooltip.
+- The dashboard says how extraction works ("rule-based") and which AI
+  assistant is configured, instead of "LLM provider: stub".
+- System enrichment keys on the Alerts page are read-only for non-admins
+  (the API was already admin-only).
+
 ## [0.16.1] — 2026-10-04
 
 ### Added

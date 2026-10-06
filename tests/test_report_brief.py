@@ -70,14 +70,14 @@ class TestGenerateBrief:
         await brief_mod.generate_brief(session, "weekly")
         user_msg = fake_provider.last_messages[0]["content"]
         assert "Weekly report to synthesize:" in user_msg
-        assert "# CTI Weekly Report" in user_msg
+        assert "# Scry Weekly Threat Brief" in user_msg
 
     async def test_empty_report_prompt_says_so(self, session, fake_provider):
         """Empty DB → report has zero activity; prompt must instruct the model to say so."""
         await brief_mod.generate_brief(session, "daily")
         assert "nothing notable" in fake_provider.last_system
         user_msg = fake_provider.last_messages[0]["content"]
-        assert "# CTI Daily Report" in user_msg  # the plain-text report was piped through
+        assert "# Scry Daily Threat Brief" in user_msg  # the plain-text report was piped through
 
     async def test_cache_returns_cached_flag(self, session, fake_provider):
         first = await brief_mod.generate_brief(session, "daily")

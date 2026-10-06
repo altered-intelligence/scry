@@ -194,6 +194,69 @@ def _timeago(value) -> Markup | str:
 templates.env.filters["timeago"] = _timeago
 
 
+def _action_label(action: str | None) -> str:
+    from scry.scoring.risk import ACTION_LABELS
+
+    return ACTION_LABELS.get(action or "", (action or "unknown").replace("_", " ").capitalize())
+
+
+_RISK_FACTOR_LABELS = {
+    "maliciousness": "Maliciousness confidence",
+    "source_confidence": "Source reliability",
+    "recency<=7d": "Reported in the last 7 days",
+    "recency>180d": "Older than 180 days",
+    "multi_source": "Reported by 2+ independent sources",
+    "kev": "In CISA KEV",
+    "ransomware_associated_cve": "KEV: known ransomware use",
+    "public_poc": "Public proof-of-concept",
+    "benign_shared_infrastructure": "Shared/benign infrastructure",
+    "likely_cloud_or_cdn": "Cloud or CDN address",
+    "url_shortener": "URL shortener",
+    "unverified_ceiling": "Cap: no local malicious context, vendor verdict, or second source",
+}
+
+
+def _risk_factor_label(name: str) -> str:
+    if name in _RISK_FACTOR_LABELS:
+        return _RISK_FACTOR_LABELS[name]
+    for prefix, label in (
+        ("topic:", "Topic next to the indicator: "),
+        ("article_topic:", "Topic elsewhere in the article: "),
+        ("benign_context:vendor-clean:", "Vendor says clean: "),
+        ("benign_context:", "Benign signal: "),
+    ):
+        if name.startswith(prefix):
+            return label + name[len(prefix) :].replace("-", " ")
+    return name.replace("_", " ")
+
+
+templates.env.filters["action_label"] = _action_label
+templates.env.filters["risk_factor_label"] = _risk_factor_label
+
+# Tags that mean a benign / false-positive signal was actually evaluated.
+_FP_SIGNAL_TAGS = frozenset(
+    {"benign-shared-infrastructure", "possible-filename", "victim-context", "reference-context"}
+)
+
+
+def _ai_assistant_label(session: Session) -> str:
+    """What answers AI Search, without probing the network (no Ollama ping)."""
+    try:
+        from scry.ai.providers.local import LocalLlamaProvider
+        from scry.models import LLMSetting
+
+        row = session.query(LLMSetting).filter_by(enabled=True).first()
+        if row is not None:
+            return f"{row.provider}" + (
+                f" · {row.default_model}" if getattr(row, "default_model", "") else ""
+            )
+        if LocalLlamaProvider().is_available():
+            return "bundled local model"
+    except Exception:  # pragma: no cover - dashboard must render regardless
+        return ""
+    return ""
+
+
 def _cookie_secure(request: Request) -> bool:
     """Whether auth cookies should carry the Secure attribute (see Settings.cookie_secure)."""
     mode = (get_settings().cookie_secure or "auto").strip().lower()
@@ -2066,6 +2129,7 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
             "articles": recent_articles,
             "recent_threats": recent_threats,
             "settings": settings,
+            "ai_assistant": _ai_assistant_label(session),
             "last_collected": last_collected,
             "csrf": _admin_csrf_token(raw_cookie) if raw_cookie else "",
         },
@@ -2393,6 +2457,13 @@ def ui_observable_detail(ob_id: int, request: Request, session: Session = Depend
             "mentions": mentions,
             "relationships": rels,
             "enrichment_json": enrichment_json,
+            "risk_breakdown": (ob.enrichment or {}).get("risk_breakdown"),
+            "fp_assessed": bool(
+                (ob.false_positive_risk or 0) > 0
+                or _FP_SIGNAL_TAGS & set(ob.tags or [])
+                or (ob.enrichment or {}).get("virustotal")
+                or (ob.enrichment or {}).get("greynoise")
+            ),
             "provider_ages": provider_ages,
             "passive_dns_age": passive_dns_age,
             "can_lookup_vt": "virustotal" in personal_keys,
@@ -2821,10 +2892,15 @@ def ui_alerts(
     from scry.enrichment.provider_settings import PROVIDER_META, load_provider_states
 
     states = load_provider_states(session)
+    user = getattr(request.state, "user", None)
+    # Mirrors require_admin on PUT /enrichment/providers: admins only once
+    # accounts exist; the zero-user open mode can still configure.
+    can_configure = (user is not None and user.role == "admin") or not users_exist(session)
     return templates.TemplateResponse(
         request,
         "alerts.html",
         {
+            "can_configure": can_configure,
             "alerts": alerts,
             "total": total,
             "filters": filters,

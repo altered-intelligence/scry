@@ -7,7 +7,7 @@ points and downgrade the recommended action.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -23,10 +23,33 @@ class RiskInputs:
     attached_topics: set[str]
     benign_context_flags: list[str]
     enrichment: dict[str, Any]
+    # Topics found in the indicator's own context window. None = legacy
+    # behaviour (every article topic counts in full).
+    local_topics: set[str] | None = None
+    ioc_type: str | None = None
+    corroborating_flags: list[str] = field(default_factory=list)
+
+
+# Without positive evidence (local malicious wording, a vendor verdict, a
+# second independent source) a network indicator is a hunting lead, not a
+# block candidate: its risk is capped just under the block threshold.
+UNVERIFIED_RISK_CEILING = 69.0
+ARTICLE_TOPIC_DIVISOR = 4  # a topic only present elsewhere in the article
+_CEILING_EXEMPT_TYPES = frozenset({"cve", "attack_technique"})
+_VERIFIED_MALICIOUSNESS = 60
+
+ACTION_LABELS: dict[str, str] = {
+    "urgent_review": "Urgent review",
+    "block_if_safe": "Block if safe",
+    "high_priority_hunt": "Hunt",
+    "monitor": "Monitor",
+    "enrich_only": "Enrich only",
+    "expired": "Expired",
+}
 
 
 class RiskScorer:
-    MODEL_VERSION = "0.1"
+    MODEL_VERSION = "0.2"
 
     def score(self, inputs: RiskInputs) -> RiskScore:
         contributors: list[tuple[str, float]] = []
@@ -61,9 +84,16 @@ class RiskScorer:
             ("appdomainmanager-hijacking", 10),
             ("ai-security", 5),
         ):
-            if topic in inputs.attached_topics:
+            local = inputs.local_topics
+            if (topic in local) if local is not None else (topic in inputs.attached_topics):
                 contributors.append((f"topic:{topic}", bump))
                 base += bump
+            elif topic in inputs.attached_topics:
+                # Article-wide framing (a roundup about ransomware) says little
+                # about each item inside it.
+                small = bump // ARTICLE_TOPIC_DIVISOR
+                contributors.append((f"article_topic:{topic}", small))
+                base += small
 
         # KEV / patch_available
         if inputs.enrichment.get("kev"):
@@ -93,6 +123,9 @@ class RiskScorer:
         base += flag_penalty
 
         score = max(0.0, min(100.0, float(base)))
+        if self._unverified(inputs) and score > UNVERIFIED_RISK_CEILING:
+            contributors.append(("unverified_ceiling", UNVERIFIED_RISK_CEILING - score))
+            score = UNVERIFIED_RISK_CEILING
         action = self._actionability(score, inputs)
         return RiskScore(
             score=score,
@@ -101,6 +134,17 @@ class RiskScorer:
             benign_context_flags=list(inputs.benign_context_flags),
             model_version=self.MODEL_VERSION,
         )
+
+    @staticmethod
+    def _unverified(inputs: RiskInputs) -> bool:
+        """No positive evidence that this (network/file) indicator is malicious."""
+        if inputs.ioc_type is None or inputs.ioc_type in _CEILING_EXEMPT_TYPES:
+            return False
+        if inputs.maliciousness_confidence >= _VERIFIED_MALICIOUSNESS:
+            return False
+        if inputs.independent_sources >= 2 or inputs.corroborating_flags:
+            return False
+        return not any(inputs.enrichment.get(k) for k in ("kev", "vendor_confirmed_malicious"))
 
     def _actionability(self, score: float, inputs: RiskInputs) -> str:
         if any(

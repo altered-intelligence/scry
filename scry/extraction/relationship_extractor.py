@@ -45,6 +45,29 @@ _MAX_OCCURRENCES = 5000  # per endpoint — bounds work on pathological inputs
 
 Span = tuple[int, int]
 
+# Entity <-> indicator links need the two endpoints close together, not just
+# in the same "sentence": roundups and punctuation-free lists turn whole
+# articles into one sentence, which used to tie every CVE in a weekly digest
+# to whichever actor the digest mentioned first.
+MAX_ENDPOINT_GAP = 120
+_EXPLOIT_CUE_RE = re.compile(
+    r"(?i)\b(?:exploit(?:s|ed|ing|ation)?|weaponi[sz](?:e|es|ed|ing)|abus(?:e|es|ed|ing)|leverag(?:e|es|ed|ing))\b"
+)
+
+
+def endpoint_gap(text: str, a_forms: Sequence[str], b_forms: Sequence[str]) -> tuple[int, Span] | None:
+    """Characters between the closest occurrences of two endpoints, plus the covering span.
+
+    None when either endpoint does not occur. Overlapping matches have gap 0.
+    """
+    a_spans = _occurrences(text, a_forms)
+    b_spans = _occurrences(text, b_forms)
+    if not a_spans or not b_spans:
+        return None
+    a, b = _closest_pair(a_spans, b_spans)
+    first, second = sorted((a, b))
+    return max(0, second[0] - first[1]), (first[0], max(a[1], b[1]))
+
 
 def evidence_window(
     text: str,
@@ -203,7 +226,11 @@ class RelationshipExtractor:
             ]
             for entity in present_entities:
                 for ioc in present_iocs:
-                    rtype = _entity_ioc_relationship(entity.type, ioc.type, sentence_lower)
+                    near = endpoint_gap(sentence, [entity.surface_form], [ioc.value, ioc.normalized_value])
+                    if near is None or near[0] > MAX_ENDPOINT_GAP:
+                        continue
+                    local = sentence[max(0, near[1][0] - 60) : near[1][1] + 60].lower()
+                    rtype = _entity_ioc_relationship(entity.type, ioc.type, local)
                     if not rtype:
                         continue
                     out.append(
@@ -227,6 +254,14 @@ class RelationshipExtractor:
             actor_in_sentence = [e for e in present_entities if e.type == "threat_actor"]
             for actor in actor_in_sentence:
                 for cve in cves_in_sentence:
+                    # "X exploits CVE" needs the two close together AND an
+                    # exploitation verb between/around them.
+                    near = endpoint_gap(sentence, [actor.surface_form], [cve.normalized_value])
+                    if near is None or near[0] > MAX_ENDPOINT_GAP:
+                        continue
+                    span_text = sentence[max(0, near[1][0] - 40) : near[1][1] + 40]
+                    if not _EXPLOIT_CUE_RE.search(span_text):
+                        continue
                     out.append(
                         RelationshipCandidate(
                             source_type="threat_actor",
@@ -275,7 +310,7 @@ def _entity_ioc_relationship(entity_type: str, ioc_type: str, sentence_lower: st
         if ioc_type in {"md5", "sha1", "sha256", "sha512", "ssdeep", "tlsh"}:
             return "delivers" if entity_type == "threat_actor" else "associated_with"
         if ioc_type == "cve":
-            return "exploits"
+            return "exploits" if _EXPLOIT_CUE_RE.search(sentence_lower) else None
         if ioc_type in {"registry_key", "named_pipe"}:
             return "uses"
         if ioc_type == "attack_technique":

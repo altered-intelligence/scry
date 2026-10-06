@@ -121,7 +121,8 @@
         <dt>Dark web</dt><dd>{% if settings.enable_dark_web %}<span class="badge warn">on</span>{% else %}<span class="badge good">off</span>{% endif %}</dd>
         <dt>File downloads</dt><dd>{% if settings.enable_file_downloads %}<span class="badge warn">on</span>{% else %}<span class="badge good">off</span>{% endif %}</dd>
         <dt>Outbound alerts</dt><dd>{% if settings.enable_outbound_alerts %}<span class="badge mid">on</span>{% else %}<span class="badge dim">off</span>{% endif %}</dd>
-        <dt>LLM provider</dt><dd>{{ settings.llm_provider }}</dd>
+        <dt>Extraction</dt><dd>{% if settings.llm_provider == 'stub' %}<span title="Indicators, entities and claims come from deterministic rules; no language model is involved.">rule-based</span>{% else %}rules + {{ settings.llm_provider }}{% endif %}</dd>
+        <dt>AI assistant</dt><dd>{% if ai_assistant %}{{ ai_assistant }}{% else %}<span class="badge dim">not configured</span>{% endif %}</dd>
         <dt>VT key</dt><dd>{% if settings.virustotal_api_key %}<span class="badge good">configured</span>{% else %}<span class="badge dim">unset</span>{% endif %}</dd>
         <dt>OTX key</dt><dd>{% if settings.otx_api_key %}<span class="badge good">configured</span>{% else %}<span class="badge dim">unset</span>{% endif %}</dd>
       </dl>

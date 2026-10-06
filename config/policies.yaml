@@ -123,3 +123,44 @@ ssrf_denylist_hosts:
   - 169.254.169.254
   - fd00::/8
   - ::1
+
+# Security reporting / research / lookup sites. Links to these are citations
+# ("see VirusTotal", "Unit 42 report"), not indicators: they are kept but
+# tagged reference-context with a high false-positive risk. The pipeline also
+# treats the host of every configured source as a reference host.
+reference_hosts:
+  - virustotal.com
+  - urlscan.io
+  - abuse.ch
+  - shodan.io
+  - censys.io
+  - otx.alienvault.com
+  - attack.mitre.org
+  - cve.org
+  - cve.mitre.org
+  - nvd.nist.gov
+  - cisa.gov
+  - first.org
+  - paloaltonetworks.com
+  - crowdstrike.com
+  - mandiant.com
+  - sentinelone.com
+  - fortinet.com
+  - fortiguard.com
+  - talosintelligence.com
+  - welivesecurity.com
+  - securelist.com
+  - checkpoint.com
+  - trendmicro.com
+  - proofpoint.com
+  - huntress.com
+  - sophos.com
+  - rapid7.com
+  - tenable.com
+  - bleepingcomputer.com
+  - thehackernews.com
+  - securityweek.com
+  - therecord.media
+  - darkreading.com
+  - krebsonsecurity.com
+  - threatcluster.io

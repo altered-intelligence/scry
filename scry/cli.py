@@ -227,6 +227,36 @@ def extract(article_id: int) -> None:
         console.print("[green]Done[/green]")
 
 
+@app.command("reprocess")
+def reprocess(
+    days: int = typer.Option(30, "--days", help="Articles ingested in the last N days."),
+    all_articles: bool = typer.Option(False, "--all", help="Every article, regardless of age."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Only count the articles that would be reprocessed."
+    ),
+) -> None:
+    """Rebuild extraction, attribution tags and risk scores with the current rules.
+
+    Run after upgrading the extractor or scoring model. Back up first
+    (`scry backup`): observables the extractor no longer finds are retracted.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from scry.pipeline import reprocess_articles
+
+    with session_scope() as session:
+        stmt = select(Article.id).order_by(Article.id)
+        if not all_articles:
+            since = datetime.now(UTC) - timedelta(days=days)
+            stmt = stmt.where(Article.ingested_at >= since)
+        ids = list(session.scalars(stmt))
+        if dry_run:
+            console.print(f"[yellow]DRY RUN[/yellow] {len(ids)} article(s) would be reprocessed.")
+            return
+        res = reprocess_articles(session, ids)
+    console.print_json(json.dumps(res))
+
+
 @app.command("enrich")
 def enrich(observable_id: int) -> None:
     with session_scope() as session:

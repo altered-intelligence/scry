@@ -112,14 +112,14 @@ class TestExtractorBoundsEvidence:
             assert "lumma" in r.evidence_text.lower()
             assert r.target_value in r.evidence_text.lower()
 
-    def test_entity_only_in_header_still_shows_both_ends(self):
+    def test_entity_only_in_header_links_only_nearby_rows(self):
+        """A header mention must not vouch for rows far below it (roundup leak)."""
         rels = [r for r in self._rels(_ioc_sheet(mention_entity_per_line=False)) if r.target_type == "domain"]
-        assert rels
-        far = [r for r in rels if r.target_value.endswith("0250.example.net")]
-        assert far, "expected a relationship for a domain far from the header"
-        ev = far[0].evidence_text
-        assert len(ev) <= MAX_EVIDENCE_CHARS
-        assert "lumma" in ev.lower() and far[0].target_value in ev.lower()
+        assert rels, "rows right under the header are still linked"
+        assert not [r for r in rels if r.target_value.endswith("0250.example.net")]
+        for r in rels:
+            assert len(r.evidence_text) <= MAX_EVIDENCE_CHARS
+            assert "lumma" in r.evidence_text.lower() and r.target_value in r.evidence_text.lower()
 
     def test_prose_evidence_unchanged(self):
         text = "APT29 uses Cobalt Strike to maintain persistence."

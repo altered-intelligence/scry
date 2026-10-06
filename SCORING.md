@@ -59,15 +59,44 @@ base = maliciousness × 0.4 + source_confidence × 0.2
         url_shortener             → −10
 ```
 
-Clamped to [0, 100]. Actionability buckets:
+**Model 0.2 (2026-10):**
+
+- **Topics count where the indicator is.** A topic earns its full bump only
+  when it appears in the indicator's own context window (±160 characters,
+  with the indicator's own text blanked out so a URL path like
+  `/warlock-ransomware` cannot vouch for itself). A topic present only
+  elsewhere in the article earns a quarter (`article_topic:*`). A weekly
+  roundup about ransomware no longer pushes every item in it to 99.
+- **Unverified ceiling.** A network or file indicator is capped at **69**
+  (hunt, not block) unless there is positive evidence: malicious wording
+  next to it (`malicious-context`, maliciousness ≥ 60), two or more
+  independent sources, or a vendor verdict (`*_escalated`). CVEs and ATT&CK
+  techniques are exempt; KEV and exploitation flags drive them.
+- **Local context tags** set by the extractor: `malicious-context` (C2,
+  payload, implant… next to it), `victim-context` (breached, stole,
+  portal… — a victim's domain, not attacker infrastructure; it also gets no
+  actor/malware tags), `reference-context` (citations, configured source
+  hosts, `reference_hosts` in policies.yaml), `possible-filename`
+  (`README.md`, `setup.py`). The last three raise false-positive risk and
+  count as benign-context flags.
+- **Product names are not domains.** `ASP.NET`, `VB.NET`, `Microsoft.NET`
+  and anything listed under `software_name_denylist` are never extracted.
+- **Every score is explained.** The contributor list is stored on the
+  observable (`enrichment.risk_breakdown`) and rendered on its page as
+  "How this score was built". A false-positive risk of 0 with no benign
+  signal evaluated is shown as *not assessed*, not as a measured zero.
+- Existing data is rebuilt with `scry reprocess` (see docs/usage-cli.md).
+
+Clamped to [0, 100]. Actionability buckets (the UI shows the label in
+brackets):
 
 | Score | Actionability |
 | --- | --- |
-| ≥ 85 | `urgent_review` |
-| 70–84 | `block_if_safe` |
-| 55–69 | `high_priority_hunt` |
-| 30–54 | `monitor` |
-| < 30 | `enrich_only` |
+| ≥ 85 | `urgent_review` (Urgent review) |
+| 70–84 | `block_if_safe` (Block if safe) |
+| 55–69 | `high_priority_hunt` (Hunt) |
+| 30–54 | `monitor` (Monitor) |
+| < 30 | `enrich_only` (Enrich only) |
 
 If any benign-context flag is set, actionability is forced to `monitor` regardless of score.
 

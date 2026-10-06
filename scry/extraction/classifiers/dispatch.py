@@ -88,6 +88,10 @@ _TOPIC_PATTERNS: dict[str, list[re.Pattern[str]]] = {
 }
 
 
+# Every topic the classifier can emit (used to tell topics from provenance tags).
+TOPIC_TAGS: frozenset[str] = frozenset(_TOPIC_PATTERNS)
+
+
 def classify_all(text: str) -> list[TopicTag]:
     if not text:
         return []

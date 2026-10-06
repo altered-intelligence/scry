@@ -21,7 +21,7 @@
       <dl class="kv">
         <dt>Extraction conf.</dt><dd>{{ observable.extraction_confidence }}</dd>
         <dt>Maliciousness conf.</dt><dd>{{ observable.maliciousness_confidence }}</dd>
-        <dt>False-positive risk</dt><dd>{{ observable.false_positive_risk }}</dd>
+        <dt>False-positive risk</dt><dd>{% if fp_assessed %}{{ '%.0f'|format((observable.false_positive_risk or 0) * 100) }}%{% else %}<span class="muted" title="No benign signal (shared infrastructure, file-name shape, vendor verdict) has been evaluated yet; this is not a measured zero.">not assessed</span>{% endif %}</dd>
         <dt>First seen</dt><dd>{{ observable.first_seen or '—' }}</dd>
         <dt>Last seen</dt><dd>{{ observable.last_seen or '—' }}</dd>
         <dt>First reported</dt><dd>{{ observable.first_reported or '—' }}</dd>
@@ -30,6 +30,32 @@
         <dt>Expires</dt><dd>{{ observable.expiration_date or '—' }}</dd>
         <dt>Scoring model</dt><dd>{{ observable.scoring_model_version }}</dd>
       </dl>
+    </div>
+
+    <div class="panel">
+      <h3>How this score was built</h3>
+      <p class="muted">
+        <strong>Risk</strong> is how urgently to act (0–100).
+        <strong>Maliciousness confidence</strong> is how sure we are the indicator is hostile.
+        <strong>Extraction confidence</strong> is how sure we are the text really names this indicator.
+        <strong>False-positive risk</strong> is the chance it is benign.
+        Indicators without malicious wording next to them, a vendor verdict, or a second independent source
+        are capped below the block threshold.
+      </p>
+      {% if risk_breakdown and risk_breakdown.contributors %}
+        <table>
+          <thead><tr><th>Factor</th><th style="text-align:right">Points</th></tr></thead>
+          <tbody>
+            {% for name, value in risk_breakdown.contributors %}
+              <tr><td>{{ name|risk_factor_label }}</td><td style="text-align:right">{{ '%+.0f'|format(value) }}</td></tr>
+            {% endfor %}
+            <tr><td><strong>Risk</strong></td><td style="text-align:right"><strong>{{ '%.0f'|format(risk_breakdown.score) }}</strong></td></tr>
+          </tbody>
+        </table>
+        <p class="muted">Scored from article #{{ risk_breakdown.article_id }} with model {{ risk_breakdown.model_version }}.</p>
+      {% else %}
+        <p class="muted">This indicator was scored before score explanations were stored. Run <code>scry reprocess</code> to rebuild it.</p>
+      {% endif %}
     </div>
 
     {% if observable.enrichment %}

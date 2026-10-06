@@ -74,7 +74,7 @@ document.getElementById("test-alerts-btn").addEventListener("click", async () =>
     (<code>POST /enrichment/run</code> with no signed-in user, optionally
     <code>?providers=…</code>). Keys are stored encrypted in the
     <code>connector_settings</code> table and override the
-    <code>CTI_*_API_KEY</code> env vars when set. Your own manual runs,
+    <code>CTI_*_API_KEY</code> env vars when set.{% if not can_configure %} Only administrators can change them.{% endif %} Your own manual runs,
     live lookups and tests use your <a href="/ui/intel-feeds/threat-feeds">personal
     keys</a> instead.
   </p>
@@ -92,6 +92,7 @@ document.getElementById("test-alerts-btn").addEventListener("click", async () =>
           {% endif %}
           {% if not p.enabled %}<span class="badge dim">disabled</span>{% endif %}
         </td>
+        {% if can_configure %}
         <td>
           <input type="checkbox" class="enrich-enabled" {% if p.enabled %}checked{% endif %}>
         </td>
@@ -102,12 +103,17 @@ document.getElementById("test-alerts-btn").addEventListener("click", async () =>
           <button class="btn enrich-save" type="button">Save</button>
           <span class="chip enrich-status" style="display: none;"></span>
         </td>
+        {% else %}
+        <td>{% if p.enabled %}yes{% else %}no{% endif %}</td>
+        <td colspan="2" class="muted">admin only</td>
+        {% endif %}
       </tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
 
+{% if can_configure %}
 <script>
 document.querySelectorAll("tr[data-provider] .enrich-save").forEach(function (btn) {
   btn.addEventListener("click", async function () {
@@ -142,6 +148,7 @@ document.querySelectorAll("tr[data-provider] .enrich-save").forEach(function (bt
   });
 });
 </script>
+{% endif %}
 
 <div class="panel">
   <table>

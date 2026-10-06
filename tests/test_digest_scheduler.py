@@ -69,7 +69,7 @@ class TestDigestJob:
         assert captured["to"] == "analyst@example.com"
         assert captured["subject"].startswith("Scry daily digest — ")
         assert "articles, " in captured["subject"] and "high-risk)" in captured["subject"]
-        assert "# CTI Daily Report" in captured["body"]
+        assert "# Scry Daily Threat Brief" in captured["body"]
         assert captured["markdown_body"] == captured["body"]  # plain + markdown parts
 
     def test_empty_recipient_skips(self, session, monkeypatch):
