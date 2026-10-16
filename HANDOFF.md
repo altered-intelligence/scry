@@ -3,6 +3,8 @@
 **Version:** 0.17.0 · **Repo:** https://github.com/altered-intelligence/scry · **License:** Apache-2.0
 **Purpose of this document:** Explain what this project is, how it was built ("vibe coding" methodology), how it's organized, how GitHub is used as a backup, and — most importantly — provide a **master prompt** that lets any AI coding assistant (Claude Code, Codex, DeepSeek, Kimi, etc.) pick up development or recreate the project from scratch in any environment.
 
+**Continuing from the October 2026 thread?** Read [`docs/ai-handoff/THREAD-KNOWLEDGE-2026-10.md`](docs/ai-handoff/THREAD-KNOWLEDGE-2026-10.md) after section 8: owner preferences, the full work log for v0.15.2 to v0.17.0, a troubleshooting casebook (root causes and fixes), operating procedures and open items.
+
 ---
 
 ## 1. What Scry Is
