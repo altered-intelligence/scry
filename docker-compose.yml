@@ -3,10 +3,10 @@ services:
     image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: cti
-      POSTGRES_PASSWORD: cti
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a random database password}
       POSTGRES_DB: cti
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - cti_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -18,7 +18,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     profiles: ["optional"]
 
   api:
@@ -27,22 +27,14 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      CTI_DATABASE_URL: postgresql+psycopg://cti:cti@postgres:5432/cti
+      CTI_DATABASE_URL: postgresql+psycopg://cti:${POSTGRES_PASSWORD}@postgres:5432/cti
       CTI_ENV: local
       CTI_LOG_LEVEL: INFO
-      # CONSCIOUS CHOICE — this compose bundle is a LOCAL, single-user demo:
-      # CTI_OPEN_ACCESS=true disables authentication entirely while no user
-      # account exists (legacy zero-user open mode, e.g. for MCP/automation).
-      # The container publishes 8000 on all interfaces, so anyone who can
-      # reach this host can use the instance. For any shared or exposed
-      # deployment, DELETE this line: the app then starts in setup-required
-      # mode and forces first-run admin creation at /setup before serving
-      # anything. (Alternatively set CTI_API_KEY to gate the REST API.)
-      CTI_OPEN_ACCESS: "true"
+      CTI_SETUP_TOKEN: ${CTI_SETUP_TOKEN:-}
     command: >
       sh -c "alembic upgrade head && uvicorn scry.main:app --host 0.0.0.0 --port 8000"
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - ./config:/app/config:ro
       # Persists the auto-generated Fernet key (CTI_SECRET_FILE) and any
@@ -56,7 +48,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      CTI_DATABASE_URL: postgresql+psycopg://cti:cti@postgres:5432/cti
+      CTI_DATABASE_URL: postgresql+psycopg://cti:${POSTGRES_PASSWORD}@postgres:5432/cti
       CTI_ENV: local
     command: ["python", "-m", "scry.scheduler"]
     profiles: ["optional"]

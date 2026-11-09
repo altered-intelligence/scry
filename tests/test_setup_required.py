@@ -74,6 +74,7 @@ class TestSetupRequiredMode:
             csrf = _setup_csrf(client)
             r = client.post(
                 "/setup",
+                headers={"X-Setup-Token": "test-installation-token-32-characters"},
                 data={
                     "csrf": csrf,
                     "username": "root",

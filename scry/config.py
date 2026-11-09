@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     # API auth: when set, all /api routes require this token (X-API-Key or
     # Authorization: Bearer). Empty (default): setup-required mode until the
     # first admin exists — see open_access below.
+    setup_token: str = ""  # 32+ random characters; required for browser provisioning
     api_key: str = ""
 
     # Explicit escape hatch for the legacy zero-user open mode. With zero

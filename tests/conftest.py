@@ -16,6 +16,7 @@ def _isolated_db(monkeypatch, tmp_path: Path):
     db_path = tmp_path / "test.sqlite"
     monkeypatch.setenv("CTI_DATABASE_URL", f"sqlite+pysqlite:///{db_path}")
     monkeypatch.setenv("CTI_ENV", "test")
+    monkeypatch.setenv("CTI_SETUP_TOKEN", "test-installation-token-32-characters")
     monkeypatch.setenv("CTI_ENABLE_DARK_WEB", "false")
     monkeypatch.setenv("CTI_ENABLE_FILE_DOWNLOADS", "false")
     # Neutralize any real master key from .env so "no key = open" tests stay

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from typer.testing import CliRunner
@@ -65,7 +66,9 @@ def audit_actions() -> list[str]:
 
 def login(client: TestClient, username: str = "alice", password: str = PASSWORD, **extra):
     return client.post(
-        "/login", data={"username": username, "password": password, **extra}, follow_redirects=False
+        "/login",
+        data={"username": username, "password": password, **extra},
+        follow_redirects=False,
     )
 
 
@@ -210,7 +213,11 @@ class TestLoginUI:
     def test_bad_credentials_no_cookie(self):
         make_user()
         with TestClient(app) as client:
-            r = client.post("/login", data={"username": "alice", "password": "wrong"}, follow_redirects=False)
+            r = client.post(
+                "/login",
+                data={"username": "alice", "password": "wrong"},
+                follow_redirects=False,
+            )
             assert r.status_code == 303
             assert "error=" in r.headers["location"]
             assert SESSION_COOKIE not in client.cookies
@@ -218,7 +225,11 @@ class TestLoginUI:
     def test_unknown_user_rejected(self):
         make_user()
         with TestClient(app) as client:
-            r = client.post("/login", data={"username": "nobody", "password": "x"}, follow_redirects=False)
+            r = client.post(
+                "/login",
+                data={"username": "nobody", "password": "x"},
+                follow_redirects=False,
+            )
             assert "error=" in r.headers["location"]
 
     def test_logout_revokes_session(self):
@@ -252,6 +263,13 @@ class TestLoginUI:
 
 
 class TestFirstRunSetup:
+    @pytest.fixture(autouse=True)
+    def installation_token(self, monkeypatch):
+        monkeypatch.setenv("CTI_SETUP_TOKEN", "test-installation-token-32-characters")
+        from scry.config import get_settings
+
+        get_settings.cache_clear()
+
     def _get_csrf(self, client: TestClient) -> str:
         import re
 
@@ -276,6 +294,7 @@ class TestFirstRunSetup:
             csrf = self._get_csrf(client)
             r = client.post(
                 "/setup",
+                headers={"X-Setup-Token": "test-installation-token-32-characters"},
                 data={
                     "csrf": csrf,
                     "username": "root",
@@ -299,6 +318,7 @@ class TestFirstRunSetup:
             csrf = self._get_csrf(client)
             client.post(
                 "/setup",
+                headers={"X-Setup-Token": "test-installation-token-32-characters"},
                 data={
                     "csrf": csrf,
                     "username": "root",
@@ -314,6 +334,7 @@ class TestFirstRunSetup:
             csrf = self._get_csrf(client)
             r = client.post(
                 "/setup",
+                headers={"X-Setup-Token": "test-installation-token-32-characters"},
                 data={
                     "csrf": csrf,
                     "username": "root",
@@ -330,6 +351,7 @@ class TestFirstRunSetup:
         with TestClient(app) as client:
             r = client.post(
                 "/setup",
+                headers={"X-Setup-Token": "test-installation-token-32-characters"},
                 data={
                     "csrf": "forged",
                     "username": "root",
@@ -347,6 +369,7 @@ class TestFirstRunSetup:
             assert client.get("/setup").status_code == 404
             r = client.post(
                 "/setup",
+                headers={"X-Setup-Token": "test-installation-token-32-characters"},
                 data={
                     "csrf": "whatever",
                     "username": "eve",
@@ -371,11 +394,17 @@ class TestThrottling:
         with TestClient(app) as client:
             for _ in range(4):
                 r = client.post(
-                    "/login", data={"username": "alice", "password": "wrong"}, follow_redirects=False
+                    "/login",
+                    data={"username": "alice", "password": "wrong"},
+                    follow_redirects=False,
                 )
                 assert "locked" not in r.headers["location"]
             # 5th failure locks the account.
-            r = client.post("/login", data={"username": "alice", "password": "wrong"}, follow_redirects=False)
+            r = client.post(
+                "/login",
+                data={"username": "alice", "password": "wrong"},
+                follow_redirects=False,
+            )
             assert "locked" in r.headers["location"].lower()
             # Correct password is still rejected while locked.
             r = login(client)
@@ -391,8 +420,16 @@ class TestThrottling:
     def test_failed_counter_increments(self):
         uid = make_user()
         with TestClient(app) as client:
-            client.post("/login", data={"username": "alice", "password": "wrong"}, follow_redirects=False)
-            client.post("/login", data={"username": "alice", "password": "wrong"}, follow_redirects=False)
+            client.post(
+                "/login",
+                data={"username": "alice", "password": "wrong"},
+                follow_redirects=False,
+            )
+            client.post(
+                "/login",
+                data={"username": "alice", "password": "wrong"},
+                follow_redirects=False,
+            )
         with session_scope() as s:
             assert s.get(User, uid).failed_login_count == 2
 
@@ -403,7 +440,11 @@ class TestThrottling:
         monkeypatch.setattr(sessions_mod, "utcnow", lambda: fake_now["now"])
         with TestClient(app) as client:
             for _ in range(5):
-                client.post("/login", data={"username": "alice", "password": "wrong"}, follow_redirects=False)
+                client.post(
+                    "/login",
+                    data={"username": "alice", "password": "wrong"},
+                    follow_redirects=False,
+                )
         user = get_user("alice")
         assert lockout_remaining(user, now=start) is not None
         assert lockout_remaining(user, now=start + timedelta(minutes=16)) is None
@@ -474,7 +515,16 @@ class TestGating:
 class TestUsersCLI:
     def test_create_and_list(self):
         r = runner.invoke(
-            cli_app, ["users", "create", "alice", "--email", "alice@example.com", "--password", PASSWORD]
+            cli_app,
+            [
+                "users",
+                "create",
+                "alice",
+                "--email",
+                "alice@example.com",
+                "--password",
+                PASSWORD,
+            ],
         )
         assert r.exit_code == 0, r.output
         assert get_user("alice") is not None
@@ -486,21 +536,48 @@ class TestUsersCLI:
     def test_create_admin_flag_and_role(self):
         r = runner.invoke(
             cli_app,
-            ["users", "create", "boss", "--email", "boss@example.com", "--password", PASSWORD, "--admin"],
+            [
+                "users",
+                "create",
+                "boss",
+                "--email",
+                "boss@example.com",
+                "--password",
+                PASSWORD,
+                "--admin",
+            ],
         )
         assert r.exit_code == 0, r.output
         assert get_user("boss").role == "admin"
 
     def test_create_invalid_email_rejected(self):
         r = runner.invoke(
-            cli_app, ["users", "create", "alice", "--email", "not-an-email", "--password", PASSWORD]
+            cli_app,
+            [
+                "users",
+                "create",
+                "alice",
+                "--email",
+                "not-an-email",
+                "--password",
+                PASSWORD,
+            ],
         )
         assert r.exit_code == 2
 
     def test_create_duplicate_rejected(self):
         make_user()
         r = runner.invoke(
-            cli_app, ["users", "create", "ALICE", "--email", "x@example.com", "--password", PASSWORD]
+            cli_app,
+            [
+                "users",
+                "create",
+                "ALICE",
+                "--email",
+                "x@example.com",
+                "--password",
+                PASSWORD,
+            ],
         )
         assert r.exit_code == 1
 
@@ -527,7 +604,10 @@ class TestUsersCLI:
         assert get_user("alice").status == "active"
 
     def test_seed_creates_single_admin_with_explicit_password(self):
-        r = runner.invoke(cli_app, ["users", "seed", "--username", "root", "--password", "Seed3d!pass"])
+        r = runner.invoke(
+            cli_app,
+            ["users", "seed", "--username", "root", "--password", "Seed3d!pass"],
+        )
         assert r.exit_code == 0, r.output
         user = get_user("root")
         assert user is not None
@@ -548,7 +628,10 @@ class TestUsersCLI:
 
     def test_seed_refuses_when_users_exist(self):
         make_user()
-        r = runner.invoke(cli_app, ["users", "seed", "--username", "root", "--password", "Seed3d!pass"])
+        r = runner.invoke(
+            cli_app,
+            ["users", "seed", "--username", "root", "--password", "Seed3d!pass"],
+        )
         assert r.exit_code == 1
         assert get_user("root") is None
         assert "already exist" in r.output

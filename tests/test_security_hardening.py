@@ -120,6 +120,7 @@ class TestSecureCookies:
             token = re.search(r'name="csrf" value="([^"]+)"', client.get("/setup").text).group(1)
             r = client.post(
                 "/setup",
+                headers={"X-Setup-Token": "test-installation-token-32-characters"},
                 data={"csrf": token, "username": "root", "password": PASSWORD, "confirm_password": PASSWORD},
                 follow_redirects=False,
             )

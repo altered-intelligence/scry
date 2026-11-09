@@ -439,3 +439,7 @@ pytest -q
 ## License
 
 Apache 2.0 — see [LICENSE](./LICENSE). Copyright altered-intelligence.
+
+### Secure first installation
+
+Set a random `POSTGRES_PASSWORD` before using Docker Compose. Browser setup requires `CTI_SETUP_TOKEN` with at least 32 random characters, supplied in the installation-token field. Alternatively provision locally with `scry users seed --username admin`. Remove the setup token after creating the first administrator. Published development ports are loopback-only. Existing databases retain their current password; changing the environment does not rotate database credentials.
