@@ -12,9 +12,7 @@ permissions:
   contents: read
 
 jobs:
-  release:
-    permissions:
-      contents: write
+  validate:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -63,8 +61,23 @@ jobs:
       - name: Tests
         run: pytest -q
 
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-notes
+          path: release_notes.md
+
+  release:
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-notes
       - name: Publish release
         env:
+          GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
