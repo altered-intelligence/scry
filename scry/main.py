@@ -174,9 +174,7 @@ if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
-templates.env.filters["format_number"] = lambda v: (
-    f"{int(v):,}" if v is not None else "0"
-)
+templates.env.filters["format_number"] = lambda v: (f"{int(v):,}" if v is not None else "0")
 
 
 def _timeago(value) -> Markup | str:
@@ -211,9 +209,7 @@ templates.env.filters["timeago"] = _timeago
 def _action_label(action: str | None) -> str:
     from scry.scoring.risk import ACTION_LABELS
 
-    return ACTION_LABELS.get(
-        action or "", (action or "unknown").replace("_", " ").capitalize()
-    )
+    return ACTION_LABELS.get(action or "", (action or "unknown").replace("_", " ").capitalize())
 
 
 _RISK_FACTOR_LABELS = {
@@ -247,9 +243,7 @@ def _risk_factor_label(name: str) -> str:
 
 
 templates.env.filters["action_label"] = _action_label
-templates.env.globals["orbistrace_enabled"] = lambda: bool(
-    get_settings().orbistrace_url.strip()
-)
+templates.env.globals["orbistrace_enabled"] = lambda: bool(get_settings().orbistrace_url.strip())
 templates.env.filters["risk_factor_label"] = _risk_factor_label
 
 # Tags that mean a benign / false-positive signal was actually evaluated.
@@ -291,9 +285,7 @@ def _cookie_secure(request: Request) -> bool:
     return request.url.scheme == "https"
 
 
-def _set_cookie(
-    request: Request, response, key: str, value: str, *, max_age: int, path: str = "/"
-) -> None:
+def _set_cookie(request: Request, response, key: str, value: str, *, max_age: int, path: str = "/") -> None:
     """Set an auth cookie: HttpOnly, SameSite=Lax, and Secure over HTTPS."""
     response.set_cookie(
         key,
@@ -356,9 +348,7 @@ async def ui_auth_middleware(request: Request, call_next):
         # Forced password change (first login / admin reset): everything
         # except the profile routes themselves, login/logout, and static
         # assets redirects back to /profile with the banner.
-        return _redirect_flash(
-            "/profile", "You must change your password before continuing.", "error"
-        )
+        return _redirect_flash("/profile", "You must change your password before continuing.", "error")
     return await call_next(request)
 
 
@@ -380,9 +370,7 @@ def _login_redirect(message: str, next_url: str | None = None) -> RedirectRespon
     return RedirectResponse(url=f"/login?{urlencode(params)}", status_code=303)
 
 
-def _audit_login(
-    session: Session, username: str, success: bool, detail: dict | None = None
-) -> None:
+def _audit_login(session: Session, username: str, success: bool, detail: dict | None = None) -> None:
     from scry.audit import record
 
     record(
@@ -422,9 +410,7 @@ def login_submit(
         if not users_exist(session):
             return RedirectResponse(url="/login", status_code=303)
 
-        user = session.scalar(
-            select(User).where(func.lower(User.username) == username.lower())
-        )
+        user = session.scalar(select(User).where(func.lower(User.username) == username.lower()))
         generic_error = "Invalid username or password."
         if user is None:
             _audit_login(session, username, success=False)
@@ -434,18 +420,13 @@ def login_submit(
         if remaining is not None:
             minutes = max(
                 1,
-                int(remaining.total_seconds() // 60)
-                + (1 if remaining.seconds % 60 else 0),
+                int(remaining.total_seconds() // 60) + (1 if remaining.seconds % 60 else 0),
             )
             _audit_login(session, username, success=False, detail={"reason": "locked"})
-            return _login_redirect(
-                f"Account locked. Try again in {minutes} minutes.", next
-            )
+            return _login_redirect(f"Account locked. Try again in {minutes} minutes.", next)
 
         if user.status != "active":
-            _audit_login(
-                session, username, success=False, detail={"reason": "disabled"}
-            )
+            _audit_login(session, username, success=False, detail={"reason": "disabled"})
             return _login_redirect("This account is disabled.", next)
 
         if not verify_password(password, user.password_hash):
@@ -572,12 +553,8 @@ def setup_submit(
             raise HTTPException(404)
         expected = get_settings().setup_token
         supplied = request.headers.get("x-setup-token", "") or setup_token
-        if len(expected) < 32 or not hmac.compare_digest(
-            expected.encode(), supplied.encode()
-        ):
-            raise HTTPException(
-                403, "First administrator creation requires the installation token"
-            )
+        if len(expected) < 32 or not hmac.compare_digest(expected.encode(), supplied.encode()):
+            raise HTTPException(403, "First administrator creation requires the installation token")
         if not _check_setup_csrf(request, csrf):
             raise HTTPException(403)
         username = username.strip()
@@ -643,9 +620,7 @@ def _validate_email_or_default(email: str, username: str) -> str:
 
 
 def _setup_redirect(message: str) -> RedirectResponse:
-    return RedirectResponse(
-        url=f"/setup?{urlencode({'error': message})}", status_code=303
-    )
+    return RedirectResponse(url=f"/setup?{urlencode({'error': message})}", status_code=303)
 
 
 # ------------------------- MFA login challenge (v0.5.0 step 4) -------------------------
@@ -715,14 +690,10 @@ def mfa_challenge_submit(
                     detail={"reason": "mfa_exhausted"},
                 )
                 session.commit()
-                response = _login_redirect(
-                    "Too many failed codes — please sign in again.", next
-                )
+                response = _login_redirect("Too many failed codes — please sign in again.", next)
                 response.delete_cookie(_totp.MFA_PENDING_COOKIE, path="/")
                 return response
-            _audit_login(
-                session, user.username, success=False, detail={"reason": "mfa"}
-            )
+            _audit_login(session, user.username, success=False, detail={"reason": "mfa"})
             session.commit()
             return _mfa_redirect("Invalid authentication code.", next)
 
@@ -812,11 +783,7 @@ def _audit_admin(
         actor=actor.username,
         target_type="user" if target is not None else None,
         target_id=target.id if target is not None else None,
-        detail=(
-            {"target": target.username, **(detail or {})}
-            if target is not None
-            else (detail or {})
-        ),
+        detail=({"target": target.username, **(detail or {})} if target is not None else (detail or {})),
     )
 
 
@@ -844,9 +811,7 @@ def _enrichment_coverage(session: Session) -> dict:
     restart, so a missing/stale snapshot just shows a fresh day).
     """
     providers = ("virustotal", "otx", "abuseipdb", "greynoise")
-    coverage = {
-        p: {"checked": 0, "stale": 0, "malicious": 0, "benign": 0} for p in providers
-    }
+    coverage = {p: {"checked": 0, "stale": 0, "malicious": 0, "benign": 0} for p in providers}
     # v0.6.0 step 3 — stale = marker missing or older than the provider's
     # refresh TTL, among observables valid for that provider's external check.
     now = datetime.now(UTC)
@@ -877,9 +842,7 @@ def _enrichment_coverage(session: Session) -> dict:
 
     quota_limit = get_settings().vt_daily_quota
     used = 0
-    row = session.scalar(
-        select(SystemSetting).where(SystemSetting.key == "enrichment.vt_daily_quota")
-    )
+    row = session.scalar(select(SystemSetting).where(SystemSetting.key == "enrichment.vt_daily_quota"))
     if row and row.value:
         try:
             snap = json.loads(row.value)
@@ -899,18 +862,13 @@ def _admin_user_counts(session: Session) -> dict[str, int]:
     now = datetime.now(UTC)
     return {
         "users": session.scalar(select(func.count(User.id))) or 0,
-        "admins": session.scalar(
-            select(func.count(User.id)).where(User.role == "admin")
-        )
-        or 0,
+        "admins": session.scalar(select(func.count(User.id)).where(User.role == "admin")) or 0,
         "active_sessions": session.scalar(
             select(func.count(SessionToken.id)).where(SessionToken.expires_at > now)
         )
         or 0,
         "active_last_7d": session.scalar(
-            select(func.count(User.id)).where(
-                User.last_login_at >= now - timedelta(days=7)
-            )
+            select(func.count(User.id)).where(User.last_login_at >= now - timedelta(days=7))
         )
         or 0,
     }
@@ -920,9 +878,7 @@ def _last_admin(session: Session, user: User) -> bool:
     """True when ``user`` is the only admin account (protects against lockout)."""
     if user.role != "admin":
         return False
-    admins = (
-        session.scalar(select(func.count(User.id)).where(User.role == "admin")) or 0
-    )
+    admins = session.scalar(select(func.count(User.id)).where(User.role == "admin")) or 0
     return admins <= 1
 
 
@@ -932,9 +888,7 @@ def _smtp_overview(session: Session) -> dict:
 
     db_keys = {
         row.key.removeprefix(_SMTP_KEY_PREFIX): row.value
-        for row in session.scalars(
-            select(SystemSetting).where(SystemSetting.key.like("smtp.%"))
-        )
+        for row in session.scalars(select(SystemSetting).where(SystemSetting.key.like("smtp.%")))
     }
     config = get_smtp_config(session)
     return {
@@ -967,9 +921,9 @@ def _admin_context(request: Request, session: Session, admin: User) -> dict:
     passkey_counts = {
         uid: count
         for uid, count in session.execute(
-            select(
-                PasskeyCredential.user_id, func.count(PasskeyCredential.id)
-            ).group_by(PasskeyCredential.user_id)
+            select(PasskeyCredential.user_id, func.count(PasskeyCredential.id)).group_by(
+                PasskeyCredential.user_id
+            )
         )
     }
     now = datetime.now(UTC)
@@ -978,23 +932,16 @@ def _admin_context(request: Request, session: Session, admin: User) -> dict:
             select(SessionToken, User)
             .join(User, User.id == SessionToken.user_id)
             .where(SessionToken.expires_at > now)
-            .order_by(
-                SessionToken.last_seen_at.desc().nullslast(), SessionToken.id.desc()
-            )
+            .order_by(SessionToken.last_seen_at.desc().nullslast(), SessionToken.id.desc())
             .limit(100)
         )
     )
     failed_logins = list(
         session.scalars(
-            select(AuditLog)
-            .where(AuditLog.action == "login.failure")
-            .order_by(AuditLog.id.desc())
-            .limit(50)
+            select(AuditLog).where(AuditLog.action == "login.failure").order_by(AuditLog.id.desc()).limit(50)
         )
     )
-    audit_entries = list(
-        session.scalars(select(AuditLog).order_by(AuditLog.id.desc()).limit(100))
-    )
+    audit_entries = list(session.scalars(select(AuditLog).order_by(AuditLog.id.desc()).limit(100)))
     return {
         "admin": admin,
         "csrf": _admin_csrf_token(request.cookies[SESSION_COOKIE]),
@@ -1023,9 +970,7 @@ def admin_page(request: Request, session: Session = Depends(get_session)):
     if admin is None:
         return templates.TemplateResponse(request, "403.html", {}, status_code=403)
 
-    return templates.TemplateResponse(
-        request, "admin.html", _admin_context(request, session, admin)
-    )
+    return templates.TemplateResponse(request, "admin.html", _admin_context(request, session, admin))
 
 
 @app.post("/admin/users/create")
@@ -1052,12 +997,8 @@ def admin_create_user(
     username = username.strip()
     if not username:
         return _redirect_flash("/admin", "Username is required.", "error")
-    if session.scalar(
-        select(User).where(func.lower(User.username) == username.lower())
-    ):
-        return _redirect_flash(
-            "/admin", f"Username {username!r} already exists.", "error"
-        )
+    if session.scalar(select(User).where(func.lower(User.username) == username.lower())):
+        return _redirect_flash("/admin", f"Username {username!r} already exists.", "error")
     if (too_long := password_length_error(password)) is not None:
         return _redirect_flash("/admin", too_long, "error")
     generated = not password
@@ -1166,19 +1107,13 @@ def admin_toggle_user(
     if user is None:
         return _redirect_flash("/admin", "User not found.", "error")
     if user.id == admin.id:
-        return _redirect_flash(
-            "/admin", "You cannot disable your own account.", "error"
-        )
+        return _redirect_flash("/admin", "You cannot disable your own account.", "error")
     if user.status == "active":
         user.status = "disabled"
         revoked = revoke_all_sessions(session, user.id)
         session.flush()
-        _audit_admin(
-            session, admin, "user.disable", user, {"revoked_sessions": revoked}
-        )
-        return _redirect_flash(
-            "/admin", f"Disabled {user.username!r} ({revoked} session(s) revoked)."
-        )
+        _audit_admin(session, admin, "user.disable", user, {"revoked_sessions": revoked})
+        return _redirect_flash("/admin", f"Disabled {user.username!r} ({revoked} session(s) revoked).")
     user.status = "active"
     session.flush()
     _audit_admin(session, admin, "user.enable", user)
@@ -1207,9 +1142,7 @@ def admin_reset_password(
     user.locked_until = None
     revoked = revoke_all_sessions(session, user.id)
     session.flush()
-    _audit_admin(
-        session, admin, "user.reset_password", user, {"revoked_sessions": revoked}
-    )
+    _audit_admin(session, admin, "user.reset_password", user, {"revoked_sessions": revoked})
     # The temporary password is shown exactly once, on a rendered page —
     # never in a redirect query string (access logs / browser history).
     context = _admin_context(request, session, admin)
@@ -1242,9 +1175,7 @@ def admin_delete_user(
     if user is None:
         return _redirect_flash("/admin", "User not found.", "error")
     if _last_admin(session, user):
-        return _redirect_flash(
-            "/admin", f"{user.username} is the last admin — deletion blocked.", "error"
-        )
+        return _redirect_flash("/admin", f"{user.username} is the last admin — deletion blocked.", "error")
     if user.id == admin.id:
         return _redirect_flash("/admin", "You cannot delete your own account.", "error")
     if confirm != user.username:
@@ -1276,9 +1207,7 @@ def admin_revoke_user_sessions(
         return _redirect_flash("/admin", "User not found.", "error")
     revoked = revoke_all_sessions(session, user.id)
     _audit_admin(session, admin, "session.revoke_all", user, {"revoked": revoked})
-    return _redirect_flash(
-        "/admin", f"Revoked {revoked} session(s) for {user.username!r}."
-    )
+    return _redirect_flash("/admin", f"Revoked {revoked} session(s) for {user.username!r}.")
 
 
 @app.post("/admin/users/{user_id}/reset-mfa")
@@ -1322,9 +1251,7 @@ def admin_reset_mfa(
         user,
         {"recovery_codes_deleted": deleted, "revoked_sessions": revoked},
     )
-    return _redirect_flash(
-        "/admin", f"Reset MFA for {user.username!r} ({revoked} session(s) revoked)."
-    )
+    return _redirect_flash("/admin", f"Reset MFA for {user.username!r} ({revoked} session(s) revoked).")
 
 
 @app.post("/admin/sessions/{token_id}/revoke")
@@ -1373,9 +1300,7 @@ def admin_smtp_save(
         # Blank host clears the DB overrides — the env config becomes effective again.
         session.execute(delete(SystemSetting).where(SystemSetting.key.like("smtp.%")))
         _audit_admin(session, admin, "smtp.clear")
-        return _redirect_flash(
-            "/admin", "SMTP config cleared — env values (if any) apply."
-        )
+        return _redirect_flash("/admin", "SMTP config cleared — env values (if any) apply.")
     try:
         port_num = int(port)
     except ValueError:
@@ -1384,9 +1309,7 @@ def admin_smtp_save(
         return _redirect_flash("/admin", f"Invalid port: {port_num}", "error")
     if not from_address.strip() or not _EMAIL_RE.match(from_address.strip()):
         return _redirect_flash("/admin", "A valid from address is required.", "error")
-    existing = session.scalar(
-        select(SystemSetting).where(SystemSetting.key == "smtp.password")
-    )
+    existing = session.scalar(select(SystemSetting).where(SystemSetting.key == "smtp.password"))
     if not password and existing is not None and existing.value:
         password_encrypted = existing.value  # keep the stored secret when left blank
         save_smtp_config(
@@ -1462,9 +1385,7 @@ def admin_collection_window_save(
     try:
         requested = int(days)
     except ValueError:
-        return _redirect_flash(
-            "/admin", f"Invalid collection window: {days!r}", "error"
-        )
+        return _redirect_flash("/admin", f"Invalid collection window: {days!r}", "error")
     saved = set_window_days(session, requested)
     _audit_admin(
         session,
@@ -1539,9 +1460,7 @@ def _profile_or_redirect(request: Request, session: Session) -> User | None:
     return session.get(User, state_user.id)
 
 
-def _audit_profile(
-    session: Session, actor: User, action: str, detail: dict | None = None
-) -> None:
+def _audit_profile(session: Session, actor: User, action: str, detail: dict | None = None) -> None:
     from scry.audit import record
 
     record(
@@ -1561,20 +1480,14 @@ def _profile_context(request: Request, session: Session, user: User) -> dict:
     from scry.auth import totp as _totp
 
     api_keys = list(
-        session.scalars(
-            select(ApiKey).where(ApiKey.user_id == user.id).order_by(ApiKey.id.desc())
-        )
+        session.scalars(select(ApiKey).where(ApiKey.user_id == user.id).order_by(ApiKey.id.desc()))
     )
     now = datetime.now(UTC)
     for key in api_keys:
         if key.revoked_at is not None:
             key.display_status = "revoked"
         elif key.expires_at is not None:
-            exp = (
-                key.expires_at
-                if key.expires_at.tzinfo
-                else key.expires_at.replace(tzinfo=UTC)
-            )
+            exp = key.expires_at if key.expires_at.tzinfo else key.expires_at.replace(tzinfo=UTC)
             key.display_status = "expired" if exp <= now else "active"
         else:
             key.display_status = "active"
@@ -1621,9 +1534,7 @@ def profile_page(request: Request, session: Session = Depends(get_session)):
     user = _profile_or_redirect(request, session)
     if user is None:
         return RedirectResponse(url="/login", status_code=303)
-    return templates.TemplateResponse(
-        request, "profile.html", _profile_context(request, session, user)
-    )
+    return templates.TemplateResponse(request, "profile.html", _profile_context(request, session, user))
 
 
 @app.post("/profile/display-name")
@@ -1677,14 +1588,10 @@ def profile_change_password(
     # Sign out every other session; keep the one driving this request.
     keep = hash_token(request.cookies.get(SESSION_COOKIE) or "")
     revoked = session.execute(
-        delete(SessionToken).where(
-            SessionToken.user_id == user.id, SessionToken.token_hash != keep
-        )
+        delete(SessionToken).where(SessionToken.user_id == user.id, SessionToken.token_hash != keep)
     ).rowcount
     session.flush()
-    _audit_profile(
-        session, user, "user.change_password", {"revoked_sessions": int(revoked or 0)}
-    )
+    _audit_profile(session, user, "user.change_password", {"revoked_sessions": int(revoked or 0)})
     return _redirect_flash(
         "/profile",
         f"Password changed. {int(revoked or 0)} other session(s) were signed out.",
@@ -1712,9 +1619,7 @@ def profile_verify_email(
         user.email_verified = True
         session.flush()
         _audit_profile(session, user, "email.verify.bypass")
-        return _redirect_flash(
-            "/profile", "SMTP not configured — email auto-verified.", "error"
-        )
+        return _redirect_flash("/profile", "SMTP not configured — email auto-verified.", "error")
     if _verification.issue_pin(session, user) is None:
         _audit_profile(session, user, "email.verify.send_failed")
         return _redirect_flash(
@@ -1745,9 +1650,7 @@ def profile_verify_email_confirm(
         _audit_profile(session, user, "email.verify.confirm")
         return _redirect_flash("/profile", "Email verified.")
     if result == "expired":
-        return _redirect_flash(
-            "/profile", "That code has expired — request a new one.", "error"
-        )
+        return _redirect_flash("/profile", "That code has expired — request a new one.", "error")
     if result == "invalidated":
         return _redirect_flash(
             "/profile",
@@ -1756,9 +1659,7 @@ def profile_verify_email_confirm(
         )
     if result == "mismatch":
         return _redirect_flash("/profile", "Incorrect code — try again.", "error")
-    return _redirect_flash(
-        "/profile", "No pending verification code — request one first.", "error"
-    )
+    return _redirect_flash("/profile", "No pending verification code — request one first.", "error")
 
 
 @app.post("/profile/api-keys")
@@ -1776,21 +1677,15 @@ def profile_create_api_key(
         return _redirect_flash("/profile", "Bad CSRF token — action rejected.", "error")
     name = name.strip()
     if not name:
-        return _redirect_flash(
-            "/profile", "A name/label is required for the API key.", "error"
-        )
+        return _redirect_flash("/profile", "A name/label is required for the API key.", "error")
     expires_at = None
     if expiry_days.strip():
         try:
             days = int(expiry_days)
         except ValueError:
-            return _redirect_flash(
-                "/profile", f"Invalid expiry: {expiry_days!r}", "error"
-            )
+            return _redirect_flash("/profile", f"Invalid expiry: {expiry_days!r}", "error")
         if not 1 <= days <= _MAX_KEY_EXPIRY_DAYS:
-            return _redirect_flash(
-                "/profile", f"Expiry must be 1-{_MAX_KEY_EXPIRY_DAYS} days.", "error"
-            )
+            return _redirect_flash("/profile", f"Expiry must be 1-{_MAX_KEY_EXPIRY_DAYS} days.", "error")
         expires_at = datetime.now(UTC) + timedelta(days=days)
     raw_key = "sk-" + secrets.token_urlsafe(32)
     session.add(
@@ -1829,9 +1724,7 @@ def profile_revoke_api_key(
         raise HTTPException(403)
     if not _check_admin_csrf(request, csrf):
         return _redirect_flash("/profile", "Bad CSRF token — action rejected.", "error")
-    api_key = session.scalar(
-        select(ApiKey).where(ApiKey.id == key_id, ApiKey.user_id == user.id)
-    )
+    api_key = session.scalar(select(ApiKey).where(ApiKey.id == key_id, ApiKey.user_id == user.id))
     if api_key is None:
         return _redirect_flash("/profile", "API key not found.", "error")
     if api_key.revoked_at is not None:
@@ -1963,9 +1856,7 @@ def profile_mfa_disable(
     # Sign out every OTHER session; keep the one driving this request.
     keep = hash_token(request.cookies.get(SESSION_COOKIE) or "")
     revoked = session.execute(
-        delete(SessionToken).where(
-            SessionToken.user_id == user.id, SessionToken.token_hash != keep
-        )
+        delete(SessionToken).where(SessionToken.user_id == user.id, SessionToken.token_hash != keep)
     ).rowcount
     session.flush()
     _audit_profile(
@@ -2008,20 +1899,12 @@ def profile_passkey_register_begin(
     if user is None:
         raise HTTPException(403)
     if not _check_admin_csrf(request, csrf):
-        return JSONResponse(
-            {"error": "Bad CSRF token — action rejected."}, status_code=403
-        )
+        return JSONResponse({"error": "Bad CSRF token — action rejected."}, status_code=403)
     if not verify_password(password, user.password_hash):
         return JSONResponse({"error": "Password is incorrect."}, status_code=403)
     rp_id, _origin = _webauthn.rp_context(request)
-    credentials = list(
-        session.scalars(
-            select(PasskeyCredential).where(PasskeyCredential.user_id == user.id)
-        )
-    )
-    options_json, challenge = _webauthn.registration_options_json(
-        user, credentials, rp_id
-    )
+    credentials = list(session.scalars(select(PasskeyCredential).where(PasskeyCredential.user_id == user.id)))
+    options_json, challenge = _webauthn.registration_options_json(user, credentials, rp_id)
     marker = _webauthn.issue_passkey_marker(user.id, challenge)
     response = JSONResponse({"options": json.loads(options_json)})
     _set_cookie(
@@ -2047,12 +1930,8 @@ def profile_passkey_register_complete(
     if user is None:
         raise HTTPException(403)
     if not _check_admin_csrf(request, payload.get("csrf")):
-        return JSONResponse(
-            {"error": "Bad CSRF token — action rejected."}, status_code=403
-        )
-    marker = _webauthn.read_passkey_marker(
-        request.cookies.get(_webauthn.PASSKEY_PENDING_COOKIE)
-    )
+        return JSONResponse({"error": "Bad CSRF token — action rejected."}, status_code=403)
+    marker = _webauthn.read_passkey_marker(request.cookies.get(_webauthn.PASSKEY_PENDING_COOKIE))
     if marker is None or marker["uid"] != user.id:
         return JSONResponse(
             {"error": "The passkey setup has expired — please try again."},
@@ -2122,9 +2001,7 @@ def profile_passkey_rename(
     old_name = credential.name
     credential.name = name.strip()[:128] or "Passkey"
     session.flush()
-    _audit_profile(
-        session, user, "passkey.rename", {"from": old_name, "to": credential.name}
-    )
+    _audit_profile(session, user, "passkey.rename", {"from": old_name, "to": credential.name})
     return _redirect_flash("/profile", f"Passkey renamed to '{credential.name}'.")
 
 
@@ -2164,29 +2041,19 @@ def login_passkey_begin(request: Request, username: str = Form(...)):
     from scry.auth import webauthn as _webauthn
 
     rp_id, _origin = _webauthn.rp_context(request)
-    generic_error = JSONResponse(
-        {"error": "No passkeys are registered for that username."}, status_code=400
-    )
+    generic_error = JSONResponse({"error": "No passkeys are registered for that username."}, status_code=400)
     with session_scope() as session:
         if not users_exist(session):
-            return JSONResponse(
-                {"error": "No user accounts exist yet."}, status_code=400
-            )
-        user = session.scalar(
-            select(User).where(func.lower(User.username) == username.lower())
-        )
+            return JSONResponse({"error": "No user accounts exist yet."}, status_code=400)
+        user = session.scalar(select(User).where(func.lower(User.username) == username.lower()))
         if user is None or user.status != "active":
             return generic_error
         credentials = list(
-            session.scalars(
-                select(PasskeyCredential).where(PasskeyCredential.user_id == user.id)
-            )
+            session.scalars(select(PasskeyCredential).where(PasskeyCredential.user_id == user.id))
         )
         if not credentials:
             return generic_error
-        options_json, challenge = _webauthn.authentication_options_json(
-            credentials, rp_id
-        )
+        options_json, challenge = _webauthn.authentication_options_json(credentials, rp_id)
         marker = _webauthn.issue_passkey_marker(user.id, challenge)
     response = JSONResponse({"options": json.loads(options_json)})
     _set_cookie(
@@ -2204,9 +2071,7 @@ def login_passkey_begin(request: Request, username: str = Form(...)):
 def login_passkey_complete(request: Request, payload: dict = Body(default={})):
     from scry.auth import webauthn as _webauthn
 
-    marker = _webauthn.read_passkey_marker(
-        request.cookies.get(_webauthn.PASSKEY_PENDING_COOKIE)
-    )
+    marker = _webauthn.read_passkey_marker(request.cookies.get(_webauthn.PASSKEY_PENDING_COOKIE))
     if marker is None:
         return JSONResponse(
             {"error": "The passkey sign-in has expired — please try again."},
@@ -2242,13 +2107,9 @@ def login_passkey_complete(request: Request, payload: dict = Body(default={})):
                 credential_current_sign_count=credential_row.sign_count,
             )
         except Exception:  # InvalidAuthenticationResponse et al — fail closed.
-            _audit_login(
-                session, user.username, success=False, detail={"reason": "passkey"}
-            )
+            _audit_login(session, user.username, success=False, detail={"reason": "passkey"})
             session.commit()
-            response = JSONResponse(
-                {"error": "Passkey verification failed."}, status_code=400
-            )
+            response = JSONResponse({"error": "Passkey verification failed."}, status_code=400)
             response.delete_cookie(_webauthn.PASSKEY_PENDING_COOKIE, path="/")
             return response
         # Verified: advance the sign counter (clone detection), touch last used.
@@ -2344,10 +2205,7 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
         "observables": session.scalar(select(func.count(Observable.id))) or 0,
         "cves": session.scalar(select(func.count(CVE.id))) or 0,
         "threat_feed_items": session.scalar(select(func.count(ThreatFeedItem.id))) or 0,
-        "ransomware_feed_items": session.scalar(
-            select(func.count(RansomwareFeedItem.id))
-        )
-        or 0,
+        "ransomware_feed_items": session.scalar(select(func.count(RansomwareFeedItem.id))) or 0,
         "open_reviews": session.scalar(
             select(func.count(AnalystReview.id)).where(AnalystReview.status == "open")
         )
@@ -2361,9 +2219,7 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
             .limit(15)
         )
     )
-    recent_articles = list(
-        session.scalars(select(Article).order_by(Article.id.desc()).limit(20))
-    )
+    recent_articles = list(session.scalars(select(Article).order_by(Article.id.desc()).limit(20)))
     # Recent high-risk threat feed items
     recent_threats = list(
         session.scalars(
@@ -2420,18 +2276,14 @@ async def ui_ingest_run(
         engine = IngestionEngine(session)
         res = await engine.ingest_all()
         pipeline = CTIPipeline(session)
-        for art in session.scalars(
-            select(Article).where(Article.extractor_version == "0")
-        ):
+        for art in session.scalars(select(Article).where(Article.extractor_version == "0")):
             pipeline.process_article(art)
         msg = (
             f"Collection complete: {res.get('articles', 0)} articles, "
             f"{res.get('cves', 0)} CVEs, {res.get('errors', 0)} errors, "
             f"{res.get('blocked', 0)} blocked"
         )
-        return _redirect_flash(
-            "/", msg, "success" if not res.get("errors") else "error"
-        )
+        return _redirect_flash("/", msg, "success" if not res.get("errors") else "error")
     except Exception as exc:
         _log.warning("ui_ingest_run_failed", exc=str(exc))
         return _redirect_flash("/", f"Collection failed: {exc}", "error")
@@ -2478,9 +2330,7 @@ def ui_articles(
 
 
 @app.get("/ui/articles/{article_id}", response_class=HTMLResponse)
-def ui_article_detail(
-    article_id: int, request: Request, session: Session = Depends(get_session)
-):
+def ui_article_detail(article_id: int, request: Request, session: Session = Depends(get_session)):
     article = session.get(Article, article_id)
     if not article:
         raise HTTPException(404)
@@ -2531,9 +2381,7 @@ def ui_observables(
     limit: int = Query(100, ge=1, le=500),
     offset: int = 0,
 ):
-    stmt = select(Observable).order_by(
-        Observable.risk_score.desc(), Observable.id.desc()
-    )
+    stmt = select(Observable).order_by(Observable.risk_score.desc(), Observable.id.desc())
     if q:
         stmt = stmt.where(Observable.normalized_value.ilike(f"%{q.lower()}%"))
     if type:
@@ -2633,31 +2481,22 @@ def ui_enrich_unenriched(
                 parts.append(f"{provider} re-enriched stale {refreshed}")
     if result.get("fresh_skipped"):
         parts.append(
-            "fresh (skipped): "
-            + ", ".join(f"{k} {v}" for k, v in sorted(result["fresh_skipped"].items()))
+            "fresh (skipped): " + ", ".join(f"{k} {v}" for k, v in sorted(result["fresh_skipped"].items()))
         )
     if result.get("quota_skipped"):
         parts.append(
-            "skipped per quota: "
-            + ", ".join(f"{k} {v}" for k, v in sorted(result["quota_skipped"].items()))
+            "skipped per quota: " + ", ".join(f"{k} {v}" for k, v in sorted(result["quota_skipped"].items()))
         )
     if result["skipped"]:
-        parts.append(
-            "skipped: "
-            + ", ".join(f"{k} ({v})" for k, v in sorted(result["skipped"].items()))
-        )
+        parts.append("skipped: " + ", ".join(f"{k} ({v})" for k, v in sorted(result["skipped"].items())))
     if result.get("errors"):
         parts.append(f"errors {result['errors']}")
-    _feed_key_audit(
-        session, user, f"observables.enrich_unenriched.{mode}", "+".join(sorted(keys))
-    )
+    _feed_key_audit(session, user, f"observables.enrich_unenriched.{mode}", "+".join(sorted(keys)))
     return _redirect_flash(back, f"{mode_labels[mode]} — " + "; ".join(parts) + ".")
 
 
 @app.get("/ui/observables/{ob_id}", response_class=HTMLResponse)
-def ui_observable_detail(
-    ob_id: int, request: Request, session: Session = Depends(get_session)
-):
+def ui_observable_detail(ob_id: int, request: Request, session: Session = Depends(get_session)):
     ob = session.get(Observable, ob_id)
     if not ob:
         raise HTTPException(404)
@@ -2687,9 +2526,7 @@ def ui_observable_detail(
         )
     )
     for r in out_rels:
-        rels.append(
-            ("out", r, _resolve_rel_target(session, r.target_type, r.target_id))
-        )
+        rels.append(("out", r, _resolve_rel_target(session, r.target_type, r.target_id)))
     for r in in_rels:
         rels.append(("in", r, _resolve_rel_target(session, r.source_type, r.source_id)))
 
@@ -2810,9 +2647,7 @@ def ui_observable_lookup(
             "error",
         )
     if provider == "virustotal":
-        enricher: VirusTotalEnricher | OTXEnricher | FortiGuardEnricher = (
-            VirusTotalEnricher(api_key=key)
-        )
+        enricher: VirusTotalEnricher | OTXEnricher | FortiGuardEnricher = VirusTotalEnricher(api_key=key)
     elif provider == "otx":
         enricher = OTXEnricher(api_key=key)
     else:
@@ -2825,23 +2660,15 @@ def ui_observable_lookup(
     if result.ok:
         merged = dict(ob.enrichment or {})
         merged[provider] = result.fields
-        status_key = {"virustotal": "_vt_status", "otx": "_otx_status"}.get(
-            provider, "_fortiguard_status"
-        )
+        status_key = {"virustotal": "_vt_status", "otx": "_otx_status"}.get(provider, "_fortiguard_status")
         merged[status_key] = "ok"
         merged[f"{provider}_checked_at"] = datetime.now(UTC).isoformat()
         ob.enrichment = merged
         session.commit()
         _feed_key_audit(session, user, f"observable.lookup.{provider}", provider)
-        return _redirect_flash(
-            back, f"{_FEED_DISPLAY_NAMES[provider]} live lookup complete."
-        )
+        return _redirect_flash(back, f"{_FEED_DISPLAY_NAMES[provider]} live lookup complete.")
     error = result.error or "unknown error"
-    quota_kind = (
-        "quota/rate limit"
-        if (result.http_status == 429 or "quota" in error.lower())
-        else "error"
-    )
+    quota_kind = "quota/rate limit" if (result.http_status == 429 or "quota" in error.lower()) else "error"
     return _redirect_flash(
         back,
         f"{_FEED_DISPLAY_NAMES[provider]} live lookup failed ({quota_kind}): {error}",
@@ -2907,9 +2734,7 @@ def ui_cves(
 
 
 @app.get("/ui/cves/{cve_id}", response_class=HTMLResponse)
-def ui_cve_detail(
-    cve_id: str, request: Request, session: Session = Depends(get_session)
-):
+def ui_cve_detail(cve_id: str, request: Request, session: Session = Depends(get_session)):
     cve = session.scalar(select(CVE).where(CVE.cve_id == cve_id.upper()))
     if not cve:
         raise HTTPException(404)
@@ -2917,15 +2742,11 @@ def ui_cve_detail(
     articles = list(
         session.scalars(
             select(Article)
-            .where(
-                or_(Article.title.ilike(needle), Article.extracted_text.ilike(needle))
-            )
+            .where(or_(Article.title.ilike(needle), Article.extracted_text.ilike(needle)))
             .limit(50)
         )
     )
-    return templates.TemplateResponse(
-        request, "cve_detail.html", {"cve": cve, "articles": articles}
-    )
+    return templates.TemplateResponse(request, "cve_detail.html", {"cve": cve, "articles": articles})
 
 
 # ------------------------- entities -------------------------
@@ -2951,10 +2772,7 @@ def ui_entities(
     total = session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     entities = list(session.scalars(stmt.offset(offset).limit(limit)))
     available_types = [
-        t
-        for (t,) in session.execute(
-            select(Entity.type).group_by(Entity.type).order_by(Entity.type)
-        ).all()
+        t for (t,) in session.execute(select(Entity.type).group_by(Entity.type).order_by(Entity.type)).all()
     ]
     filters = {
         "q": q,
@@ -2977,27 +2795,21 @@ def ui_entities(
 
 
 @app.get("/ui/entities/{entity_id}", response_class=HTMLResponse)
-def ui_entity_detail(
-    entity_id: int, request: Request, session: Session = Depends(get_session)
-):
+def ui_entity_detail(entity_id: int, request: Request, session: Session = Depends(get_session)):
     ent = session.get(Entity, entity_id)
     if not ent:
         raise HTTPException(404)
     out_rels = list(
         session.scalars(
             select(Relationship)
-            .where(
-                Relationship.source_type == ent.type, Relationship.source_id == ent.id
-            )
+            .where(Relationship.source_type == ent.type, Relationship.source_id == ent.id)
             .limit(2000)
         )
     )
     in_rels = list(
         session.scalars(
             select(Relationship)
-            .where(
-                Relationship.target_type == ent.type, Relationship.target_id == ent.id
-            )
+            .where(Relationship.target_type == ent.type, Relationship.target_id == ent.id)
             .limit(2000)
         )
     )
@@ -3062,14 +2874,10 @@ def ui_reviews_bulk(
     csrf: str = Form(""),
 ):
     if not _check_admin_csrf(request, csrf):
-        return _redirect_flash(
-            "/ui/reviews", "Bad CSRF token — action rejected.", "error"
-        )
+        return _redirect_flash("/ui/reviews", "Bad CSRF token — action rejected.", "error")
     disposition = _BULK_ACTIONS.get(action)
     if disposition is None:
-        return _redirect_flash(
-            "/ui/reviews", f"Unknown bulk action: {action or '(none)'}", "error"
-        )
+        return _redirect_flash("/ui/reviews", f"Unknown bulk action: {action or '(none)'}", "error")
     rows = list(
         session.scalars(
             select(AnalystReview).where(
@@ -3143,9 +2951,7 @@ def ui_reviews(
 
 
 @app.get("/ui/reviews/{review_id}", response_class=HTMLResponse)
-def ui_review_detail(
-    review_id: int, request: Request, session: Session = Depends(get_session)
-):
+def ui_review_detail(review_id: int, request: Request, session: Session = Depends(get_session)):
     r = session.get(AnalystReview, review_id)
     if not r:
         raise HTTPException(404)
@@ -3158,9 +2964,7 @@ def ui_review_detail(
             linked_url = f"/ui/articles/{c.article_id}"
     elif r.item_type == "entity":
         linked_url = f"/ui/entities/{r.item_id}"
-    correction_json = (
-        json.dumps(r.correction or {}, indent=2, default=str) if r.correction else ""
-    )
+    correction_json = json.dumps(r.correction or {}, indent=2, default=str) if r.correction else ""
     raw_cookie = request.cookies.get(SESSION_COOKIE)
     return templates.TemplateResponse(
         request,
@@ -3188,9 +2992,7 @@ def ui_review_patch(
     from scry.review import ReviewQueue
 
     if not _check_admin_csrf(request, csrf):
-        return _redirect_flash(
-            f"/ui/reviews/{review_id}", "Bad CSRF token — action rejected.", "error"
-        )
+        return _redirect_flash(f"/ui/reviews/{review_id}", "Bad CSRF token — action rejected.", "error")
     actor = _acting_username(request)
     queue = ReviewQueue(session)
     queue.update(
@@ -3236,9 +3038,7 @@ def ui_alerts(
     user = getattr(request.state, "user", None)
     # Mirrors require_admin on PUT /enrichment/providers: admins only once
     # accounts exist; the zero-user open mode can still configure.
-    can_configure = (user is not None and user.role == "admin") or not users_exist(
-        session
-    )
+    can_configure = (user is not None and user.role == "admin") or not users_exist(session)
     return templates.TemplateResponse(
         request,
         "alerts.html",
@@ -3292,9 +3092,7 @@ def ui_tags(
             size = "s"
         buckets.append((tag, count, size))
 
-    return templates.TemplateResponse(
-        request, "tags.html", {"tag_buckets": buckets, "filters": {"q": q}}
-    )
+    return templates.TemplateResponse(request, "tags.html", {"tag_buckets": buckets, "filters": {"q": q}})
 
 
 @app.get("/ui/tags/{tag:path}", response_class=HTMLResponse)
@@ -3310,18 +3108,12 @@ def ui_tag_detail(tag: str, request: Request, session: Session = Depends(get_ses
     )
     articles = list(
         session.scalars(
-            select(Article)
-            .where(_tag_filter(Article.tags, decoded))
-            .order_by(Article.id.desc())
-            .limit(200)
+            select(Article).where(_tag_filter(Article.tags, decoded)).order_by(Article.id.desc()).limit(200)
         )
     )
     entities = list(
         session.scalars(
-            select(Entity)
-            .where(_tag_filter(Entity.tags, decoded))
-            .order_by(Entity.canonical_name)
-            .limit(200)
+            select(Entity).where(_tag_filter(Entity.tags, decoded)).order_by(Entity.canonical_name).limit(200)
         )
     )
     return templates.TemplateResponse(
@@ -3387,9 +3179,7 @@ def ui_source_toggle(
     if user.role != "admin":
         return templates.TemplateResponse(request, "403.html", {}, status_code=403)
     if not _check_admin_csrf(request, csrf):
-        return _redirect_flash(
-            "/ui/sources", "Bad CSRF token — action rejected.", "error"
-        )
+        return _redirect_flash("/ui/sources", "Bad CSRF token — action rejected.", "error")
     source = session.get(Source, source_id)
     if source is None:
         return _redirect_flash("/ui/sources", f"Unknown source #{source_id}.", "error")
@@ -3405,11 +3195,7 @@ def ui_source_toggle(
         target_id=source.id,
         detail={"name": source.name, "enabled": source.enabled},
     )
-    state = (
-        "enabled — it will be collected"
-        if source.enabled
-        else "disabled — collection skipped"
-    )
+    state = "enabled — it will be collected" if source.enabled else "disabled — collection skipped"
     return _redirect_flash("/ui/sources", f"{source.name} is now {state}.")
 
 
@@ -3434,9 +3220,7 @@ def ui_orbistrace(request: Request, path: str | None = None):
     base = get_settings().orbistrace_url
     if not base.strip():
         raise HTTPException(404)
-    return templates.TemplateResponse(
-        request, "orbistrace.html", {"frame_src": orbistrace_src(base, path)}
-    )
+    return templates.TemplateResponse(request, "orbistrace.html", {"frame_src": orbistrace_src(base, path)})
 
 
 @app.get("/ui/search", response_class=HTMLResponse)
@@ -3505,9 +3289,7 @@ def _my_keys_context(request: Request, session: Session) -> dict | None:
                 "provider": provider,
                 "display_name": _FEED_DISPLAY_NAMES[provider],
                 "has_key": row is not None,
-                "masked": (
-                    mask(get_decrypted_key(session, user.id, provider)) if row else ""
-                ),
+                "masked": (mask(get_decrypted_key(session, user.id, provider)) if row else ""),
                 "last_test_at": row.last_test_at if row else None,
                 "last_test_ok": row.last_test_ok if row else None,
                 "last_test_error": row.last_test_error if row else None,
@@ -3601,9 +3383,7 @@ def ui_otx_pull(
     if name:
         subs = [s for s in subs if s.name == name]
         if not subs:
-            return _redirect_flash(
-                back, f"Unknown OTX pulse subscription {name!r}.", "error"
-            )
+            return _redirect_flash(back, f"Unknown OTX pulse subscription {name!r}.", "error")
 
     results = pull_all(session, api_key=api_key, subscriptions=subs)
     _feed_key_audit(session, user, "otx_pulse.pull", name or "*")
@@ -3633,9 +3413,7 @@ def ui_my_key_save(
     set_key(session, user.id, provider, api_key)
     session.commit()
     _feed_key_audit(session, user, "feed_key.save", provider)
-    return _redirect_flash(
-        back, f"{_FEED_DISPLAY_NAMES[provider]} key saved ({mask(api_key)})."
-    )
+    return _redirect_flash(back, f"{_FEED_DISPLAY_NAMES[provider]} key saved ({mask(api_key)}).")
 
 
 @app.post("/ui/intel-feeds/my-keys/{provider}/test")
@@ -3655,9 +3433,7 @@ def ui_my_key_test(
         return _redirect_flash(back, f"Unknown provider {provider!r}.", "error")
     row = get_key(session, user.id, provider)
     if row is None:
-        return _redirect_flash(
-            back, f"No personal {_FEED_DISPLAY_NAMES[provider]} key saved yet.", "error"
-        )
+        return _redirect_flash(back, f"No personal {_FEED_DISPLAY_NAMES[provider]} key saved yet.", "error")
     key = get_decrypted_key(session, user.id, provider)
     ok, error = test_key(provider, key)
     record_test_result(session, row, ok, error)
@@ -3692,9 +3468,7 @@ def ui_my_key_remove(
     if removed:
         _feed_key_audit(session, user, "feed_key.remove", provider)
         return _redirect_flash(back, f"{_FEED_DISPLAY_NAMES[provider]} key removed.")
-    return _redirect_flash(
-        back, f"No personal {_FEED_DISPLAY_NAMES[provider]} key to remove.", "error"
-    )
+    return _redirect_flash(back, f"No personal {_FEED_DISPLAY_NAMES[provider]} key to remove.", "error")
 
 
 @app.get("/ui/intel-feeds/threat-feeds", response_class=HTMLResponse)
@@ -3735,9 +3509,7 @@ def ui_threat_feeds(
 
     # Sorting
     if sort == "risk_desc":
-        stmt = stmt.order_by(
-            ThreatFeedItem.risk_score.desc().nullslast(), ThreatFeedItem.date.desc()
-        )
+        stmt = stmt.order_by(ThreatFeedItem.risk_score.desc().nullslast(), ThreatFeedItem.date.desc())
     elif sort == "date_asc":
         stmt = stmt.order_by(ThreatFeedItem.date.asc())
     else:
@@ -3757,9 +3529,7 @@ def ui_threat_feeds(
     networks = [
         row[0]
         for row in session.execute(
-            select(ThreatFeedItem.network)
-            .distinct()
-            .where(ThreatFeedItem.network.isnot(None))
+            select(ThreatFeedItem.network).distinct().where(ThreatFeedItem.network.isnot(None))
         ).all()
     ]
 
@@ -3804,9 +3574,7 @@ def ui_threat_feeds(
 
 
 @app.get("/ui/intel-feeds/threat-feeds/{item_id}", response_class=HTMLResponse)
-def ui_threat_feed_detail(
-    item_id: int, request: Request, session: Session = Depends(get_session)
-):
+def ui_threat_feed_detail(item_id: int, request: Request, session: Session = Depends(get_session)):
     item = session.get(ThreatFeedItem, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Threat feed item not found")
@@ -3953,9 +3721,7 @@ def ui_ransomware_feeds(
 
 
 @app.get("/ui/intel-feeds/ransomware-feeds/{item_id}", response_class=HTMLResponse)
-def ui_ransomware_feed_detail(
-    item_id: int, request: Request, session: Session = Depends(get_session)
-):
+def ui_ransomware_feed_detail(item_id: int, request: Request, session: Session = Depends(get_session)):
     item = session.get(RansomwareFeedItem, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Ransomware feed item not found")

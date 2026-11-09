@@ -56,9 +56,7 @@ def make_user(
 
 def get_user(username: str) -> User:
     with session_scope() as s:
-        return s.scalar(
-            select(User).where(func.lower(User.username) == username.lower())
-        )
+        return s.scalar(select(User).where(func.lower(User.username) == username.lower()))
 
 
 def audit_actions() -> list[str]:
@@ -66,9 +64,7 @@ def audit_actions() -> list[str]:
         return [row.action for row in s.scalars(select(AuditLog))]
 
 
-def login(
-    client: TestClient, username: str = "alice", password: str = PASSWORD, **extra
-):
+def login(client: TestClient, username: str = "alice", password: str = PASSWORD, **extra):
     return client.post(
         "/login",
         data={"username": username, "password": password, **extra},
@@ -136,10 +132,7 @@ class TestSessions:
         with session_scope() as s:
             assert validate_session(s, raw) is None
             # Expired token was cleaned up.
-            assert (
-                s.scalar(select(SessionToken).where(SessionToken.user_id == uid))
-                is None
-            )
+            assert s.scalar(select(SessionToken).where(SessionToken.user_id == uid)) is None
 
     def test_disabled_user_session_invalid(self):
         uid = make_user()
@@ -351,10 +344,7 @@ class TestFirstRunSetup:
                 follow_redirects=False,
             )
             assert r.status_code == 303
-            assert (
-                "do+not+match" in r.headers["location"]
-                or "not match" in r.headers["location"]
-            )
+            assert "do+not+match" in r.headers["location"] or "not match" in r.headers["location"]
             assert get_user("root") is None
 
     def test_setup_rejects_bad_csrf(self):
@@ -503,16 +493,8 @@ class TestGating:
         get_settings.cache_clear()
         with TestClient(app) as client:
             assert client.get("/articles").status_code == 401
-            assert (
-                client.get("/articles", headers={"X-API-Key": "master-key"}).status_code
-                == 200
-            )
-            assert (
-                client.get(
-                    "/articles", headers={"Authorization": "Bearer master-key"}
-                ).status_code
-                == 200
-            )
+            assert client.get("/articles", headers={"X-API-Key": "master-key"}).status_code == 200
+            assert client.get("/articles", headers={"Authorization": "Bearer master-key"}).status_code == 200
 
     def test_api_exemptions_open_when_users_exist(self):
         make_user()
@@ -608,9 +590,7 @@ class TestUsersCLI:
 
     def test_reset_password(self):
         make_user()
-        r = runner.invoke(
-            cli_app, ["users", "reset-password", "alice", "--password", "N3w!pass"]
-        )
+        r = runner.invoke(cli_app, ["users", "reset-password", "alice", "--password", "N3w!pass"])
         assert r.exit_code == 0, r.output
         user = get_user("alice")
         assert verify_password("N3w!pass", user.password_hash)
@@ -661,9 +641,7 @@ class TestUsersCLI:
         assert r.exit_code == 2
 
     def test_seed_short_password_rejected(self):
-        r = runner.invoke(
-            cli_app, ["users", "seed", "--username", "root", "--password", "short"]
-        )
+        r = runner.invoke(cli_app, ["users", "seed", "--username", "root", "--password", "short"])
         assert r.exit_code == 2
         assert get_user("root") is None
 

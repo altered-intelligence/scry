@@ -15,6 +15,4 @@ def test_wrong_installation_token_rejected(monkeypatch):
     monkeypatch.setenv("CTI_SETUP_TOKEN", "a" * 32)
     get_settings.cache_clear()
     with TestClient(app) as client:
-        assert (
-            client.post("/setup", headers={"X-Setup-Token": "wrong"}).status_code == 403
-        )
+        assert client.post("/setup", headers={"X-Setup-Token": "wrong"}).status_code == 403
