@@ -194,6 +194,7 @@ class TestRoutes:
             huge = "h" * (MAX_PASSWORD_CHARS + 1)
             r = client.post(
                 "/setup",
+                headers={"X-Setup-Token": "test-installation-token-32-characters"},
                 data={"csrf": token, "username": "root", "password": huge, "confirm_password": huge},
                 follow_redirects=False,
             )
@@ -202,6 +203,7 @@ class TestRoutes:
             token = re.search(r'name="csrf" value="([^"]+)"', client.get("/setup").text).group(1)
             r = client.post(
                 "/setup",
+                headers={"X-Setup-Token": "test-installation-token-32-characters"},
                 data={"csrf": token, "username": "root", "password": LONG, "confirm_password": LONG},
                 follow_redirects=False,
             )

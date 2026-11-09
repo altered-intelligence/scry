@@ -21,7 +21,9 @@ CONFIG_DIR = REPO_ROOT / "config"
 class Settings(BaseSettings):
     # NOTE: the CTI_ env prefix is intentionally kept after the rebrand to
     # Scry — existing .env files (CTI_VIRUSTOTAL_API_KEY etc.) must keep working.
-    model_config = SettingsConfigDict(env_prefix="CTI_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="CTI_", env_file=".env", extra="ignore"
+    )
 
     env: str = "local"
     log_level: str = "INFO"
@@ -33,6 +35,7 @@ class Settings(BaseSettings):
     # API auth: when set, all /api routes require this token (X-API-Key or
     # Authorization: Bearer). Empty (default): setup-required mode until the
     # first admin exists — see open_access below.
+    setup_token: str = ""  # 32+ random characters; required for browser provisioning
     api_key: str = ""
 
     # Explicit escape hatch for the legacy zero-user open mode. With zero
@@ -81,10 +84,16 @@ class Settings(BaseSettings):
     ai_search_model_path: str = (
         "data/models/qwen2.5-1.5b-instruct-q4_k_m.gguf"  # ~1.0 GB; `scry ai-setup` downloads it
     )
-    ai_search_max_tokens: int = 512  # answer length cap (keeps latency sane on 8 GB machines)
+    ai_search_max_tokens: int = (
+        512  # answer length cap (keeps latency sane on 8 GB machines)
+    )
     ai_search_max_sources: int = 8  # top search hits fed to the model as context
-    ai_search_timeout_s: int = 120  # hard timebox for one answer (first answer includes ~12s model load)
-    ai_idle_unload_s: int = 900  # release the local model after this many idle seconds (0 = never unload)
+    ai_search_timeout_s: int = (
+        120  # hard timebox for one answer (first answer includes ~12s model load)
+    )
+    ai_idle_unload_s: int = (
+        900  # release the local model after this many idle seconds (0 = never unload)
+    )
 
     # Scheduled full-content fetch: after each scheduled ingest, fetch the full
     # page for recent RSS-stub articles (short summary, no stored HTML). Bounded
@@ -95,7 +104,9 @@ class Settings(BaseSettings):
     full_fetch_retry_hours: int = 6  # skip a URL this long after a failed fetch
 
     # Retention
-    raw_html_retention_days: int = 30  # prune Article.raw_html older than this (0 = keep forever)
+    raw_html_retention_days: int = (
+        30  # prune Article.raw_html older than this (0 = keep forever)
+    )
     retention_article_text_days: int = 365  # reserved — not yet enforced
 
     # Alert channels (off until explicitly enabled)
@@ -166,13 +177,19 @@ class Settings(BaseSettings):
 
     # EPSS (v0.8.0 step 2) — keyless FIRST.org EPSS enrichment for CVEs.
     # No API key needed (free, public); these only tune the batch behaviour.
-    epss_max_per_run: int = 100  # CVEs selected per enrichment run (CTI_EPSS_MAX_PER_RUN)
-    epss_refresh_days: int = 7  # re-enrich CVEs whose EPSS data is older than this (CTI_EPSS_REFRESH_DAYS)
+    epss_max_per_run: int = (
+        100  # CVEs selected per enrichment run (CTI_EPSS_MAX_PER_RUN)
+    )
+    epss_refresh_days: int = (
+        7  # re-enrich CVEs whose EPSS data is older than this (CTI_EPSS_REFRESH_DAYS)
+    )
 
     # crt.sh passive DNS / certificate transparency (v0.8.0 step 3) — keyless,
     # passive-only (public CT logs) subdomain intel for domains. No API key;
     # these only tune the batch behaviour.
-    passive_dns_max_per_run: int = 50  # domains enriched per run (CTI_PASSIVE_DNS_MAX_PER_RUN)
+    passive_dns_max_per_run: int = (
+        50  # domains enriched per run (CTI_PASSIVE_DNS_MAX_PER_RUN)
+    )
     passive_dns_refresh_days: int = (
         14  # re-enrich domains whose data is older than this (CTI_PASSIVE_DNS_REFRESH_DAYS)
     )
